@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/UPONU-GmbH/go-smtp"
 	"github.com/emersion/go-sasl"
-	"github.com/emersion/go-smtp"
 )
 
 // The Backend implements SMTP server methods.
