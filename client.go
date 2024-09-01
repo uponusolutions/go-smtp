@@ -544,13 +544,19 @@ type dataCloser struct {
 	closed   bool
 }
 
-func (d *dataCloser) Close() error {
+// CloseWithResponse closes the connection to server and
+// returns the returned status code and message.
+func (d *dataCloser) CloseWithResponse() (code int, msg string, err error) {
+	e := func(err error) (int, string, error) {
+		return 0, "", err
+	}
+
 	if d.closed {
-		return fmt.Errorf("smtp: data writer closed twice")
+		return e(fmt.Errorf("smtp: data writer closed twice"))
 	}
 
 	if err := d.WriteCloser.Close(); err != nil {
-		return err
+		return e(err)
 	}
 
 	d.c.conn.SetDeadline(time.Now().Add(d.c.SubmissionTimeout))
@@ -566,7 +572,7 @@ func (d *dataCloser) Close() error {
 						d.statusCb(rcpt, smtpErr)
 					}
 				} else {
-					return err
+					return e(err)
 				}
 			} else if d.statusCb != nil {
 				d.statusCb(rcpt, nil)
@@ -574,14 +580,17 @@ func (d *dataCloser) Close() error {
 			expectedResponses--
 		}
 	} else {
-		_, _, err := d.c.readResponse(250)
-		if err != nil {
-			return err
-		}
+		code, msg, err = d.c.readResponse(250)
 	}
 
 	d.closed = true
-	return nil
+	return code, msg, err
+}
+
+// Close closes the connection to server.
+func (d *dataCloser) Close() error {
+	_, _, err := d.CloseWithResponse()
+	return err
 }
 
 // Data issues a DATA command to the server and returns a writer that
