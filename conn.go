@@ -8,13 +8,14 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
-	"net/textproto"
 	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/textproto.v0"
 
 	"github.com/emersion/go-sasl"
 )

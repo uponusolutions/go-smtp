@@ -11,12 +11,12 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-sasl"
+	textproto "gopkg.in/textproto.v0"
 )
 
 // A Client represents a client connection to an SMTP server.

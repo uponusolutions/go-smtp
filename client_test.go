@@ -12,11 +12,12 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/textproto"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/textproto.v0"
 
 	"github.com/emersion/go-sasl"
 )
