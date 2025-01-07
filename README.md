@@ -1,6 +1,6 @@
 # go-smtp
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/UPONU-GmbH/go-smtp.svg)](https://pkg.go.dev/github.com/UPONU-GmbH/go-smtp)
+[![Go Reference](https://pkg.go.dev/badge/github.com/uponusolutions/go-smtp.svg)](https://pkg.go.dev/github.com/uponusolutions/go-smtp)
 
 An ESMTP client and server library written in Go.
 

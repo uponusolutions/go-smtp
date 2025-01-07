@@ -6,7 +6,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/UPONU-GmbH/go-smtp"
+	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/server"
 )
 
 var addr = "127.0.0.1:1025"
@@ -17,7 +18,7 @@ func init() {
 
 type backend struct{}
 
-func (bkd *backend) NewSession(c *smtp.Conn) (smtp.Session, error) {
+func (bkd *backend) NewSession(c *server.Conn) (server.Session, error) {
 	return &session{}, nil
 }
 
@@ -48,7 +49,7 @@ func (s *session) Logout() error {
 func main() {
 	flag.Parse()
 
-	s := smtp.NewServer(&backend{})
+	s := server.NewServer(&backend{})
 
 	s.Addr = addr
 	s.Domain = "localhost"

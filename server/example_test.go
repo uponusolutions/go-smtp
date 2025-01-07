@@ -2,20 +2,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package smtp_test
+package server_test
 
 import (
 	"fmt"
 	"log"
 	"strings"
 
-	"github.com/UPONU-GmbH/go-smtp"
 	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-smtp/client"
 )
 
 func ExampleDial() {
 	// Connect to the remote SMTP server.
-	c, err := smtp.Dial("mail.example.com:25")
+	c, err := client.Dial("mail.example.com:25")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func ExampleSendMail_plainAuth() {
 	hostname := "mail.example.com"
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
-	err := smtp.SendMail(hostname+":25", auth, from, recipients, msg)
+	err := client.SendMail(hostname+":25", auth, from, recipients, msg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func ExampleSendMail() {
 		"Subject: discount Gophers!\r\n" +
 		"\r\n" +
 		"This is the email body.\r\n")
-	err := smtp.SendMail("mail.example.com:25", auth, "sender@example.org", to, msg)
+	err := client.SendMail("mail.example.com:25", auth, "sender@example.org", to, msg)
 	if err != nil {
 		log.Fatal(err)
 	}

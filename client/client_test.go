@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package smtp
+package client
 
 import (
 	"bufio"
@@ -15,11 +15,13 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
-	"gopkg.in/textproto.v0"
+	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/internal/faker"
+	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 
 	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-smtp/internal/linelimit"
 )
 
 // Don't send a trailing space on AUTH command when there's no initial response:
@@ -27,15 +29,10 @@ import (
 func TestClientAuthTrimSpace(t *testing.T) {
 	server := "220 hello world\r\n" +
 		"200 some more"
-	var wrote bytes.Buffer
-	var fake faker
-	fake.ReadWriter = struct {
-		io.Reader
-		io.Writer
-	}{
-		strings.NewReader(server),
-		&wrote,
-	}
+	wrote := &bytes.Buffer{}
+
+	fake := faker.NewConn(server, wrote)
+
 	c := NewClient(fake)
 	c.didHello = true
 	c.Auth(toServerNoRespAuth{})
@@ -59,26 +56,14 @@ func (toServerNoRespAuth) Next(fromServer []byte) (toServer []byte, err error) {
 	panic("unexpected call")
 }
 
-type faker struct {
-	io.ReadWriter
-}
-
-func (f faker) Close() error                     { return nil }
-func (f faker) LocalAddr() net.Addr              { return nil }
-func (f faker) RemoteAddr() net.Addr             { return nil }
-func (f faker) SetDeadline(time.Time) error      { return nil }
-func (f faker) SetReadDeadline(time.Time) error  { return nil }
-func (f faker) SetWriteDeadline(time.Time) error { return nil }
-
 func TestBasic(t *testing.T) {
 	server := strings.Join(strings.Split(basicServer, "\n"), "\r\n")
 	client := strings.Join(strings.Split(basicClient, "\n"), "\r\n")
 
-	var cmdbuf bytes.Buffer
-	bcmdbuf := bufio.NewWriter(&cmdbuf)
-	var fake faker
-	fake.ReadWriter = bufio.NewReadWriter(bufio.NewReader(strings.NewReader(server)), bcmdbuf)
-	c := &Client{text: textproto.NewConn(fake), conn: fake, localName: "localhost"}
+	cmdbuf := &bytes.Buffer{}
+	fake := faker.NewConn(server, cmdbuf)
+
+	c := &Client{text: textsmtp.NewConn(fake), conn: fake, localName: "localhost"}
 
 	if err := c.helo(); err != nil {
 		t.Fatalf("HELO failed: %s", err)
@@ -159,14 +144,13 @@ Goodbye.`
 		t.Fatalf("QUIT failed: %s", err)
 	}
 
-	bcmdbuf.Flush()
 	actualcmds := cmdbuf.String()
 	if client != actualcmds {
 		t.Fatalf("Got:\n%s\nExpected:\n%s", actualcmds, client)
 	}
 }
 
-func TestBasic_SMTPError(t *testing.T) {
+func TestBasic_smtp(t *testing.T) {
 	faultyServer := `220 mx.google.com at your service
 250-mx.google.com at your service
 250 ENHANCEDSTATUSCODES
@@ -181,30 +165,24 @@ func TestBasic_SMTPError(t *testing.T) {
 
 	faultyServer = strings.Join(strings.Split(faultyServer, "\n"), "\r\n")
 
-	var wrote bytes.Buffer
-	var fake faker
-	fake.ReadWriter = struct {
-		io.Reader
-		io.Writer
-	}{
-		strings.NewReader(faultyServer),
-		&wrote,
-	}
+	wrote := &bytes.Buffer{}
+	fake := faker.NewConn(faultyServer, wrote)
+
 	c := NewClient(fake)
 
 	err := c.Mail("whatever", nil)
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok := err.(*SMTPError)
+	smtpErr, ok := err.(*smtp.Smtp)
 	if !ok {
-		t.Fatal("Returned error is not SMTPError")
+		t.Fatal("Returned error is not smtp")
 	}
 	if smtpErr.Code != 500 {
 		t.Fatalf("Wrong status code, got %d, want %d", smtpErr.Code, 500)
 	}
-	if smtpErr.EnhancedCode != (EnhancedCode{5, 0, 0}) {
-		t.Fatalf("Wrong enhanced code, got %v, want %v", smtpErr.EnhancedCode, EnhancedCode{5, 0, 0})
+	if smtpErr.EnhancedCode != (smtp.EnhancedCode{5, 0, 0}) {
+		t.Fatalf("Wrong enhanced code, got %v, want %v", smtpErr.EnhancedCode, smtp.EnhancedCode{5, 0, 0})
 	}
 	if smtpErr.Message != "Failing with enhanced code" {
 		t.Fatalf("Wrong message, got %s, want %s", smtpErr.Message, "Failing with enhanced code")
@@ -214,9 +192,9 @@ func TestBasic_SMTPError(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*SMTPError)
+	smtpErr, ok = err.(*smtp.Smtp)
 	if !ok {
-		t.Fatal("Returned error is not SMTPError")
+		t.Fatal("Returned error is not smtp")
 	}
 	if smtpErr.Code != 500 {
 		t.Fatalf("Wrong status code, got %d, want %d", smtpErr.Code, 500)
@@ -229,9 +207,9 @@ func TestBasic_SMTPError(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*SMTPError)
+	smtpErr, ok = err.(*smtp.Smtp)
 	if !ok {
-		t.Fatal("Returned error is not SMTPError")
+		t.Fatal("Returned error is not smtp")
 	}
 	if smtpErr.Code != 500 {
 		t.Fatalf("Wrong status code, got %d, want %d", smtpErr.Code, 500)
@@ -260,26 +238,20 @@ func TestClient_TooLongLine(t *testing.T) {
 		pw.Close()
 	}()
 
-	var wrote bytes.Buffer
-	var fake faker
-	fake.ReadWriter = struct {
-		io.Reader
-		io.Writer
-	}{
-		pr,
-		&wrote,
-	}
+	wrote := &bytes.Buffer{}
+	fake := faker.NewConnStream(pr, wrote)
+
 	c := NewClient(fake)
 
 	err := c.Mail("whatever", nil)
-	if err != ErrTooLongLine {
+	if err != linelimit.ErrTooLongLine {
 		t.Fatal("MAIL succeeded or returned a different error:", err)
 	}
 
 	// ErrTooLongLine is "sticky" since the connection is in broken state and
 	// the only reasonable way to recover is to close it.
 	err = c.Mail("whatever", nil)
-	if err != ErrTooLongLine {
+	if err != linelimit.ErrTooLongLine {
 		t.Fatal("Second MAIL succeeded or returned a different error:", err)
 	}
 }
@@ -326,14 +298,9 @@ func TestNewClient(t *testing.T) {
 	server := strings.Join(strings.Split(newClientServer, "\n"), "\r\n")
 	client := strings.Join(strings.Split(newClientClient, "\n"), "\r\n")
 
-	var cmdbuf bytes.Buffer
-	bcmdbuf := bufio.NewWriter(&cmdbuf)
-	out := func() string {
-		bcmdbuf.Flush()
-		return cmdbuf.String()
-	}
-	var fake faker
-	fake.ReadWriter = bufio.NewReadWriter(bufio.NewReader(strings.NewReader(server)), bcmdbuf)
+	cmdbuf := &bytes.Buffer{}
+	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+
 	c := NewClient(fake)
 	defer c.Close()
 	if ok, args := c.Extension("aUtH"); !ok || args != "LOGIN PLAIN" {
@@ -346,7 +313,7 @@ func TestNewClient(t *testing.T) {
 		t.Fatalf("QUIT failed: %s", err)
 	}
 
-	actualcmds := out()
+	actualcmds := cmdbuf.String()
 	if client != actualcmds {
 		t.Fatalf("Got:\n%s\nExpected:\n%s", actualcmds, client)
 	}
@@ -368,10 +335,9 @@ func TestNewClient2(t *testing.T) {
 	server := strings.Join(strings.Split(newClient2Server, "\n"), "\r\n")
 	client := strings.Join(strings.Split(newClient2Client, "\n"), "\r\n")
 
-	var cmdbuf bytes.Buffer
-	bcmdbuf := bufio.NewWriter(&cmdbuf)
-	var fake faker
-	fake.ReadWriter = bufio.NewReadWriter(bufio.NewReader(strings.NewReader(server)), bcmdbuf)
+	cmdbuf := &bytes.Buffer{}
+	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+
 	c := NewClient(fake)
 	defer c.Close()
 	if ok, _ := c.Extension("DSN"); ok {
@@ -381,7 +347,6 @@ func TestNewClient2(t *testing.T) {
 		t.Fatalf("QUIT failed: %s", err)
 	}
 
-	bcmdbuf.Flush()
 	actualcmds := cmdbuf.String()
 	if client != actualcmds {
 		t.Fatalf("Got:\n%s\nExpected:\n%s", actualcmds, client)
@@ -411,10 +376,10 @@ func TestHello(t *testing.T) {
 	for i := 0; i < len(helloServer); i++ {
 		server := strings.Join(strings.Split(baseHelloServer+helloServer[i], "\n"), "\r\n")
 		client := strings.Join(strings.Split(baseHelloClient+helloClient[i], "\n"), "\r\n")
-		var cmdbuf bytes.Buffer
-		bcmdbuf := bufio.NewWriter(&cmdbuf)
-		var fake faker
-		fake.ReadWriter = bufio.NewReadWriter(bufio.NewReader(strings.NewReader(server)), bcmdbuf)
+
+		cmdbuf := &bytes.Buffer{}
+		fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+
 		c := NewClient(fake)
 		defer c.Close()
 		c.serverName = "fake.host"
@@ -467,7 +432,6 @@ func TestHello(t *testing.T) {
 			t.Errorf("Command %d failed: %v", i, err)
 		}
 
-		bcmdbuf.Flush()
 		actualcmds := cmdbuf.String()
 		if client != actualcmds {
 			t.Errorf("Got:\n%s\nExpected:\n%s", actualcmds, client)
@@ -518,10 +482,10 @@ var shuttingDownServerHello = `220 hello world
 func TestHello_421Response(t *testing.T) {
 	server := strings.Join(strings.Split(shuttingDownServerHello, "\n"), "\r\n")
 	client := "EHLO customhost\r\n"
-	var cmdbuf bytes.Buffer
-	bcmdbuf := bufio.NewWriter(&cmdbuf)
-	var fake faker
-	fake.ReadWriter = bufio.NewReadWriter(bufio.NewReader(strings.NewReader(server)), bcmdbuf)
+
+	cmdbuf := &bytes.Buffer{}
+	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+
 	c := NewClient(fake)
 	defer c.Close()
 	c.serverName = "fake.host"
@@ -532,17 +496,18 @@ func TestHello_421Response(t *testing.T) {
 		t.Errorf("Expected Hello to fail")
 	}
 
-	var smtpError *SMTPError
-	if !errors.As(err, &smtpError) || smtpError.Code != 421 || smtpError.Message != "Service not available, closing transmission channel" {
+	var smtp *smtp.Smtp
+	if !errors.As(err, &smtp) || smtp.Code != 421 || smtp.Message != "Service not available, closing transmission channel" {
 		t.Errorf("Expected error 421, got %v", err)
 	}
 
-	bcmdbuf.Flush()
 	actualcmds := cmdbuf.String()
 	if client != actualcmds {
 		t.Errorf("Got:\n%s\nExpected:\n%s", actualcmds, client)
 	}
 }
+
+/* unused
 
 var sendMailServer = `220 hello world
 502 EH?
@@ -567,14 +532,15 @@ SendMail is working for me.
 .
 QUIT
 `
+*/
 
 func TestAuthFailed(t *testing.T) {
 	server := strings.Join(strings.Split(authFailedServer, "\n"), "\r\n")
 	client := strings.Join(strings.Split(authFailedClient, "\n"), "\r\n")
-	var cmdbuf bytes.Buffer
-	bcmdbuf := bufio.NewWriter(&cmdbuf)
-	var fake faker
-	fake.ReadWriter = bufio.NewReadWriter(bufio.NewReader(strings.NewReader(server)), bcmdbuf)
+
+	cmdbuf := &bytes.Buffer{}
+	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+
 	c := NewClient(fake)
 	defer c.Close()
 
@@ -587,7 +553,6 @@ func TestAuthFailed(t *testing.T) {
 		t.Errorf("Auth: got error: %v, want: %s", err, "Invalid credentials\nplease see www.example.com")
 	}
 
-	bcmdbuf.Flush()
 	actualcmds := cmdbuf.String()
 	if client != actualcmds {
 		t.Errorf("Got:\n%s\nExpected:\n%s", actualcmds, client)
@@ -802,11 +767,10 @@ func TestLMTP(t *testing.T) {
 	server := strings.Join(strings.Split(lmtpServer, "\n"), "\r\n")
 	client := strings.Join(strings.Split(lmtpClient, "\n"), "\r\n")
 
-	var cmdbuf bytes.Buffer
-	bcmdbuf := bufio.NewWriter(&cmdbuf)
-	var fake faker
-	fake.ReadWriter = bufio.NewReadWriter(bufio.NewReader(strings.NewReader(server)), bcmdbuf)
-	c := &Client{text: textproto.NewConn(fake), conn: fake, lmtp: true}
+	cmdbuf := &bytes.Buffer{}
+	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+
+	c := &Client{text: textsmtp.NewConn(fake), conn: fake, lmtp: true}
 
 	if err := c.Hello("localhost"); err != nil {
 		t.Fatalf("LHLO failed: %s", err)
@@ -841,7 +805,6 @@ Goodbye.`
 		t.Fatalf("QUIT failed: %s", err)
 	}
 
-	bcmdbuf.Flush()
 	actualcmds := cmdbuf.String()
 	if client != actualcmds {
 		t.Fatalf("Got:\n%s\nExpected:\n%s", actualcmds, client)
@@ -889,11 +852,10 @@ func TestLMTPData(t *testing.T) {
 `
 	server := strings.Join(strings.Split(lmtpServerPartial, "\n"), "\r\n")
 
-	var cmdbuf bytes.Buffer
-	bcmdbuf := bufio.NewWriter(&cmdbuf)
-	var fake faker
-	fake.ReadWriter = bufio.NewReadWriter(bufio.NewReader(strings.NewReader(server)), bcmdbuf)
-	c := &Client{text: textproto.NewConn(fake), conn: fake, lmtp: true}
+	cmdbuf := &bytes.Buffer{}
+	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+
+	c := &Client{text: textsmtp.NewConn(fake), conn: fake, lmtp: true}
 
 	if err := c.Hello("localhost"); err != nil {
 		t.Fatalf("LHLO failed: %s", err)
@@ -918,9 +880,9 @@ Line 1
 Goodbye.`
 
 	rcpts := []string{}
-	errors := []*SMTPError{}
+	errors := []*smtp.Smtp{}
 
-	w, err := c.LMTPData(func(rcpt string, status *SMTPError) {
+	w, err := c.LMTPData(func(rcpt string, status *smtp.Smtp) {
 		rcpts = append(rcpts, rcpt)
 		errors = append(errors, status)
 	})
@@ -962,22 +924,17 @@ func TestClientXtext(t *testing.T) {
 		"250 ok\r\n" +
 		"250 ok"
 	client := strings.Join(strings.Split(xtextClient, "\n"), "\r\n")
-	var wrote bytes.Buffer
-	var fake faker
-	fake.ReadWriter = struct {
-		io.Reader
-		io.Writer
-	}{
-		strings.NewReader(server),
-		&wrote,
-	}
+
+	wrote := &bytes.Buffer{}
+	fake := faker.NewConnStream(strings.NewReader(server), wrote)
+
 	c := NewClient(fake)
 	c.didHello = true
 	c.ext = map[string]string{"AUTH": "PLAIN", "DSN": ""}
 	email := "e=mc2@example.com"
-	c.Mail(email, &MailOptions{Auth: &email})
-	c.Rcpt(email, &RcptOptions{
-		OriginalRecipientType: DSNAddressTypeUTF8,
+	c.Mail(email, &smtp.MailOptions{Auth: &email})
+	c.Rcpt(email, &smtp.RcptOptions{
+		OriginalRecipientType: smtp.DSNAddressTypeUTF8,
 		OriginalRecipient:     email,
 	})
 	c.Close()
@@ -1009,35 +966,29 @@ func TestClientDSN(t *testing.T) {
 	server := strings.Join(strings.Split(dsnServer, "\n"), "\r\n")
 	client := strings.Join(strings.Split(dsnClient, "\n"), "\r\n")
 
-	var wrote bytes.Buffer
-	var fake faker
-	fake.ReadWriter = struct {
-		io.Reader
-		io.Writer
-	}{
-		strings.NewReader(server),
-		&wrote,
-	}
+	wrote := &bytes.Buffer{}
+	fake := faker.NewConnStream(strings.NewReader(server), wrote)
+
 	c := NewClient(fake)
 	c.didHello = true
 	c.ext = map[string]string{"DSN": ""}
-	c.Mail(dsnEmailRFC822, &MailOptions{
-		Return:     DSNReturnHeaders,
+	c.Mail(dsnEmailRFC822, &smtp.MailOptions{
+		Return:     smtp.DSNReturnHeaders,
 		EnvelopeID: dsnEnvelopeID,
 	})
-	c.Rcpt(dsnEmailRFC822, &RcptOptions{
-		OriginalRecipientType: DSNAddressTypeRFC822,
+	c.Rcpt(dsnEmailRFC822, &smtp.RcptOptions{
+		OriginalRecipientType: smtp.DSNAddressTypeRFC822,
 		OriginalRecipient:     dsnEmailRFC822,
-		Notify:                []DSNNotify{DSNNotifyNever},
+		Notify:                []smtp.DSNNotify{smtp.DSNNotifyNever},
 	})
-	c.Rcpt(dsnEmailRFC822, &RcptOptions{
-		OriginalRecipientType: DSNAddressTypeUTF8,
+	c.Rcpt(dsnEmailRFC822, &smtp.RcptOptions{
+		OriginalRecipientType: smtp.DSNAddressTypeUTF8,
 		OriginalRecipient:     dsnEmailUTF8,
-		Notify:                []DSNNotify{DSNNotifyFailure, DSNNotifyDelayed},
+		Notify:                []smtp.DSNNotify{smtp.DSNNotifyFailure, smtp.DSNNotifyDelayed},
 	})
 	c.ext["SMTPUTF8"] = ""
-	c.Rcpt(dsnEmailUTF8, &RcptOptions{
-		OriginalRecipientType: DSNAddressTypeUTF8,
+	c.Rcpt(dsnEmailUTF8, &smtp.RcptOptions{
+		OriginalRecipientType: smtp.DSNAddressTypeUTF8,
 		OriginalRecipient:     dsnEmailUTF8,
 	})
 	c.Close()

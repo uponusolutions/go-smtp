@@ -1,4 +1,4 @@
-package smtp_test
+package server_test
 
 import (
 	"bufio"
@@ -12,8 +12,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/UPONU-GmbH/go-smtp"
 	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/server"
 )
 
 type message struct {
@@ -50,7 +51,7 @@ type backend struct {
 	userErr     error
 }
 
-func (be *backend) NewSession(_ *smtp.Conn) (smtp.Session, error) {
+func (be *backend) NewSession(_ *server.Conn) (server.Session, error) {
 	if be.implementLMTPData {
 		return &lmtpSession{&session{backend: be, anonymous: true}}, nil
 	}
@@ -69,7 +70,7 @@ type session struct {
 	msg *message
 }
 
-var _ smtp.AuthSession = (*session)(nil)
+var _ server.AuthSession = (*session)(nil)
 
 func (s *session) AuthMechanisms() []string {
 	if s.backend.authDisabled {
@@ -154,7 +155,7 @@ func (s *session) Data(r io.Reader) error {
 	return nil
 }
 
-func (s *session) LMTPData(r io.Reader, collector smtp.StatusCollector) error {
+func (s *session) LMTPData(r io.Reader, collector server.StatusCollector) error {
 	if err := s.Data(r); err != nil {
 		return err
 	}
@@ -228,22 +229,22 @@ func (m *mockError) String() string  { return m.msg }
 func (m *mockError) Timeout() bool   { return false }
 func (m *mockError) Temporary() bool { return m.temporary }
 
-type serverConfigureFunc func(*smtp.Server)
+type serverConfigureFunc func(*server.Server)
 
 var (
-	authDisabled = func(s *smtp.Server) {
+	authDisabled = func(s *server.Server) {
 		s.Backend.(*backend).authDisabled = true
 	}
 )
 
-func testServer(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *smtp.Server, c net.Conn, scanner *bufio.Scanner) {
+func testServer(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	be = new(backend)
-	s = smtp.NewServer(be)
+	s = server.NewServer(be)
 	s.Domain = "localhost"
 	s.AllowInsecureAuth = true
 	for _, f := range fn {
@@ -261,7 +262,7 @@ func testServer(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *smtp.S
 	return
 }
 
-func testServerGreeted(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *smtp.Server, c net.Conn, scanner *bufio.Scanner) {
+func testServerGreeted(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
 	be, s, c, scanner = testServer(t, fn...)
 
 	scanner.Scan()
@@ -272,7 +273,7 @@ func testServerGreeted(t *testing.T, fn ...serverConfigureFunc) (be *backend, s 
 	return
 }
 
-func testServerEhlo(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *smtp.Server, c net.Conn, scanner *bufio.Scanner, caps map[string]bool) {
+func testServerEhlo(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner, caps map[string]bool) {
 	be, s, c, scanner = testServerGreeted(t, fn...)
 
 	io.WriteString(c, "EHLO localhost\r\n")
@@ -311,7 +312,7 @@ func testServerEhlo(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *sm
 func TestServerAcceptErrorHandling(t *testing.T) {
 	errorLog := bytes.NewBuffer(nil)
 	be := new(backend)
-	s := smtp.NewServer(be)
+	s := server.NewServer(be)
 	s.Domain = "localhost"
 	s.AllowInsecureAuth = true
 	s.ErrorLog = log.New(errorLog, "", 0)
@@ -352,7 +353,7 @@ func TestServer_helo(t *testing.T) {
 	}
 }
 
-func testServerAuthenticated(t *testing.T) (be *backend, s *smtp.Server, c net.Conn, scanner *bufio.Scanner) {
+func testServerAuthenticated(t *testing.T) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
 	be, s, c, scanner, caps := testServerEhlo(t)
 
 	if _, ok := caps["AUTH PLAIN"]; !ok {
@@ -855,7 +856,7 @@ func TestServer_smtpSmuggling(t *testing.T) {
 
 			msg := be.messages[0]
 			if string(msg.Data) != tc.expected {
-				t.Fatalf("Invalid mail data: %q", string(msg.Data))
+				t.Fatalf("Invalid mail data: %q expected %q", string(msg.Data), tc.expected)
 			}
 		})
 	}
@@ -1093,7 +1094,7 @@ func TestServer_Chunking_Reset(t *testing.T) {
 		t.Fatal("Invalid BDAT response:", scanner.Text())
 	}
 
-	if err := <-be.dataErrors; err != smtp.ErrDataReset {
+	if err := <-be.dataErrors; err != server.ErrDataReset {
 		t.Fatal("Backend received a different error:", err)
 	}
 }
@@ -1122,7 +1123,7 @@ func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
 	// Bye!
 	c.Close()
 
-	if err := <-be.dataErrors; err != smtp.ErrDataReset {
+	if err := <-be.dataErrors; err != server.ErrDataReset {
 		t.Fatal("Backend received a different error:", err)
 	}
 }
@@ -1132,7 +1133,7 @@ func TestServer_Chunking_EarlyError(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 
-	be.dataErr = &smtp.SMTPError{
+	be.dataErr = &smtp.Smtp{
 		Code:         555,
 		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
 		Message:      "I failed",
@@ -1163,7 +1164,7 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 
-	be.dataErr = &smtp.SMTPError{
+	be.dataErr = &smtp.Smtp{
 		Code:         555,
 		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
 		Message:      "I failed",
@@ -1310,7 +1311,7 @@ func TestServerShutdown(t *testing.T) {
 	}
 
 	errTwo := <-errChan
-	if errTwo != smtp.ErrServerClosed {
+	if errTwo != server.ErrServerClosed {
 		t.Fatal("Expected err to be ErrServerClosed:", errTwo)
 	}
 }
@@ -1323,7 +1324,7 @@ const (
 
 func TestServerDSN(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t,
-		func(s *smtp.Server) {
+		func(s *server.Server) {
 			s.EnableDSN = true
 		})
 	defer s.Close()
@@ -1408,7 +1409,7 @@ func TestServerDSN(t *testing.T) {
 
 func TestServerDSNwithSMTPUTF8(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t,
-		func(s *smtp.Server) {
+		func(s *server.Server) {
 			s.EnableDSN = true
 			s.EnableSMTPUTF8 = true
 		})
@@ -1516,7 +1517,7 @@ func TestServerDSNwithSMTPUTF8(t *testing.T) {
 
 func TestServerXOORG(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t,
-		func(s *smtp.Server) {
+		func(s *server.Server) {
 			s.EnableXOORG = true
 		})
 	defer s.Close()

@@ -1,6 +1,2 @@
-github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 h1:OJyUGMJTzHTd1XQp98QTaHernxMYzRaOasRir9hUlFQ=
-github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21/go.mod h1:iL2twTeMvZnrg54ZoPDNfJaJaqy0xIQFuBdrLsmspwQ=
-gopkg.in/option.v0 v0.0.0-20220910000000-360f43518c40 h1:F5GXi2F4Ay44oV5rJ6BbsOZl4nYrb1Fv7w14KeTVj3g=
-gopkg.in/option.v0 v0.0.0-20220910000000-360f43518c40/go.mod h1:0NoLVhT/Lh19J02e6eFvBzkP8s+twOpvDEnu3HLFAWw=
-gopkg.in/textproto.v0 v0.0.0-20221008000000-eebe43f979c0 h1:wZDFURNNyYRxfHOrMtBERkTNr3YMzDoN0+mNsEiGSsk=
-gopkg.in/textproto.v0 v0.0.0-20221008000000-eebe43f979c0/go.mod h1:gXZsgOySw248Qp1kCfL3j/iR7UPV29n8gV38yr+wYqc=
+github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 h1:oP4q0fw+fOSWn3DfFi4EXdT+B+gTtzx8GC9xsc26Znk=
+github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6/go.mod h1:iL2twTeMvZnrg54ZoPDNfJaJaqy0xIQFuBdrLsmspwQ=

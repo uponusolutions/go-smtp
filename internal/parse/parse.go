@@ -1,19 +1,28 @@
-package smtp
+package parse
 
 import (
 	"fmt"
 	"strings"
 )
 
-// cutPrefixFold is a version of strings.CutPrefix which is case-insensitive.
-func cutPrefixFold(s, prefix string) (string, bool) {
+// CutPrefixFold is a version of strings.CutPrefix which is case-insensitive.
+func CutPrefixFold(s, prefix string) (string, bool) {
 	if len(s) < len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
 		return "", false
 	}
 	return s[len(prefix):], true
 }
 
-func parseCmd(line string) (cmd string, arg string, err error) {
+func IsPrintableASCII(val string) bool {
+	for _, ch := range val {
+		if ch < ' ' || '~' < ch {
+			return false
+		}
+	}
+	return true
+}
+
+func Cmd(line string) (cmd string, arg string, err error) {
 	line = strings.TrimRight(line, "\r\n")
 
 	l := len(line)
@@ -47,7 +56,7 @@ func parseCmd(line string) (cmd string, arg string, err error) {
 //	" BODY=8BITMIME SIZE=1024 SMTPUTF8"
 //
 // The leading space is mandatory.
-func parseArgs(s string) (map[string]string, error) {
+func Args(s string) (map[string]string, error) {
 	argMap := map[string]string{}
 	for _, arg := range strings.Fields(s) {
 		m := strings.Split(arg, "=")
@@ -63,7 +72,7 @@ func parseArgs(s string) (map[string]string, error) {
 	return argMap, nil
 }
 
-func parseHelloArgument(arg string) (string, error) {
+func HelloArgument(arg string) (string, error) {
 	domain := arg
 	if idx := strings.IndexRune(arg, ' '); idx >= 0 {
 		domain = arg[:idx]
@@ -74,27 +83,27 @@ func parseHelloArgument(arg string) (string, error) {
 	return domain, nil
 }
 
-// parser parses command arguments defined in RFC 5321 section 4.1.2.
-type parser struct {
-	s string
+// Parser parses command arguments defined in RFC 5321 section 4.1.2.
+type Parser struct {
+	S string
 }
 
-func (p *parser) peekByte() (byte, bool) {
-	if len(p.s) == 0 {
+func (p *Parser) peekByte() (byte, bool) {
+	if len(p.S) == 0 {
 		return 0, false
 	}
-	return p.s[0], true
+	return p.S[0], true
 }
 
-func (p *parser) readByte() (byte, bool) {
+func (p *Parser) readByte() (byte, bool) {
 	ch, ok := p.peekByte()
 	if ok {
-		p.s = p.s[1:]
+		p.S = p.S[1:]
 	}
 	return ch, ok
 }
 
-func (p *parser) acceptByte(ch byte) bool {
+func (p *Parser) acceptByte(ch byte) bool {
 	got, ok := p.peekByte()
 	if !ok || got != ch {
 		return false
@@ -103,35 +112,35 @@ func (p *parser) acceptByte(ch byte) bool {
 	return true
 }
 
-func (p *parser) expectByte(ch byte) error {
+func (p *Parser) expectByte(ch byte) error {
 	if !p.acceptByte(ch) {
-		if len(p.s) == 0 {
+		if len(p.S) == 0 {
 			return fmt.Errorf("expected '%v', got EOF", string(ch))
 		} else {
-			return fmt.Errorf("expected '%v', got '%v'", string(ch), string(p.s[0]))
+			return fmt.Errorf("expected '%v', got '%v'", string(ch), string(p.S[0]))
 		}
 	}
 	return nil
 }
 
-func (p *parser) parseReversePath() (string, error) {
-	if strings.HasPrefix(p.s, "<>") {
-		p.s = strings.TrimPrefix(p.s, "<>")
+func (p *Parser) ReversePath() (string, error) {
+	if strings.HasPrefix(p.S, "<>") {
+		p.S = strings.TrimPrefix(p.S, "<>")
 		return "", nil
 	}
-	return p.parsePath()
+	return p.Path()
 }
 
-func (p *parser) parsePath() (string, error) {
+func (p *Parser) Path() (string, error) {
 	hasBracket := p.acceptByte('<')
 	if p.acceptByte('@') {
-		i := strings.IndexByte(p.s, ':')
+		i := strings.IndexByte(p.S, ':')
 		if i < 0 {
 			return "", fmt.Errorf("malformed a-d-l")
 		}
-		p.s = p.s[i+1:]
+		p.S = p.S[i+1:]
 	}
-	mbox, err := p.parseMailbox()
+	mbox, err := p.Mailbox()
 	if err != nil {
 		return "", fmt.Errorf("in mailbox: %v", err)
 	}
@@ -143,8 +152,8 @@ func (p *parser) parsePath() (string, error) {
 	return mbox, nil
 }
 
-func (p *parser) parseMailbox() (string, error) {
-	localPart, err := p.parseLocalPart()
+func (p *Parser) Mailbox() (string, error) {
+	localPart, err := p.localPart()
 	if err != nil {
 		return "", fmt.Errorf("in local-part: %v", err)
 	} else if localPart == "" {
@@ -178,7 +187,7 @@ func (p *parser) parseMailbox() (string, error) {
 	return sb.String(), nil
 }
 
-func (p *parser) parseLocalPart() (string, error) {
+func (p *Parser) localPart() (string, error) {
 	var sb strings.Builder
 
 	if p.acceptByte('"') { // quoted-string

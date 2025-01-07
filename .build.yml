@@ -2,7 +2,7 @@ image: alpine/latest
 packages:
   - go
 sources:
-  - https://github.com/UPONU-GmbH/go-smtp
+  - https://github.com/uponusolutions/go-smtp
 artifacts:
   - coverage.html
 tasks:

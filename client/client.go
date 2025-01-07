@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package smtp
+package client
 
 import (
 	"crypto/tls"
@@ -11,12 +11,15 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-sasl"
-	textproto "gopkg.in/textproto.v0"
+	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/internal/linelimit"
+	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
 // A Client represents a client connection to an SMTP server.
@@ -24,7 +27,7 @@ type Client struct {
 	// keep a reference to the connection so it can be used to create a TLS
 	// connection later
 	conn       net.Conn
-	text       *textproto.Conn
+	text       *textsmtp.Conn
 	serverName string
 	lmtp       bool
 	ext        map[string]string // supported extensions
@@ -41,7 +44,7 @@ type Client struct {
 	SubmissionTimeout time.Duration
 
 	// Logger for all network activity.
-	DebugWriter io.Writer
+	Debug io.Writer
 }
 
 // 30 seconds was chosen as it's the same duration as http.DefaultTransport's
@@ -154,7 +157,7 @@ func (c *Client) setConn(conn net.Conn) {
 	var r io.Reader = conn
 	var w io.Writer = conn
 
-	r = &lineLimitReader{
+	r = &linelimit.Reader{
 		R: conn,
 		// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
 		LineLimit: 2000,
@@ -172,7 +175,7 @@ func (c *Client) setConn(conn net.Conn) {
 		Writer: w,
 		Closer: conn,
 	}
-	c.text = textproto.NewConn(rwc)
+	c.text = textsmtp.NewConn(rwc)
 }
 
 // Close closes the connection.
@@ -211,8 +214,8 @@ func (c *Client) hello() error {
 
 	c.didHello = true
 	if err := c.ehlo(); err != nil {
-		var smtpError *SMTPError
-		if errors.As(err, &smtpError) && (smtpError.Code == 500 || smtpError.Code == 502) {
+		var smtp *smtp.Smtp
+		if errors.As(err, &smtp) && (smtp.Code == 500 || smtp.Code == 502) {
 			// The server doesn't support EHLO, fallback to HELO
 			c.helloError = c.helo()
 		} else {
@@ -228,7 +231,7 @@ func (c *Client) hello() error {
 // automatically otherwise. If Hello is called, it must be called before
 // any of the other methods.
 //
-// If server returns an error, it will be of type *SMTPError.
+// If server returns an error, it will be of type *smtp.
 func (c *Client) Hello(localName string) error {
 	if err := validateLine(localName); err != nil {
 		return err
@@ -249,7 +252,7 @@ func (c *Client) readResponse(expectCode int) (int, string, error) {
 }
 
 // cmd is a convenience function that sends a command and returns the response
-// textproto.Error returned by c.text.ReadResponse is converted into SMTPError.
+// textproto.Error returned by c.text.ReadResponse is converted into smtp.
 func (c *Client) cmd(expectCode int, format string, args ...interface{}) (int, string, error) {
 	c.conn.SetDeadline(time.Now().Add(c.CommandTimeout))
 	defer c.conn.SetDeadline(time.Time{})
@@ -306,7 +309,7 @@ func (c *Client) ehlo() error {
 //
 // A nil config is equivalent to a zero tls.Config.
 //
-// If server returns an error, it will be of type *SMTPError.
+// If server returns an error, it will be of type *smtp.
 func (c *Client) startTLS(config *tls.Config) error {
 	if err := c.hello(); err != nil {
 		return err
@@ -347,7 +350,7 @@ func (c *Client) TLSConnectionState() (state tls.ConnectionState, ok bool) {
 // does not necessarily indicate an invalid address. Many servers
 // will not verify addresses for security reasons.
 //
-// If server returns an error, it will be of type *SMTPError.
+// If server returns an error, it will be of type *smtp.
 func (c *Client) Verify(addr string) error {
 	if err := validateLine(addr); err != nil {
 		return err
@@ -362,7 +365,7 @@ func (c *Client) Verify(addr string) error {
 // Auth authenticates a client using the provided authentication mechanism.
 // Only servers that advertise the AUTH extension support this function.
 //
-// If server returns an error, it will be of type *SMTPError.
+// If server returns an error, it will be of type *smtp.
 func (c *Client) Auth(a sasl.Client) error {
 	if err := c.hello(); err != nil {
 		return err
@@ -379,7 +382,7 @@ func (c *Client) Auth(a sasl.Client) error {
 	} else if resp != nil {
 		resp64 = []byte{'='}
 	}
-	code, msg64, err := c.cmd(0, strings.TrimSpace(fmt.Sprintf("AUTH %s %s", mech, resp64)))
+	code, msg64, err := c.cmd(0, "%s", strings.TrimSpace(fmt.Sprintf("AUTH %s %s", mech, resp64)))
 	for err == nil {
 		var msg []byte
 		switch code {
@@ -408,7 +411,7 @@ func (c *Client) Auth(a sasl.Client) error {
 		}
 		resp64 = make([]byte, encoding.EncodedLen(len(resp)))
 		encoding.Encode(resp64, resp)
-		code, msg64, err = c.cmd(0, string(resp64))
+		code, msg64, err = c.cmd(0, "%s", string(resp64))
 	}
 	return err
 }
@@ -421,8 +424,8 @@ func (c *Client) Auth(a sasl.Client) error {
 // If opts is not nil, MAIL arguments provided in the structure will be added
 // to the command. Handling of unsupported options depends on the extension.
 //
-// If server returns an error, it will be of type *SMTPError.
-func (c *Client) Mail(from string, opts *MailOptions) error {
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Mail(from string, opts *smtp.MailOptions) error {
 	if err := validateLine(from); err != nil {
 		return err
 	}
@@ -456,7 +459,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 	}
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
 		switch opts.Return {
-		case DSNReturnFull, DSNReturnHeaders:
+		case smtp.DSNReturnFull, smtp.DSNReturnHeaders:
 			fmt.Fprintf(&sb, " RET=%s", string(opts.Return))
 		case "":
 			// This space is intentionally left blank
@@ -464,15 +467,15 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 			return errors.New("smtp: Unknown RET parameter value")
 		}
 		if opts.EnvelopeID != "" {
-			if !isPrintableASCII(opts.EnvelopeID) {
+			if !textsmtp.IsPrintableASCII(opts.EnvelopeID) {
 				return errors.New("smtp: Malformed ENVID parameter value")
 			}
-			fmt.Fprintf(&sb, " ENVID=%s", encodeXtext(opts.EnvelopeID))
+			fmt.Fprintf(&sb, " ENVID=%s", textsmtp.EncodeXtext(opts.EnvelopeID))
 		}
 	}
 	if opts != nil && opts.Auth != nil {
 		if _, ok := c.ext["AUTH"]; ok {
-			fmt.Fprintf(&sb, " AUTH=%s", encodeXtext(*opts.Auth))
+			fmt.Fprintf(&sb, " AUTH=%s", textsmtp.EncodeXtext(*opts.Auth))
 		}
 		// We can safely discard parameter if server does not support AUTH.
 	}
@@ -487,8 +490,8 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 // If opts is not nil, RCPT arguments provided in the structure will be added
 // to the command. Handling of unsupported options depends on the extension.
 //
-// If server returns an error, it will be of type *SMTPError.
-func (c *Client) Rcpt(to string, opts *RcptOptions) error {
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	if err := validateLine(to); err != nil {
 		return err
 	}
@@ -500,7 +503,7 @@ func (c *Client) Rcpt(to string, opts *RcptOptions) error {
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
 		if opts.Notify != nil && len(opts.Notify) != 0 {
 			sb.WriteString(" NOTIFY=")
-			if err := checkNotifySet(opts.Notify); err != nil {
+			if err := textsmtp.CheckNotifySet(opts.Notify); err != nil {
 				return errors.New("smtp: Malformed NOTIFY parameter value")
 			}
 			for i, v := range opts.Notify {
@@ -513,16 +516,16 @@ func (c *Client) Rcpt(to string, opts *RcptOptions) error {
 		if opts.OriginalRecipient != "" {
 			var enc string
 			switch opts.OriginalRecipientType {
-			case DSNAddressTypeRFC822:
-				if !isPrintableASCII(opts.OriginalRecipient) {
+			case smtp.DSNAddressTypeRFC822:
+				if !textsmtp.IsPrintableASCII(opts.OriginalRecipient) {
 					return errors.New("smtp: Illegal address")
 				}
-				enc = encodeXtext(opts.OriginalRecipient)
-			case DSNAddressTypeUTF8:
+				enc = textsmtp.EncodeXtext(opts.OriginalRecipient)
+			case smtp.DSNAddressTypeUTF8:
 				if _, ok := c.ext["SMTPUTF8"]; ok {
-					enc = encodeUTF8AddrUnitext(opts.OriginalRecipient)
+					enc = textsmtp.EncodeUTF8AddrUnitext(opts.OriginalRecipient)
 				} else {
-					enc = encodeUTF8AddrXtext(opts.OriginalRecipient)
+					enc = textsmtp.EncodeUTF8AddrXtext(opts.OriginalRecipient)
 				}
 			default:
 				return errors.New("smtp: Unknown address type")
@@ -540,7 +543,7 @@ func (c *Client) Rcpt(to string, opts *RcptOptions) error {
 type dataCloser struct {
 	c *Client
 	io.WriteCloser
-	statusCb func(rcpt string, status *SMTPError)
+	statusCb func(rcpt string, status *smtp.Smtp)
 	closed   bool
 }
 
@@ -561,7 +564,7 @@ func (d *dataCloser) Close() error {
 		for expectedResponses > 0 {
 			rcpt := d.c.rcpts[len(d.c.rcpts)-expectedResponses]
 			if _, _, err := d.c.readResponse(250); err != nil {
-				if smtpErr, ok := err.(*SMTPError); ok {
+				if smtpErr, ok := err.(*smtp.Smtp); ok {
 					if d.statusCb != nil {
 						d.statusCb(rcpt, smtpErr)
 					}
@@ -589,24 +592,24 @@ func (d *dataCloser) Close() error {
 // close the writer before calling any more methods on c. A call to
 // Data must be preceded by one or more calls to Rcpt.
 //
-// If server returns an error, it will be of type *SMTPError.
+// If server returns an error, it will be of type *smtp.
 func (c *Client) Data() (io.WriteCloser, error) {
 	_, _, err := c.cmd(354, "DATA")
 	if err != nil {
 		return nil, err
 	}
-	return &dataCloser{c: c, WriteCloser: c.text.DotWriter()}, nil
+	return &dataCloser{c: c, WriteCloser: textsmtp.NewDotWriter(c.text.W)}, nil
 }
 
 // LMTPData is the LMTP-specific version of the Data method. It accepts a callback
 // that will be called for each status response received from the server.
 //
-// Status callback will receive a SMTPError argument for each negative server
+// Status callback will receive a smtp argument for each negative server
 // reply and nil for each positive reply. I/O errors will not be reported using
 // callback and instead will be returned by the Close method of io.WriteCloser.
 // Callback will be called for each successfull Rcpt call done before in the
 // same order.
-func (c *Client) LMTPData(statusCb func(rcpt string, status *SMTPError)) (io.WriteCloser, error) {
+func (c *Client) LMTPData(statusCb func(rcpt string, status *smtp.Smtp)) (io.WriteCloser, error) {
 	if !c.lmtp {
 		return nil, errors.New("smtp: not a LMTP client")
 	}
@@ -615,7 +618,7 @@ func (c *Client) LMTPData(statusCb func(rcpt string, status *SMTPError)) (io.Wri
 	if err != nil {
 		return nil, err
 	}
-	return &dataCloser{c: c, WriteCloser: c.text.DotWriter(), statusCb: statusCb}, nil
+	return &dataCloser{c: c, WriteCloser: textsmtp.NewDotWriter(c.text.W), statusCb: statusCb}, nil
 }
 
 // SendMail will use an existing connection to send an email from
@@ -818,13 +821,13 @@ func (c *Client) Quit() error {
 	return c.Close()
 }
 
-func parseEnhancedCode(s string) (EnhancedCode, error) {
+func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
 	parts := strings.Split(s, ".")
 	if len(parts) != 3 {
-		return EnhancedCode{}, fmt.Errorf("wrong amount of enhanced code parts")
+		return smtp.EnhancedCode{}, fmt.Errorf("wrong amount of enhanced code parts")
 	}
 
-	code := EnhancedCode{}
+	code := smtp.EnhancedCode{}
 	for i, part := range parts {
 		num, err := strconv.Atoi(part)
 		if err != nil {
@@ -835,10 +838,10 @@ func parseEnhancedCode(s string) (EnhancedCode, error) {
 	return code, nil
 }
 
-// toSMTPErr converts textproto.Error into SMTPError, parsing
+// toSMTPErr converts textproto.Error into smtp, parsing
 // enhanced status code if it is present.
-func toSMTPErr(protoErr *textproto.Error) *SMTPError {
-	smtpErr := &SMTPError{
+func toSMTPErr(protoErr *textproto.Error) *smtp.Smtp {
+	smtpErr := &smtp.Smtp{
 		Code:    protoErr.Code,
 		Message: protoErr.Msg,
 	}
@@ -868,10 +871,10 @@ type clientDebugWriter struct {
 }
 
 func (cdw clientDebugWriter) Write(b []byte) (int, error) {
-	if cdw.c.DebugWriter == nil {
+	if cdw.c.Debug == nil {
 		return len(b), nil
 	}
-	return cdw.c.DebugWriter.Write(b)
+	return cdw.c.Debug.Write(b)
 }
 
 // validateLine checks to see if a line has CR or LF.

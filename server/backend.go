@@ -1,32 +1,10 @@
-package smtp
+package server
 
 import (
 	"io"
 
 	"github.com/emersion/go-sasl"
-)
-
-var (
-	ErrAuthFailed = &SMTPError{
-		Code:         535,
-		EnhancedCode: EnhancedCode{5, 7, 8},
-		Message:      "Authentication failed",
-	}
-	ErrAuthRequired = &SMTPError{
-		Code:         502,
-		EnhancedCode: EnhancedCode{5, 7, 0},
-		Message:      "Please authenticate first",
-	}
-	ErrAuthUnsupported = &SMTPError{
-		Code:         502,
-		EnhancedCode: EnhancedCode{5, 7, 0},
-		Message:      "Authentication not supported",
-	}
-	ErrAuthUnknownMechanism = &SMTPError{
-		Code:         504,
-		EnhancedCode: EnhancedCode{5, 7, 4},
-		Message:      "Unsupported authentication mechanism",
-	}
+	"github.com/uponusolutions/go-smtp"
 )
 
 // A SMTP server backend.
@@ -56,9 +34,9 @@ type Session interface {
 	Logout() error
 
 	// Set return path for currently processed message.
-	Mail(from string, opts *MailOptions) error
+	Mail(from string, opts *smtp.MailOptions) error
 	// Add recipient for currently processed message.
-	Rcpt(to string, opts *RcptOptions) error
+	Rcpt(to string, opts *smtp.RcptOptions) error
 	// Set currently processed message contents and send it.
 	//
 	// r must be consumed before Data returns.

@@ -1,8 +1,5 @@
-module github.com/UPONU-GmbH/go-smtp
+module github.com/uponusolutions/go-smtp
 
-require (
-	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21
-	gopkg.in/textproto.v0 v0.0.0-20221008000000-eebe43f979c0
-)
+require github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 
-go 1.13
+go 1.22.5

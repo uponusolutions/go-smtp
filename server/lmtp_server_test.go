@@ -1,4 +1,4 @@
-package smtp_test
+package server_test
 
 import (
 	"bufio"
@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/UPONU-GmbH/go-smtp"
+	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/server"
 )
 
-func testServerGreetedLMTP(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *smtp.Server, c net.Conn, scanner *bufio.Scanner) {
+func testServerGreetedLMTP(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
 	be, s, c, scanner = testServer(t, fn...)
 
 	scanner.Scan()
@@ -55,7 +56,7 @@ func sendLHLO(t *testing.T, scanner *bufio.Scanner, c io.Writer) {
 }
 
 func TestServer_LMTP(t *testing.T) {
-	be, s, c, scanner := testServerGreetedLMTP(t, func(s *smtp.Server) {
+	be, s, c, scanner := testServerGreetedLMTP(t, func(s *server.Server) {
 		s.LMTP = true
 		be := s.Backend.(*backend)
 		be.implementLMTPData = true
@@ -92,7 +93,7 @@ func TestServer_LMTP_Early(t *testing.T) {
 
 	lmtpStatusSync := make(chan struct{})
 
-	be, s, c, scanner := testServerGreetedLMTP(t, func(s *smtp.Server) {
+	be, s, c, scanner := testServerGreetedLMTP(t, func(s *server.Server) {
 		s.LMTP = true
 		be := s.Backend.(*backend)
 		be.implementLMTPData = true
@@ -136,7 +137,7 @@ func TestServer_LMTP_Expand(t *testing.T) {
 	// correctly expands results if backend doesn't
 	// implement LMTPSession.
 
-	be, s, c, scanner := testServerGreetedLMTP(t, func(s *smtp.Server) {
+	be, s, c, scanner := testServerGreetedLMTP(t, func(s *server.Server) {
 		s.LMTP = true
 	})
 	defer s.Close()
@@ -159,7 +160,7 @@ func TestServer_LMTP_Expand(t *testing.T) {
 }
 
 func TestServer_LMTP_DuplicatedRcpt(t *testing.T) {
-	be, s, c, scanner := testServerGreetedLMTP(t, func(s *smtp.Server) {
+	be, s, c, scanner := testServerGreetedLMTP(t, func(s *server.Server) {
 		s.LMTP = true
 		be := s.Backend.(*backend)
 		be.implementLMTPData = true
@@ -167,9 +168,9 @@ func TestServer_LMTP_DuplicatedRcpt(t *testing.T) {
 			addr string
 			err  error
 		}{
-			{"root@gchq.gov.uk", &smtp.SMTPError{Code: 555}},
+			{"root@gchq.gov.uk", &smtp.Smtp{Code: 555}},
 			{"root@bnd.bund.de", nil},
-			{"root@gchq.gov.uk", &smtp.SMTPError{Code: 556}},
+			{"root@gchq.gov.uk", &smtp.Smtp{Code: 556}},
 		}
 	})
 	defer s.Close()

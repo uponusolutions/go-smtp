@@ -1,4 +1,4 @@
-package smtp_test
+package server_test
 
 import (
 	"errors"
@@ -6,15 +6,16 @@ import (
 	"log"
 	"time"
 
-	"github.com/UPONU-GmbH/go-smtp"
 	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/server"
 )
 
 // The Backend implements SMTP server methods.
 type Backend struct{}
 
 // NewSession is called after client greeting (EHLO, HELO).
-func (bkd *Backend) NewSession(c *smtp.Conn) (smtp.Session, error) {
+func (bkd *Backend) NewSession(c *server.Conn) (server.Session, error) {
 	return &Session{}, nil
 }
 
@@ -78,7 +79,7 @@ func (s *Session) Logout() error {
 func ExampleServer() {
 	be := &Backend{}
 
-	s := smtp.NewServer(be)
+	s := server.NewServer(be)
 
 	s.Addr = "localhost:1025"
 	s.Domain = "localhost"
