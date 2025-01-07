@@ -168,9 +168,9 @@ func TestServer_LMTP_DuplicatedRcpt(t *testing.T) {
 			addr string
 			err  error
 		}{
-			{"root@gchq.gov.uk", &smtp.Smtp{Code: 555}},
+			{"root@gchq.gov.uk", &smtp.SMTPError{Code: 555}},
 			{"root@bnd.bund.de", nil},
-			{"root@gchq.gov.uk", &smtp.Smtp{Code: 556}},
+			{"root@gchq.gov.uk", &smtp.SMTPError{Code: 556}},
 		}
 	})
 	defer s.Close()

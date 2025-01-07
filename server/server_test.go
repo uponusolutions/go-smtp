@@ -1133,7 +1133,7 @@ func TestServer_Chunking_EarlyError(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 
-	be.dataErr = &smtp.Smtp{
+	be.dataErr = &smtp.SMTPError{
 		Code:         555,
 		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
 		Message:      "I failed",
@@ -1164,7 +1164,7 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 
-	be.dataErr = &smtp.Smtp{
+	be.dataErr = &smtp.SMTPError{
 		Code:         555,
 		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
 		Message:      "I failed",

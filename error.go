@@ -6,9 +6,9 @@ import (
 
 type EnhancedCode [3]int
 
-// Smtp specifies the error code, enhanced error code (if any) and
+// SMTPError specifies the error code, enhanced error code (if any) and
 // message returned by the server.
-type Smtp struct {
+type SMTPError struct {
 	Code         int
 	EnhancedCode EnhancedCode
 	Message      string
@@ -27,7 +27,7 @@ var NoEnhancedCode = EnhancedCode{-1, -1, -1}
 // be used (X is derived from error code).
 var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
 
-func (err *Smtp) Error() string {
+func (err *SMTPError) Error() string {
 	s := fmt.Sprintf("SMTP error %03d", err.Code)
 	if err.Message != "" {
 		s += ": " + err.Message
@@ -35,32 +35,32 @@ func (err *Smtp) Error() string {
 	return s
 }
 
-func (err *Smtp) Temporary() bool {
+func (err *SMTPError) Temporary() bool {
 	return err.Code/100 == 4
 }
 
 var (
-	ErrDataTooLarge = &Smtp{
+	ErrDataTooLarge = &SMTPError{
 		Code:         552,
 		EnhancedCode: EnhancedCode{5, 3, 4},
 		Message:      "Maximum message size exceeded",
 	}
-	ErrAuthFailed = &Smtp{
+	ErrAuthFailed = &SMTPError{
 		Code:         535,
 		EnhancedCode: EnhancedCode{5, 7, 8},
 		Message:      "Authentication failed",
 	}
-	ErrAuthRequired = &Smtp{
+	ErrAuthRequired = &SMTPError{
 		Code:         502,
 		EnhancedCode: EnhancedCode{5, 7, 0},
 		Message:      "Please authenticate first",
 	}
-	ErrAuthUnsupported = &Smtp{
+	ErrAuthUnsupported = &SMTPError{
 		Code:         502,
 		EnhancedCode: EnhancedCode{5, 7, 0},
 		Message:      "Authentication not supported",
 	}
-	ErrAuthUnknownMechanism = &Smtp{
+	ErrAuthUnknownMechanism = &SMTPError{
 		Code:         504,
 		EnhancedCode: EnhancedCode{5, 7, 4},
 		Message:      "Unsupported authentication mechanism",

@@ -981,7 +981,7 @@ func (c *Conn) handleBdat(arg string) {
 // send another BDAT command and instead closes connection or issues RSET command.
 var ErrDataReset = errors.New("smtp: message transmission aborted")
 
-var errPanic = &smtp.Smtp{
+var errPanic = &smtp.SMTPError{
 	Code:         421,
 	EnhancedCode: smtp.EnhancedCode{4, 0, 0},
 	Message:      "Internal server error",
@@ -1079,7 +1079,7 @@ func (c *Conn) handleDataLMTP() {
 		go func() {
 			defer func() {
 				if err := recover(); err != nil {
-					status.fillRemaining(&smtp.Smtp{
+					status.fillRemaining(&smtp.SMTPError{
 						Code:         421,
 						EnhancedCode: smtp.EnhancedCode{4, 0, 0},
 						Message:      "Internal server error",
@@ -1111,7 +1111,7 @@ func (c *Conn) handleDataLMTP() {
 
 func dataErrorToStatus(err error) (code int, enchCode smtp.EnhancedCode, msg string) {
 	if err != nil {
-		if smtperr, ok := err.(*smtp.Smtp); ok {
+		if smtperr, ok := err.(*smtp.SMTPError); ok {
 			return smtperr.Code, smtperr.EnhancedCode, smtperr.Message
 		} else {
 			return 554, smtp.EnhancedCode{5, 0, 0}, "Error: transaction failed: " + err.Error()
@@ -1163,7 +1163,7 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string
 }
 
 func (c *Conn) writeError(code int, enhCode smtp.EnhancedCode, err error) {
-	if smtpErr, ok := err.(*smtp.Smtp); ok {
+	if smtpErr, ok := err.(*smtp.SMTPError); ok {
 		c.writeResponse(smtpErr.Code, smtpErr.EnhancedCode, smtpErr.Message)
 	} else {
 		c.writeResponse(code, enhCode, err.Error())

@@ -214,7 +214,7 @@ func (c *Client) hello() error {
 
 	c.didHello = true
 	if err := c.ehlo(); err != nil {
-		var smtp *smtp.Smtp
+		var smtp *smtp.SMTPError
 		if errors.As(err, &smtp) && (smtp.Code == 500 || smtp.Code == 502) {
 			// The server doesn't support EHLO, fallback to HELO
 			c.helloError = c.helo()
@@ -543,7 +543,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 type dataCloser struct {
 	c *Client
 	io.WriteCloser
-	statusCb func(rcpt string, status *smtp.Smtp)
+	statusCb func(rcpt string, status *smtp.SMTPError)
 	closed   bool
 }
 
@@ -564,7 +564,7 @@ func (d *dataCloser) Close() error {
 		for expectedResponses > 0 {
 			rcpt := d.c.rcpts[len(d.c.rcpts)-expectedResponses]
 			if _, _, err := d.c.readResponse(250); err != nil {
-				if smtpErr, ok := err.(*smtp.Smtp); ok {
+				if smtpErr, ok := err.(*smtp.SMTPError); ok {
 					if d.statusCb != nil {
 						d.statusCb(rcpt, smtpErr)
 					}
@@ -609,7 +609,7 @@ func (c *Client) Data() (io.WriteCloser, error) {
 // callback and instead will be returned by the Close method of io.WriteCloser.
 // Callback will be called for each successfull Rcpt call done before in the
 // same order.
-func (c *Client) LMTPData(statusCb func(rcpt string, status *smtp.Smtp)) (io.WriteCloser, error) {
+func (c *Client) LMTPData(statusCb func(rcpt string, status *smtp.SMTPError)) (io.WriteCloser, error) {
 	if !c.lmtp {
 		return nil, errors.New("smtp: not a LMTP client")
 	}
@@ -840,8 +840,8 @@ func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
 
 // toSMTPErr converts textproto.Error into smtp, parsing
 // enhanced status code if it is present.
-func toSMTPErr(protoErr *textproto.Error) *smtp.Smtp {
-	smtpErr := &smtp.Smtp{
+func toSMTPErr(protoErr *textproto.Error) *smtp.SMTPError {
+	smtpErr := &smtp.SMTPError{
 		Code:    protoErr.Code,
 		Message: protoErr.Msg,
 	}
