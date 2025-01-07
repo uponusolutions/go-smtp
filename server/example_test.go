@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/emersion/go-sasl"
-	"github.com/uponusolutions/go-smtp/client"
+	"github.com/uponusolutions/go-smtp/internal/client"
 )
 
 func ExampleDial() {
