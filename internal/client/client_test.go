@@ -21,7 +21,6 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 
 	"github.com/emersion/go-sasl"
-	"github.com/uponusolutions/go-smtp/internal/linelimit"
 )
 
 // Don't send a trailing space on AUTH command when there's no initial response:
@@ -63,7 +62,7 @@ func TestBasic(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := faker.NewConn(server, cmdbuf)
 
-	c := &Client{text: textsmtp.NewConn(fake), conn: fake, localName: "localhost"}
+	c := &Client{text: textsmtp.NewConn(fake, 4096, 4096, 0), conn: fake, localName: "localhost"}
 
 	if err := c.helo(); err != nil {
 		t.Fatalf("HELO failed: %s", err)
@@ -244,14 +243,14 @@ func TestClient_TooLongLine(t *testing.T) {
 	c := NewClient(fake)
 
 	err := c.Mail("whatever", nil)
-	if err != linelimit.ErrTooLongLine {
+	if err != textsmtp.ErrTooLongLine {
 		t.Fatal("MAIL succeeded or returned a different error:", err)
 	}
 
 	// ErrTooLongLine is "sticky" since the connection is in broken state and
 	// the only reasonable way to recover is to close it.
 	err = c.Mail("whatever", nil)
-	if err != linelimit.ErrTooLongLine {
+	if err != textsmtp.ErrTooLongLine {
 		t.Fatal("Second MAIL succeeded or returned a different error:", err)
 	}
 }
@@ -770,7 +769,7 @@ func TestLMTP(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
 
-	c := &Client{text: textsmtp.NewConn(fake), conn: fake, lmtp: true}
+	c := &Client{text: textsmtp.NewConn(fake, 4096, 4096, 0), conn: fake, lmtp: true}
 
 	if err := c.Hello("localhost"); err != nil {
 		t.Fatalf("LHLO failed: %s", err)
@@ -855,7 +854,7 @@ func TestLMTPData(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
 
-	c := &Client{text: textsmtp.NewConn(fake), conn: fake, lmtp: true}
+	c := &Client{text: textsmtp.NewConn(fake, 4096, 4096, 0), conn: fake, lmtp: true}
 
 	if err := c.Hello("localhost"); err != nil {
 		t.Fatalf("LHLO failed: %s", err)

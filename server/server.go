@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/linelimit"
 	"github.com/uponusolutions/go-smtp/internal/parse"
+	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
 var ErrServerClosed = errors.New("smtp: server already closed")
@@ -39,6 +39,8 @@ type Server struct {
 	MaxRecipients     int
 	MaxMessageBytes   int64
 	MaxLineLength     int
+	ReaderSize        int
+	WriterSize        int
 	AllowInsecureAuth bool
 	Debug             io.Writer
 	ErrorLog          Logger
@@ -80,7 +82,9 @@ type Server struct {
 func NewServer(be Backend) *Server {
 	return &Server{
 		// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
-		MaxLineLength: 2000,
+		MaxLineLength: 4096,
+		ReaderSize:    4096,
+		WriterSize:    4096,
 
 		Backend:  be,
 		done:     make(chan struct{}, 1),
@@ -175,7 +179,7 @@ func (s *Server) handleConn(c *Conn) error {
 			if err == io.EOF || errors.Is(err, net.ErrClosed) {
 				return nil
 			}
-			if err == linelimit.ErrTooLongLine {
+			if err == textsmtp.ErrTooLongLine {
 				c.writeResponse(500, smtp.EnhancedCode{5, 4, 0}, "Too long line, closing connection")
 				return nil
 			}

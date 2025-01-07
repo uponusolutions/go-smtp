@@ -2,6 +2,7 @@ package textsmtp
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -10,19 +11,38 @@ import (
 )
 
 type Conn struct {
-	R    *bufio.Reader
-	W    *bufio.Writer
-	conn io.ReadWriteCloser
+	R                  *bufio.Reader
+	W                  *bufio.Writer
+	conn               io.ReadWriteCloser
+	maxLineLength      int
+	lineLengthExceeded bool
 	textproto.Pipeline
 }
 
-func NewConn(conn io.ReadWriteCloser) *Conn {
+func NewConn(
+	conn io.ReadWriteCloser,
+	readerSize int,
+	writerSize int,
+	maxLineLength int,
+) *Conn {
+	if readerSize == 0 {
+		readerSize = 4096 // default
+	}
+
+	if writerSize == 0 {
+		writerSize = 4096 // default
+	}
+
 	return &Conn{
-		R:    bufio.NewReader(conn),
-		W:    bufio.NewWriter(conn),
-		conn: conn,
+		R:                  bufio.NewReaderSize(conn, readerSize),
+		W:                  bufio.NewWriterSize(conn, writerSize),
+		conn:               conn,
+		maxLineLength:      maxLineLength,
+		lineLengthExceeded: false,
 	}
 }
+
+var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
 
 // Cmd is a convenience method that sends a command after
 // waiting its turn in the pipeline. The command text is the
@@ -161,24 +181,24 @@ func (t *Conn) ReadLine() (string, error) {
 	return string(line), err
 }
 
-// ReadLineBytes is like ReadLine but returns a []byte instead of a string.
-func (t *Conn) ReadLineBytes() ([]byte, error) {
-	line, err := t.readLineSlice()
-	if line != nil {
-		buf := make([]byte, len(line))
-		copy(buf, line)
-		line = buf
-	}
-	return line, err
-}
-
 func (t *Conn) readLineSlice() ([]byte, error) {
+	// If the line limit was exceeded once, the connection shouldn't be used anymore.
+	if t.lineLengthExceeded {
+		return nil, ErrTooLongLine
+	}
+
 	var line []byte
 	for {
 		l, more, err := t.R.ReadLine()
 		if err != nil {
 			return nil, err
 		}
+
+		if t.maxLineLength > 0 && len(l)+len(line) > t.maxLineLength {
+			t.lineLengthExceeded = true
+			return nil, ErrTooLongLine
+		}
+
 		// Avoid the copy if the first call produced a full line.
 		if line == nil && !more {
 			return l, nil

@@ -14,7 +14,7 @@ import (
 )
 
 func reader(in string, out *bytes.Buffer) *Conn {
-	return NewConn(faker.NewConn(in, out))
+	return NewConn(faker.NewConn(in, out), 4096, 4096, 0)
 }
 
 func TestPrintfLine(t *testing.T) {

@@ -18,7 +18,6 @@ import (
 
 	"github.com/emersion/go-sasl"
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/linelimit"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
@@ -152,30 +151,26 @@ func NewClientLMTP(conn net.Conn) *Client {
 
 // setConn sets the underlying network connection for the client.
 func (c *Client) setConn(conn net.Conn) {
+	// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
+	maxLineLength := 2000
+	readerSize := 4096
+	writerSize := 4096
+
 	c.conn = conn
 
-	var r io.Reader = conn
-	var w io.Writer = conn
-
-	r = &linelimit.Reader{
-		R: conn,
-		// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
-		LineLimit: 2000,
+	if c.Debug != nil {
+		c.text = textsmtp.NewConn(struct {
+			io.Reader
+			io.Writer
+			io.Closer
+		}{
+			io.TeeReader(c.conn, c.Debug),
+			io.MultiWriter(c.conn, c.Debug),
+			c.conn,
+		}, readerSize, writerSize, maxLineLength)
 	}
 
-	r = io.TeeReader(r, clientDebugWriter{c})
-	w = io.MultiWriter(w, clientDebugWriter{c})
-
-	rwc := struct {
-		io.Reader
-		io.Writer
-		io.Closer
-	}{
-		Reader: r,
-		Writer: w,
-		Closer: conn,
-	}
-	c.text = textsmtp.NewConn(rwc)
+	c.text = textsmtp.NewConn(conn, readerSize, writerSize, maxLineLength)
 }
 
 // Close closes the connection.
@@ -866,17 +861,6 @@ func toSMTPErr(protoErr *textproto.Error) *smtp.SMTPError {
 	smtpErr.EnhancedCode = enchCode
 	smtpErr.Message = msg
 	return smtpErr
-}
-
-type clientDebugWriter struct {
-	c *Client
-}
-
-func (cdw clientDebugWriter) Write(b []byte) (int, error) {
-	if cdw.c.Debug == nil {
-		return len(b), nil
-	}
-	return cdw.c.Debug.Write(b)
 }
 
 // validateLine checks to see if a line has CR or LF.

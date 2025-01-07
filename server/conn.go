@@ -16,7 +16,6 @@ import (
 
 	"github.com/emersion/go-sasl"
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/linelimit"
 	"github.com/uponusolutions/go-smtp/internal/parse"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
@@ -38,11 +37,10 @@ type Conn struct {
 	locker     sync.Mutex
 	binarymime bool
 
-	lineLimitReader *linelimit.Reader
-	bdatPipe        *io.PipeWriter
-	bdatStatus      *statusCollector // used for BDAT on LMTP
-	dataResult      chan error
-	bytesReceived   int64 // counts total size of chunks when BDAT is used
+	bdatPipe      *io.PipeWriter
+	bdatStatus    *statusCollector // used for BDAT on LMTP
+	dataResult    chan error
+	bytesReceived int64 // counts total size of chunks when BDAT is used
 
 	fromReceived bool
 	recipients   []string
@@ -60,33 +58,19 @@ func newConn(c net.Conn, s *Server) *Conn {
 }
 
 func (c *Conn) init() {
-	c.lineLimitReader = &linelimit.Reader{
-		R:         c.conn,
-		LineLimit: c.server.MaxLineLength,
-	}
-	rwc := struct {
-		io.Reader
-		io.Writer
-		io.Closer
-	}{
-		Reader: c.lineLimitReader,
-		Writer: c.conn,
-		Closer: c.conn,
-	}
-
 	if c.server.Debug != nil {
-		rwc = struct {
+		c.text = textsmtp.NewConn(struct {
 			io.Reader
 			io.Writer
 			io.Closer
 		}{
-			io.TeeReader(rwc.Reader, c.server.Debug),
-			io.MultiWriter(rwc.Writer, c.server.Debug),
-			rwc.Closer,
-		}
+			io.TeeReader(c.conn, c.server.Debug),
+			io.MultiWriter(c.conn, c.server.Debug),
+			c.conn,
+		}, c.server.ReaderSize, c.server.WriterSize, c.server.MaxLineLength)
 	}
 
-	c.text = textsmtp.NewConn(rwc)
+	c.text = textsmtp.NewConn(c.conn, c.server.ReaderSize, c.server.WriterSize, c.server.MaxLineLength)
 }
 
 // Commands are dispatched to the appropriate handler functions.
@@ -927,8 +911,6 @@ func (c *Conn) handleBdat(arg string) {
 		}()
 	}
 
-	c.lineLimitReader.LineLimit = 0
-
 	chunk := io.LimitReader(c.text.R, int64(size))
 	_, err = io.Copy(c.bdatPipe, chunk)
 	if err != nil {
@@ -943,15 +925,12 @@ func (c *Conn) handleBdat(arg string) {
 		}
 
 		c.reset()
-		c.lineLimitReader.LineLimit = c.server.MaxLineLength
 		return
 	}
 
 	c.bytesReceived += int64(size)
 
 	if last {
-		c.lineLimitReader.LineLimit = c.server.MaxLineLength
-
 		c.bdatPipe.Close()
 
 		err := <-c.dataResult

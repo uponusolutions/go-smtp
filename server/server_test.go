@@ -866,7 +866,7 @@ func TestServer_tooLongLine(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t)
 	defer s.Close()
 
-	io.WriteString(c, "MAIL FROM:<root@nsa.gov> "+strings.Repeat("A", 2000))
+	io.WriteString(c, "MAIL FROM:<root@nsa.gov> "+strings.Repeat("A", 2*4096))
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "500 ") {
 		t.Fatal("Invalid response, expected an error but got:", scanner.Text())
