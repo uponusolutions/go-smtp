@@ -171,7 +171,7 @@ func (c *Client) Auth(a sasl.Client) error {
 	return c.c.Auth(a)
 }
 
-func (c *Client) prepare(from string, rcpt []string) (io.WriteCloser, error) {
+func (c *Client) prepare(from string, rcpt []string) (*client.DataCloser, error) {
 	if c.c == nil {
 		return nil, errors.New("client is nil or not connected")
 	}
@@ -203,25 +203,35 @@ func (c *Client) prepare(from string, rcpt []string) (io.WriteCloser, error) {
 	return w, nil
 }
 
+// SendMailWithResponse send a mail and returns the response code and message.
+// Client must be connected to server.
+func (c *Client) SendMailWithResponse(in io.Reader, from string, rcpt []string) (code int, msg string, err error) {
+	return c.sendMail(in, from, rcpt)
+}
+
 // SendMail send a mail.
 // Client must be connected to server.
 func (c *Client) SendMail(in io.Reader, from string, rcpt []string) error {
+	_, _, err := c.sendMail(in, from, rcpt)
+	return err
+}
+
+func (c *Client) sendMail(in io.Reader, from string, rcpt []string) (code int, msg string, err error) {
 	w, err := c.prepare(from, rcpt)
 	if err != nil {
-		return err
+		return 0, "", err
 	}
 
 	_, err = io.Copy(w, in)
 	if err != nil {
-		return err
+		return 0, "", err
 	}
 
-	return w.Close()
+	return w.CloseWithResponse()
 }
 
 // Send implements enmime.Sender interface.
 func (c *Client) Send(reversePath string, recipients []string, msg []byte) error {
-
 	w, err := c.prepare(reversePath, recipients)
 	if err != nil {
 		return err

@@ -535,14 +535,16 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-type dataCloser struct {
+// DataCloser implement an io.WriteCloser with the additional
+// CloseWithResponse function.
+type DataCloser struct {
 	c *Client
 	io.WriteCloser
 	statusCb func(rcpt string, status *smtp.SMTPError)
 	closed   bool
 }
 
-func (d *dataCloser) CloseWithResponse() (code int, msg string, err error) {
+func (d *DataCloser) CloseWithResponse() (code int, msg string, err error) {
 	if d.closed {
 		return 0, "", fmt.Errorf("smtp: data writer closed twice")
 	}
@@ -579,7 +581,7 @@ func (d *dataCloser) CloseWithResponse() (code int, msg string, err error) {
 	return code, msg, err
 }
 
-func (d *dataCloser) Close() error {
+func (d *DataCloser) Close() error {
 	_, _, err := d.CloseWithResponse()
 	return err
 }
@@ -590,12 +592,12 @@ func (d *dataCloser) Close() error {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Data() (io.WriteCloser, error) {
+func (c *Client) Data() (*DataCloser, error) {
 	_, _, err := c.cmd(354, "DATA")
 	if err != nil {
 		return nil, err
 	}
-	return &dataCloser{c: c, WriteCloser: textsmtp.NewDotWriter(c.text.W)}, nil
+	return &DataCloser{c: c, WriteCloser: textsmtp.NewDotWriter(c.text.W)}, nil
 }
 
 // LMTPData is the LMTP-specific version of the Data method. It accepts a callback
@@ -603,10 +605,10 @@ func (c *Client) Data() (io.WriteCloser, error) {
 //
 // Status callback will receive a smtp argument for each negative server
 // reply and nil for each positive reply. I/O errors will not be reported using
-// callback and instead will be returned by the Close method of io.WriteCloser.
+// callback and instead will be returned by the Close method of DataCloser.
 // Callback will be called for each successfull Rcpt call done before in the
 // same order.
-func (c *Client) LMTPData(statusCb func(rcpt string, status *smtp.SMTPError)) (io.WriteCloser, error) {
+func (c *Client) LMTPData(statusCb func(rcpt string, status *smtp.SMTPError)) (*DataCloser, error) {
 	if !c.lmtp {
 		return nil, errors.New("smtp: not a LMTP client")
 	}
@@ -615,7 +617,7 @@ func (c *Client) LMTPData(statusCb func(rcpt string, status *smtp.SMTPError)) (i
 	if err != nil {
 		return nil, err
 	}
-	return &dataCloser{c: c, WriteCloser: textsmtp.NewDotWriter(c.text.W), statusCb: statusCb}, nil
+	return &DataCloser{c: c, WriteCloser: textsmtp.NewDotWriter(c.text.W), statusCb: statusCb}, nil
 }
 
 // SendMail will use an existing connection to send an email from
