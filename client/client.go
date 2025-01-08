@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -232,15 +233,6 @@ func (c *Client) sendMail(in io.Reader, from string, rcpt []string) (code int, m
 
 // Send implements enmime.Sender interface.
 func (c *Client) Send(reversePath string, recipients []string, msg []byte) error {
-	w, err := c.prepare(reversePath, recipients)
-	if err != nil {
-		return err
-	}
-
-	_, err = w.Write(msg)
-	if err != nil {
-		return err
-	}
-
-	return w.Close()
+	_, _, err := c.sendMail(bytes.NewBuffer(msg), reversePath, recipients)
+	return err
 }
