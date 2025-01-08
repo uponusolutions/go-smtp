@@ -163,6 +163,14 @@ func (c *Client) Close() error {
 	return c.Quit()
 }
 
+// Auth authenticates a client using the provided authentication mechanism.
+// Only servers that advertise the AUTH extension support this function.
+//
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Auth(a sasl.Client) error {
+	return c.c.Auth(a)
+}
+
 func (c *Client) prepare(from string, rcpt []string) (io.WriteCloser, error) {
 	if c.c == nil {
 		return nil, errors.New("client is nil or not connected")
