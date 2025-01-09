@@ -36,9 +36,9 @@ func (s *session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-func (s *session) Data(r func() io.Reader) error {
+func (s *session) Data(r func() io.Reader, _ string, _ []string) (string, error) {
 	r()
-	return nil
+	return "", nil
 }
 
 func (s *session) Reset() {}

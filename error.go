@@ -48,15 +48,24 @@ func (err *SMTPStatus) Temporary() bool {
 }
 
 var (
-	ErrBadCommand = &SMTPStatus{
-		Code:         502,
-		EnhancedCode: EnhancedCode{5, 7, 0},
-		Message:      "Bad command",
+	// ErrDataReset is returned by Reader pased to Data function if client does not
+	// send another BDAT command and instead issues RSET command.
+	Reset = &SMTPStatus{
+		Code:         250,
+		EnhancedCode: EnhancedCode{2, 0, 0},
+		Message:      "Session reset",
 	}
-	ErrBadSyntax = &SMTPStatus{
-		Code:         500,
-		EnhancedCode: EnhancedCode{5, 5, 2},
-		Message:      "Bad syntax",
+	// ErrDataReset is returned by Reader pased to Data function if client does not
+	// send another BDAT command and instead issues QUIT command.
+	Quit = &SMTPStatus{
+		Code:         221,
+		EnhancedCode: EnhancedCode{2, 0, 0},
+		Message:      "Bye",
+	}
+	ErrConnection = &SMTPStatus{
+		Code:         421,
+		EnhancedCode: EnhancedCode{4, 4, 0},
+		Message:      "Connection error, sorry",
 	}
 	ErrDataTooLarge = &SMTPStatus{
 		Code:         552,

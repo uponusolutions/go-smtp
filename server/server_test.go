@@ -107,7 +107,7 @@ func (s *session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-func (s *session) Data(r func() io.Reader) error {
+func (s *session) Data(r func() io.Reader, _ string, _ []string) (string, error) {
 	if s.backend.dataErr != nil {
 
 		if s.backend.dataErrOffset != 0 {
@@ -118,14 +118,14 @@ func (s *session) Data(r func() io.Reader) error {
 		if s.backend.dataErrors != nil {
 			s.backend.dataErrors <- err
 		}
-		return err
+		return "", err
 	}
 
 	if b, err := io.ReadAll(r()); err != nil {
 		if s.backend.dataErrors != nil {
 			s.backend.dataErrors <- err
 		}
-		return err
+		return "", err
 	} else {
 		s.msg.Data = b
 		if s.anonymous {
@@ -137,7 +137,7 @@ func (s *session) Data(r func() io.Reader) error {
 			s.backend.dataErrors <- nil
 		}
 	}
-	return nil
+	return "", nil
 }
 
 type failingListener struct {
@@ -1003,7 +1003,62 @@ func TestServer_Chunking_Reset(t *testing.T) {
 		t.Fatal("Invalid BDAT response:", scanner.Text())
 	}
 
-	if err := <-be.dataErrors; err != server.ErrDataReset {
+	if err := <-be.dataErrors; err != smtp.Reset {
+		t.Fatal("Backend received a different error:", err)
+	}
+
+	io.WriteString(c, "MAIL FROM: root@nsa.gov\r\n")
+	scanner.Scan()
+	io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanner.Scan()
+	io.WriteString(c, "DATA\r\n")
+	scanner.Scan()
+	io.WriteString(c, "Hey <3\r\n")
+	io.WriteString(c, ".\r\n")
+	scanner.Scan()
+
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	if len(be.messages) != 1 || len(be.anonmsgs) != 0 {
+		t.Fatal("Invalid number of sent messages:", be.messages, be.anonmsgs)
+	}
+}
+
+func TestServer_Chunking_Close(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t)
+	defer s.Close()
+	defer c.Close()
+	be.dataErrors = make(chan error, 10)
+
+	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid MAIL response:", scanner.Text())
+	}
+
+	io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RCPT response:", scanner.Text())
+	}
+
+	io.WriteString(c, "BDAT 8\r\n")
+	io.WriteString(c, "Hey <3\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid BDAT response:", scanner.Text())
+	}
+
+	// Client changed its mind... Note, in this case Data method error is discarded and not returned to the cilent.
+	io.WriteString(c, "QUIT\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "221 ") {
+		t.Fatal("Invalid BDAT response:", scanner.Text())
+	}
+
+	if err := <-be.dataErrors; err != smtp.Quit {
 		t.Fatal("Backend received a different error:", err)
 	}
 }
@@ -1032,7 +1087,7 @@ func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
 	// Bye!
 	c.Close()
 
-	if err := <-be.dataErrors; err != server.ErrDataReset {
+	if err := <-be.dataErrors; err != smtp.ErrConnection {
 		t.Fatal("Backend received a different error:", err)
 	}
 }
@@ -1099,13 +1154,19 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 		t.Fatal("Invalid BDAT response:", scanner.Text())
 	}
 
-	// See that command stream state is not corrupted e.g. server is still not
-	// waiting for remaining chunk octets.
-	io.WriteString(c, "NOOP\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Invalid RCPT response:", scanner.Text())
+	if scanner.Scan() {
+		t.Fatal("connection is still open")
 	}
+
+	/*
+		// See that command stream state is not corrupted e.g. server is still not
+		// waiting for remaining chunk octets.
+		io.WriteString(c, "NOOP\r\n")
+		scanner.Scan()
+		if !strings.HasPrefix(scanner.Text(), "250 ") {
+			t.Fatal("Invalid RCPT response:", scanner.Text())
+		}
+	*/
 }
 
 func TestServer_Chunking_tooLongMessage(t *testing.T) {

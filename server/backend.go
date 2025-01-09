@@ -40,7 +40,7 @@ type Session interface {
 	// Set currently processed message contents and send it.
 	//
 	// r must be consumed before Data returns.
-	Data(r func() io.Reader) error
+	Data(r func() io.Reader, sender string, recipients []string) (string, error)
 }
 
 // StatusCollector allows a backend to provide per-recipient status
