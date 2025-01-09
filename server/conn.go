@@ -20,9 +20,6 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
-// Number of errors we'll tolerate per connection before closing. Defaults to 3.
-const errThreshold = 3
-
 type Conn struct {
 	conn net.Conn
 
@@ -30,21 +27,17 @@ type Conn struct {
 	server *Server
 	helo   string
 
-	// Number of errors witnessed on this connection
-	errCount int
-
 	session    Session
 	locker     sync.Mutex
 	binarymime bool
 
 	bdatPipe      *io.PipeWriter
-	bdatStatus    *statusCollector // used for BDAT on LMTP
 	dataResult    chan error
 	bytesReceived int64 // counts total size of chunks when BDAT is used
 
-	fromReceived bool
-	recipients   []string
-	didAuth      bool
+	from       *string
+	recipients []string
+	didAuth    bool
 }
 
 func newConn(c net.Conn, s *Server) *Conn {
@@ -73,23 +66,18 @@ func (c *Conn) init() {
 	c.text = textsmtp.NewConn(c.conn, c.server.ReaderSize, c.server.WriterSize, c.server.MaxLineLength)
 }
 
+func (c *Conn) nextCommand() (string, string, error) {
+	line, err := c.readLine()
+	if err != nil {
+		return "", "", err
+	}
+	return parse.Cmd(line)
+}
+
 // Commands are dispatched to the appropriate handler functions.
-func (c *Conn) handle(cmd string, arg string) {
-	// If panic happens during command handling - send 421 response
-	// and close connection.
-	defer func() {
-		if err := recover(); err != nil {
-			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
-			c.Close()
-
-			stack := debug.Stack()
-			c.server.ErrorLog.Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
-		}
-	}()
-
+func (c *Conn) handle(cmd string, arg string) error {
 	if cmd == "" {
-		c.protocolError(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
-		return
+		return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
 	}
 
 	cmd = strings.ToUpper(cmd)
@@ -100,19 +88,14 @@ func (c *Conn) handle(cmd string, arg string) {
 	case "HELO", "EHLO", "LHLO":
 		lmtp := cmd == "LHLO"
 		enhanced := lmtp || cmd == "EHLO"
-		if c.server.LMTP && !lmtp {
-			c.writeResponse(500, smtp.EnhancedCode{5, 5, 1}, "This is a LMTP server, use LHLO")
-			return
+		if lmtp {
+			return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 1}, "This is not a LMTP server")
 		}
-		if !c.server.LMTP && lmtp {
-			c.writeResponse(500, smtp.EnhancedCode{5, 5, 1}, "This is not a LMTP server")
-			return
-		}
-		c.handleGreet(enhanced, arg)
+		return c.handleGreet(enhanced, arg)
 	case "MAIL":
-		c.handleMail(arg)
+		return c.handleMail(arg)
 	case "RCPT":
-		c.handleRcpt(arg)
+		return c.handleRcpt(arg)
 	case "VRFY":
 		c.writeResponse(252, smtp.EnhancedCode{2, 5, 0}, "Cannot VRFY user, but will accept message")
 	case "NOOP":
@@ -121,20 +104,20 @@ func (c *Conn) handle(cmd string, arg string) {
 		c.reset()
 		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "Session reset")
 	case "BDAT":
-		c.handleBdat(arg)
+		return c.handleBdat(arg)
 	case "DATA":
-		c.handleData(arg)
+		return c.handleData(arg)
 	case "QUIT":
-		c.writeResponse(221, smtp.EnhancedCode{2, 0, 0}, "Bye")
-		c.Close()
+		return smtp.NewStatus(221, smtp.EnhancedCode{2, 0, 0}, "Bye")
 	case "AUTH":
-		c.handleAuth(arg)
+		return c.handleAuth(arg)
 	case "STARTTLS":
-		c.handleStartTLS()
+		return c.handleStartTLS()
 	default:
 		msg := fmt.Sprintf("Syntax errors, %v command unrecognized", cmd)
-		c.protocolError(500, smtp.EnhancedCode{5, 5, 2}, msg)
+		return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, msg)
 	}
+	return nil
 }
 
 func (c *Conn) Server() *Server {
@@ -193,24 +176,11 @@ func (c *Conn) authAllowed() bool {
 	return isTLS || c.server.AllowInsecureAuth
 }
 
-// protocolError writes errors responses and closes the connection once too many
-// have occurred.
-func (c *Conn) protocolError(code int, ec smtp.EnhancedCode, msg string) {
-	c.writeResponse(code, ec, msg)
-
-	c.errCount++
-	if c.errCount > errThreshold {
-		c.writeResponse(500, smtp.EnhancedCode{5, 5, 1}, "Too many errors. Quiting now")
-		c.Close()
-	}
-}
-
 // GREET state -> waiting for HELO
-func (c *Conn) handleGreet(enhanced bool, arg string) {
+func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	domain, err := parse.HelloArgument(arg)
 	if err != nil {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 2}, "Domain/address argument required for HELO")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Domain/address argument required for HELO")
 	}
 	// c.helo is populated before NewSession so
 	// NewSession can access it via Conn.Hostname.
@@ -225,8 +195,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) {
 		sess, err := c.server.Backend.NewSession(c)
 		if err != nil {
 			c.helo = ""
-			c.writeError(451, smtp.EnhancedCode{4, 0, 0}, err)
-			return
+			return c.writeError(451, smtp.EnhancedCode{4, 0, 0}, err)
 		}
 
 		c.setSession(sess)
@@ -234,7 +203,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) {
 
 	if !enhanced {
 		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Hello %s", domain))
-		return
+		return nil
 	}
 
 	caps := []string{
@@ -285,35 +254,58 @@ func (c *Conn) handleGreet(enhanced bool, arg string) {
 	args := []string{"Hello " + domain}
 	args = append(args, caps...)
 	c.writeResponse(250, smtp.NoEnhancedCode, args...)
+	return nil
+}
+
+func (c *Conn) handleError(err error) {
+	if err == io.EOF || errors.Is(err, net.ErrClosed) {
+		return
+	}
+
+	if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+		c.writeResponse(421, smtp.EnhancedCode{4, 4, 2}, "Idle timeout, bye bye")
+		return
+	}
+
+	if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
+		c.writeResponse(dataErrorToStatus(smtpErr))
+		return
+	}
+
+	if err == textsmtp.ErrTooLongLine {
+		c.writeResponse(500, smtp.EnhancedCode{5, 4, 0}, "Too long line, closing connection")
+		return
+	}
+
+	c.writeResponse(421, smtp.EnhancedCode{4, 4, 0}, "Connection error, sorry")
+	return
 }
 
 // READY state -> waiting for MAIL
-func (c *Conn) handleMail(arg string) {
+func (c *Conn) handleMail(arg string) error {
 	if c.helo == "" {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "Please introduce yourself first.")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Please introduce yourself first.")
 	}
 	if c.bdatPipe != nil {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "MAIL not allowed during message transfer")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "MAIL not allowed during message transfer")
+	}
+	if c.from != nil {
+		return smtp.NewStatus(503, smtp.EnhancedCode{5, 5, 1}, "Already received FROM:")
 	}
 
 	arg, ok := parse.CutPrefixFold(arg, "FROM:")
 	if !ok {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
 	}
 
 	p := parse.Parser{S: strings.TrimSpace(arg)}
 	from, err := p.ReversePath()
 	if err != nil {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
 	}
 	args, err := parse.Args(p.S)
 	if err != nil {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse MAIL ESMTP parameters")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse MAIL ESMTP parameters")
 	}
 
 	opts := &smtp.MailOptions{}
@@ -326,32 +318,27 @@ func (c *Conn) handleMail(arg string) {
 		case "SIZE":
 			size, err := strconv.ParseUint(value, 10, 32)
 			if err != nil {
-				c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse SIZE as an integer")
-				return
+				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse SIZE as an integer")
 			}
 
 			if c.server.MaxMessageBytes > 0 && int64(size) > c.server.MaxMessageBytes {
-				c.writeResponse(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
-				return
+				return smtp.NewStatus(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
 			}
 
 			opts.Size = int64(size)
 		case "XOORG":
 			if !c.server.EnableXOORG {
-				c.writeResponse(504, smtp.EnhancedCode{5, 5, 4}, "EnableXOORG is not implemented")
-				return
+				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "EnableXOORG is not implemented")
 			}
 			opts.XOORG = value
 		case "SMTPUTF8":
 			if !c.server.EnableSMTPUTF8 {
-				c.writeResponse(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
-				return
+				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
 			}
 			opts.UTF8 = true
 		case "REQUIRETLS":
 			if !c.server.EnableREQUIRETLS {
-				c.writeResponse(504, smtp.EnhancedCode{5, 5, 4}, "REQUIRETLS is not implemented")
-				return
+				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "REQUIRETLS is not implemented")
 			}
 			opts.RequireTLS = true
 		case "BODY":
@@ -359,47 +346,40 @@ func (c *Conn) handleMail(arg string) {
 			switch smtp.BodyType(value) {
 			case smtp.BodyBinaryMIME:
 				if !c.server.EnableBINARYMIME {
-					c.writeResponse(504, smtp.EnhancedCode{5, 5, 4}, "BINARYMIME is not implemented")
-					return
+					return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "BINARYMIME is not implemented")
 				}
 				c.binarymime = true
 			case smtp.Body7Bit, smtp.Body8BitMIME:
 				// This space is intentionally left blank
 			default:
-				c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Unknown BODY value")
-				return
+				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unknown BODY value")
 			}
 			opts.Body = smtp.BodyType(value)
 		case "RET":
 			if !c.server.EnableDSN {
-				c.writeResponse(504, smtp.EnhancedCode{5, 5, 4}, "RET is not implemented")
-				return
+				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "RET is not implemented")
 			}
 			value = strings.ToUpper(value)
 			switch smtp.DSNReturn(value) {
 			case smtp.DSNReturnFull, smtp.DSNReturnHeaders:
 				// This space is intentionally left blank
 			default:
-				c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Unknown RET value")
-				return
+				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unknown RET value")
 			}
 			opts.Return = smtp.DSNReturn(value)
 		case "ENVID":
 			if !c.server.EnableDSN {
-				c.writeResponse(504, smtp.EnhancedCode{5, 5, 4}, "ENVID is not implemented")
-				return
+				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ENVID is not implemented")
 			}
 			value, err := decodeXtext(value)
 			if err != nil || value == "" || !textsmtp.IsPrintableASCII(value) {
-				c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ENVID parameter value")
-				return
+				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ENVID parameter value")
 			}
 			opts.EnvelopeID = value
 		case "AUTH":
 			value, err := decodeXtext(value)
 			if err != nil || value == "" {
-				c.writeResponse(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter value")
-				return
+				return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter value")
 			}
 			if value == "<>" {
 				value = ""
@@ -407,24 +387,22 @@ func (c *Conn) handleMail(arg string) {
 				p := parse.Parser{S: value}
 				value, err = p.Mailbox()
 				if err != nil || p.S != "" {
-					c.writeResponse(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter mailbox")
-					return
+					return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter mailbox")
 				}
 			}
 			opts.Auth = &value
 		default:
-			c.writeResponse(500, smtp.EnhancedCode{5, 5, 4}, "Unknown MAIL FROM argument")
-			return
+			return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Unknown MAIL FROM argument")
 		}
 	}
 
 	if err := c.Session().Mail(from, opts); err != nil {
-		c.writeError(451, smtp.EnhancedCode{4, 0, 0}, err)
-		return
+		return c.writeError(451, smtp.EnhancedCode{4, 0, 0}, err)
 	}
 
 	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
-	c.fromReceived = true
+	c.from = &from
+	return nil
 }
 
 // This regexp matches 'hexchar' token defined in
@@ -576,38 +554,32 @@ func decodeTypedAddress(val string) (smtp.DSNAddressType, string, error) {
 }
 
 // MAIL state -> waiting for RCPTs followed by DATA
-func (c *Conn) handleRcpt(arg string) {
-	if !c.fromReceived {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "Missing MAIL FROM command.")
-		return
+func (c *Conn) handleRcpt(arg string) error {
+	if c.from == nil {
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Missing MAIL FROM command.")
 	}
 	if c.bdatPipe != nil {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "RCPT not allowed during message transfer")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "RCPT not allowed during message transfer")
 	}
 
 	arg, ok := parse.CutPrefixFold(arg, "TO:")
 	if !ok {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
 	}
 
 	p := parse.Parser{S: strings.TrimSpace(arg)}
 	recipient, err := p.Path()
 	if err != nil {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
 	}
 
 	if c.server.MaxRecipients > 0 && len(c.recipients) >= c.server.MaxRecipients {
-		c.writeResponse(452, smtp.EnhancedCode{4, 5, 3}, fmt.Sprintf("Maximum limit of %v recipients reached", c.server.MaxRecipients))
-		return
+		return smtp.NewStatus(452, smtp.EnhancedCode{4, 5, 3}, fmt.Sprintf("Maximum limit of %v recipients reached", c.server.MaxRecipients))
 	}
 
 	args, err := parse.Args(p.S)
 	if err != nil {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse RCPT ESMTP parameters")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse RCPT ESMTP parameters")
 	}
 
 	opts := &smtp.RcptOptions{}
@@ -616,63 +588,54 @@ func (c *Conn) handleRcpt(arg string) {
 		switch key {
 		case "NOTIFY":
 			if !c.server.EnableDSN {
-				c.writeResponse(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
-				return
+				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
 			}
 			notify := []smtp.DSNNotify{}
 			for _, val := range strings.Split(value, ",") {
 				notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
 			}
 			if err := textsmtp.CheckNotifySet(notify); err != nil {
-				c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
-				return
+				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
 			}
 			opts.Notify = notify
 		case "ORCPT":
 			if !c.server.EnableDSN {
-				c.writeResponse(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
-				return
+				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
 			}
 			aType, aAddr, err := decodeTypedAddress(value)
 			if err != nil || aAddr == "" {
-				c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ORCPT parameter value")
-				return
+				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ORCPT parameter value")
 			}
 			opts.OriginalRecipientType = aType
 			opts.OriginalRecipient = aAddr
 		default:
-			c.writeResponse(500, smtp.EnhancedCode{5, 5, 4}, "Unknown RCPT TO argument")
-			return
+			return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Unknown RCPT TO argument")
 		}
 	}
 
 	if err := c.Session().Rcpt(recipient, opts); err != nil {
-		c.writeError(451, smtp.EnhancedCode{4, 0, 0}, err)
-		return
+		return c.writeError(451, smtp.EnhancedCode{4, 0, 0}, err)
 	}
 	c.recipients = append(c.recipients, recipient)
 	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
+	return nil
 }
 
-func (c *Conn) handleAuth(arg string) {
+func (c *Conn) handleAuth(arg string) error {
 	if c.helo == "" {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "Please introduce yourself first.")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Please introduce yourself first.")
 	}
 	if c.didAuth {
-		c.writeResponse(503, smtp.EnhancedCode{5, 5, 1}, "Already authenticated")
-		return
+		return smtp.NewStatus(503, smtp.EnhancedCode{5, 5, 1}, "Already authenticated")
 	}
 
 	parts := strings.Fields(arg)
 	if len(parts) == 0 {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 4}, "Missing parameter")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 4}, "Missing parameter")
 	}
 
 	if !c.authAllowed() {
-		c.writeResponse(523, smtp.EnhancedCode{5, 7, 10}, "TLS is required")
-		return
+		return smtp.NewStatus(523, smtp.EnhancedCode{5, 7, 10}, "TLS is required")
 	}
 
 	mechanism := strings.ToUpper(parts[0])
@@ -683,23 +646,20 @@ func (c *Conn) handleAuth(arg string) {
 		var err error
 		ir, err = decodeSASLResponse(parts[1])
 		if err != nil {
-			c.writeResponse(454, smtp.EnhancedCode{4, 7, 0}, "Invalid base64 data")
-			return
+			return smtp.NewStatus(454, smtp.EnhancedCode{4, 7, 0}, "Invalid base64 data")
 		}
 	}
 
 	sasl, err := c.auth(mechanism)
 	if err != nil {
-		c.writeError(454, smtp.EnhancedCode{4, 7, 0}, err)
-		return
+		return c.writeError(454, smtp.EnhancedCode{4, 7, 0}, err)
 	}
 
 	response := ir
 	for {
 		challenge, done, err := sasl.Next(response)
 		if err != nil {
-			c.writeError(454, smtp.EnhancedCode{4, 7, 0}, err)
-			return
+			return c.writeError(454, smtp.EnhancedCode{4, 7, 0}, err)
 		}
 
 		if done {
@@ -714,24 +674,24 @@ func (c *Conn) handleAuth(arg string) {
 
 		encoded, err = c.readLine()
 		if err != nil {
-			return // TODO: error handling
+			return err
 		}
 
 		if encoded == "*" {
 			// https://tools.ietf.org/html/rfc4954#page-4
-			c.writeResponse(501, smtp.EnhancedCode{5, 0, 0}, "Negotiation cancelled")
-			return
+			return smtp.NewStatus(501, smtp.EnhancedCode{5, 0, 0}, "Negotiation cancelled")
 		}
 
 		response, err = decodeSASLResponse(encoded)
 		if err != nil {
-			c.writeResponse(454, smtp.EnhancedCode{4, 7, 0}, "Invalid base64 data")
-			return
+			return smtp.NewStatus(454, smtp.EnhancedCode{4, 7, 0}, "Invalid base64 data")
 		}
 	}
 
 	c.writeResponse(235, smtp.EnhancedCode{2, 0, 0}, "Authentication succeeded")
+
 	c.didAuth = true
+	return nil
 }
 
 func decodeSASLResponse(s string) ([]byte, error) {
@@ -755,15 +715,13 @@ func (c *Conn) auth(mech string) (sasl.Server, error) {
 	return nil, smtp.ErrAuthUnknownMechanism
 }
 
-func (c *Conn) handleStartTLS() {
+func (c *Conn) handleStartTLS() error {
 	if _, isTLS := c.TLSConnectionState(); isTLS {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "Already running in TLS")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Already running in TLS")
 	}
 
 	if c.server.TLSConfig == nil {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "TLS not supported")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "TLS not supported")
 	}
 
 	c.writeResponse(220, smtp.EnhancedCode{2, 0, 0}, "Ready to start TLS")
@@ -772,8 +730,7 @@ func (c *Conn) handleStartTLS() {
 	tlsConn := tls.Server(c.conn, c.server.TLSConfig)
 
 	if err := tlsConn.Handshake(); err != nil {
-		c.writeResponse(550, smtp.EnhancedCode{5, 0, 0}, "Handshake error")
-		return
+		return smtp.NewStatus(550, smtp.EnhancedCode{5, 0, 0}, "Handshake error")
 	}
 
 	c.conn = tlsConn
@@ -788,68 +745,72 @@ func (c *Conn) handleStartTLS() {
 		c.setSession(nil)
 	}
 	c.helo = ""
-	c.didAuth = false
 	c.reset()
+	return nil
 }
 
 // DATA
-func (c *Conn) handleData(arg string) {
+func (c *Conn) handleData(arg string) error {
 	if arg != "" {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "DATA command should not have any arguments")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "DATA command should not have any arguments")
 	}
 	if c.bdatPipe != nil {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed during message transfer")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed during message transfer")
 	}
 	if c.binarymime {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed for BINARYMIME messages")
-		return
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed for BINARYMIME messages")
 	}
 
-	if !c.fromReceived || len(c.recipients) == 0 {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
-		return
+	if c.from == nil || len(c.recipients) == 0 {
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
 	}
 
-	// We have recipients, go to accept data
-	c.writeResponse(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>")
+	var r io.Reader
 
-	defer c.reset()
+	defer func() {
+		if r != nil {
+			c.reset()
+		}
+	}()
 
-	if c.server.LMTP {
-		c.handleDataLMTP()
-		return
+	rstart := func() io.Reader {
+		if r != nil {
+			return r
+		}
+		// We have recipients, go to accept data
+		c.writeResponse(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>")
+
+		r := textsmtp.NewDotReader(c.text.R, c.server.MaxMessageBytes)
+		return r
 	}
 
-	r := textsmtp.NewDotReader(c.text.R, c.server.MaxMessageBytes)
-	code, EnhancedCode, msg := dataErrorToStatus(c.Session().Data(r))
+	code, EnhancedCode, msg := dataErrorToStatus(c.Session().Data(rstart))
 
-	io.Copy(io.Discard, r) // Make sure all the data has been consumed
+	if r != nil {
+		io.Copy(io.Discard, r) // Make sure all the data has been consumed
+	}
+
 	c.writeResponse(code, EnhancedCode, msg)
+	return nil
 }
 
-func (c *Conn) handleBdat(arg string) {
+func (c *Conn) handleBdat(arg string) error {
 	args := strings.Fields(arg)
 	if len(args) == 0 {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Missing chunk size argument")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Missing chunk size argument")
 	}
 	if len(args) > 2 {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Too many arguments")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Too many arguments")
 	}
 
-	if !c.fromReceived || len(c.recipients) == 0 {
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
-		return
+	if c.from == nil || len(c.recipients) == 0 {
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
 	}
 
 	last := false
 	if len(args) == 2 {
 		if !strings.EqualFold(args[1], "LAST") {
-			c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Unknown BDAT argument")
-			return
+			return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unknown BDAT argument")
 		}
 		last = true
 	}
@@ -857,8 +818,7 @@ func (c *Conn) handleBdat(arg string) {
 	// ParseUint instead of Atoi so we will not accept negative values.
 	size, err := strconv.ParseUint(args[0], 10, 32)
 	if err != nil {
-		c.writeResponse(501, smtp.EnhancedCode{5, 5, 4}, "Malformed size argument")
-		return
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed size argument")
 	}
 
 	if c.server.MaxMessageBytes != 0 && c.bytesReceived+int64(size) > c.server.MaxMessageBytes {
@@ -868,11 +828,7 @@ func (c *Conn) handleBdat(arg string) {
 		io.Copy(io.Discard, io.LimitReader(c.text.R, int64(size)))
 
 		c.reset()
-		return
-	}
-
-	if c.bdatStatus == nil && c.server.LMTP {
-		c.bdatStatus = c.createStatusCollector()
+		return nil
 	}
 
 	if c.bdatPipe == nil {
@@ -884,27 +840,14 @@ func (c *Conn) handleBdat(arg string) {
 		go func() {
 			defer func() {
 				if err := recover(); err != nil {
-					c.handlePanic(err, c.bdatStatus)
+					c.handlePanic(err)
 
 					c.dataResult <- errPanic
 					r.CloseWithError(errPanic)
 				}
 			}()
 
-			var err error
-			if !c.server.LMTP {
-				err = c.Session().Data(r)
-			} else {
-				lmtpSession, ok := c.Session().(LMTPSession)
-				if !ok {
-					err = c.Session().Data(r)
-					for _, rcpt := range c.recipients {
-						c.bdatStatus.SetStatus(rcpt, err)
-					}
-				} else {
-					err = lmtpSession.LMTPData(r, c.bdatStatus)
-				}
-			}
+			err := c.Session().Data(func() io.Reader { return r })
 
 			c.dataResult <- err
 			r.CloseWithError(err)
@@ -925,7 +868,7 @@ func (c *Conn) handleBdat(arg string) {
 		}
 
 		c.reset()
-		return
+		return nil
 	}
 
 	c.bytesReceived += int64(size)
@@ -935,162 +878,38 @@ func (c *Conn) handleBdat(arg string) {
 
 		err := <-c.dataResult
 
-		if c.server.LMTP {
-			c.bdatStatus.fillRemaining(err)
-			for i, rcpt := range c.recipients {
-				code, enchCode, msg := dataErrorToStatus(<-c.bdatStatus.status[i])
-				c.writeResponse(code, enchCode, "<"+rcpt+"> "+msg)
-			}
-		} else {
-			c.writeResponse(dataErrorToStatus(err))
-		}
+		c.writeResponse(dataErrorToStatus(err))
 
 		if err == errPanic {
 			c.Close()
-			return
+			return nil
 		}
 
 		c.reset()
 	} else {
 		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "Continue")
 	}
+	return nil
 }
 
 // ErrDataReset is returned by Reader pased to Data function if client does not
 // send another BDAT command and instead closes connection or issues RSET command.
 var ErrDataReset = errors.New("smtp: message transmission aborted")
 
-var errPanic = &smtp.SMTPError{
+var errPanic = &smtp.SMTPStatus{
 	Code:         421,
 	EnhancedCode: smtp.EnhancedCode{4, 0, 0},
 	Message:      "Internal server error",
 }
 
-func (c *Conn) handlePanic(err interface{}, status *statusCollector) {
-	if status != nil {
-		status.fillRemaining(errPanic)
-	}
-
+func (c *Conn) handlePanic(err interface{}) {
 	stack := debug.Stack()
 	c.server.ErrorLog.Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
 }
 
-func (c *Conn) createStatusCollector() *statusCollector {
-	rcptCounts := make(map[string]int, len(c.recipients))
-
-	status := &statusCollector{
-		statusMap: make(map[string]chan error, len(c.recipients)),
-		status:    make([]chan error, 0, len(c.recipients)),
-	}
-	for _, rcpt := range c.recipients {
-		rcptCounts[rcpt]++
-	}
-	// Create channels with buffer sizes necessary to fit all
-	// statuses for a single recipient to avoid deadlocks.
-	for rcpt, count := range rcptCounts {
-		status.statusMap[rcpt] = make(chan error, count)
-	}
-	for _, rcpt := range c.recipients {
-		status.status = append(status.status, status.statusMap[rcpt])
-	}
-
-	return status
-}
-
-type statusCollector struct {
-	// Contains map from recipient to list of channels that are used for that
-	// recipient.
-	statusMap map[string]chan error
-
-	// Contains channels from statusMap, in the same
-	// order as Conn.recipients.
-	status []chan error
-}
-
-// fillRemaining sets status for all recipients SetStatus was not called for before.
-func (s *statusCollector) fillRemaining(err error) {
-	// Amount of times certain recipient was specified is indicated by the channel
-	// buffer size, so once we fill it, we can be confident that we sent
-	// at least as much statuses as needed. Extra statuses will be ignored anyway.
-chLoop:
-	for _, ch := range s.statusMap {
-		for {
-			select {
-			case ch <- err:
-			default:
-				continue chLoop
-			}
-		}
-	}
-}
-
-func (s *statusCollector) SetStatus(rcptTo string, err error) {
-	ch := s.statusMap[rcptTo]
-	if ch == nil {
-		panic("SetStatus is called for recipient that was not specified before")
-	}
-
-	select {
-	case ch <- err:
-	default:
-		// There enough buffer space to fit all statuses at once, if this is
-		// not the case - backend is doing something wrong.
-		panic("SetStatus is called more times than particular recipient was specified")
-	}
-}
-
-func (c *Conn) handleDataLMTP() {
-	r := textsmtp.NewDotReader(c.text.R, c.server.MaxMessageBytes)
-	status := c.createStatusCollector()
-
-	done := make(chan bool, 1)
-
-	lmtpSession, ok := c.Session().(LMTPSession)
-	if !ok {
-		// Fallback to using a single status for all recipients.
-		err := c.Session().Data(r)
-		io.Copy(io.Discard, r) // Make sure all the data has been consumed
-		for _, rcpt := range c.recipients {
-			status.SetStatus(rcpt, err)
-		}
-		done <- true
-	} else {
-		go func() {
-			defer func() {
-				if err := recover(); err != nil {
-					status.fillRemaining(&smtp.SMTPError{
-						Code:         421,
-						EnhancedCode: smtp.EnhancedCode{4, 0, 0},
-						Message:      "Internal server error",
-					})
-
-					stack := debug.Stack()
-					c.server.ErrorLog.Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
-					done <- false
-				}
-			}()
-
-			status.fillRemaining(lmtpSession.LMTPData(r, status))
-			io.Copy(io.Discard, r) // Make sure all the data has been consumed
-			done <- true
-		}()
-	}
-
-	for i, rcpt := range c.recipients {
-		code, enchCode, msg := dataErrorToStatus(<-status.status[i])
-		c.writeResponse(code, enchCode, "<"+rcpt+"> "+msg)
-	}
-
-	// If done gets false, the panic occured in LMTPData and the connection
-	// should be closed.
-	if !<-done {
-		c.Close()
-	}
-}
-
 func dataErrorToStatus(err error) (code int, enchCode smtp.EnhancedCode, msg string) {
 	if err != nil {
-		if smtperr, ok := err.(*smtp.SMTPError); ok {
+		if smtperr, ok := err.(*smtp.SMTPStatus); ok {
 			return smtperr.Code, smtperr.EnhancedCode, smtperr.Message
 		} else {
 			return 554, smtp.EnhancedCode{5, 0, 0}, "Error: transaction failed: " + err.Error()
@@ -1107,9 +926,6 @@ func (c *Conn) Reject() {
 
 func (c *Conn) greet() {
 	protocol := "ESMTP"
-	if c.server.LMTP {
-		protocol = "LMTP"
-	}
 	c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.Domain, protocol))
 }
 
@@ -1141,11 +957,11 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string
 	}
 }
 
-func (c *Conn) writeError(code int, enhCode smtp.EnhancedCode, err error) {
-	if smtpErr, ok := err.(*smtp.SMTPError); ok {
-		c.writeResponse(smtpErr.Code, smtpErr.EnhancedCode, smtpErr.Message)
+func (c *Conn) writeError(code int, enhCode smtp.EnhancedCode, err error) *smtp.SMTPStatus {
+	if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
+		return smtpErr
 	} else {
-		c.writeResponse(code, enhCode, err.Error())
+		return smtp.NewStatus(code, enhCode, err.Error())
 	}
 }
 
@@ -1168,13 +984,13 @@ func (c *Conn) reset() {
 		c.bdatPipe.CloseWithError(ErrDataReset)
 		c.bdatPipe = nil
 	}
-	c.bdatStatus = nil
 	c.bytesReceived = 0
 
 	if c.session != nil {
 		c.session.Reset()
 	}
 
-	c.fromReceived = false
+	c.didAuth = false
+	c.from = nil
 	c.recipients = nil
 }

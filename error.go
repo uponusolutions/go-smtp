@@ -6,9 +6,9 @@ import (
 
 type EnhancedCode [3]int
 
-// SMTPError specifies the error code, enhanced error code (if any) and
+// SMTPStatus specifies the error code, enhanced error code (if any) and
 // message returned by the server.
-type SMTPError struct {
+type SMTPStatus struct {
 	Code         int
 	EnhancedCode EnhancedCode
 	Message      string
@@ -27,7 +27,15 @@ var NoEnhancedCode = EnhancedCode{-1, -1, -1}
 // be used (X is derived from error code).
 var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
 
-func (err *SMTPError) Error() string {
+func NewStatus(code int, enhCode EnhancedCode, msg string) *SMTPStatus {
+	return &SMTPStatus{
+		Code:         code,
+		EnhancedCode: enhCode,
+		Message:      msg,
+	}
+}
+
+func (err *SMTPStatus) Error() string {
 	s := fmt.Sprintf("SMTP error %03d", err.Code)
 	if err.Message != "" {
 		s += ": " + err.Message
@@ -35,32 +43,42 @@ func (err *SMTPError) Error() string {
 	return s
 }
 
-func (err *SMTPError) Temporary() bool {
+func (err *SMTPStatus) Temporary() bool {
 	return err.Code/100 == 4
 }
 
 var (
-	ErrDataTooLarge = &SMTPError{
+	ErrBadCommand = &SMTPStatus{
+		Code:         502,
+		EnhancedCode: EnhancedCode{5, 7, 0},
+		Message:      "Bad command",
+	}
+	ErrBadSyntax = &SMTPStatus{
+		Code:         500,
+		EnhancedCode: EnhancedCode{5, 5, 2},
+		Message:      "Bad syntax",
+	}
+	ErrDataTooLarge = &SMTPStatus{
 		Code:         552,
 		EnhancedCode: EnhancedCode{5, 3, 4},
 		Message:      "Maximum message size exceeded",
 	}
-	ErrAuthFailed = &SMTPError{
+	ErrAuthFailed = &SMTPStatus{
 		Code:         535,
 		EnhancedCode: EnhancedCode{5, 7, 8},
 		Message:      "Authentication failed",
 	}
-	ErrAuthRequired = &SMTPError{
+	ErrAuthRequired = &SMTPStatus{
 		Code:         502,
 		EnhancedCode: EnhancedCode{5, 7, 0},
 		Message:      "Please authenticate first",
 	}
-	ErrAuthUnsupported = &SMTPError{
+	ErrAuthUnsupported = &SMTPStatus{
 		Code:         502,
 		EnhancedCode: EnhancedCode{5, 7, 0},
 		Message:      "Authentication not supported",
 	}
-	ErrAuthUnknownMechanism = &SMTPError{
+	ErrAuthUnknownMechanism = &SMTPStatus{
 		Code:         504,
 		EnhancedCode: EnhancedCode{5, 7, 4},
 		Message:      "Unsupported authentication mechanism",

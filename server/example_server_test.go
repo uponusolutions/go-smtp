@@ -48,8 +48,8 @@ func (s *Session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-func (s *Session) Data(r io.Reader) error {
-	if b, err := io.ReadAll(r); err != nil {
+func (s *Session) Data(r func() io.Reader) error {
+	if b, err := io.ReadAll(r()); err != nil {
 		return err
 	} else {
 		log.Println("Data:", string(b))

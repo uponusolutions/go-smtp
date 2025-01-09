@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"runtime/debug"
+
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/parse"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
 var ErrServerClosed = errors.New("smtp: server already closed")
@@ -32,8 +32,6 @@ type Server struct {
 	Addr string
 	// The server TLS configuration.
 	TLSConfig *tls.Config
-	// Enable LMTP mode, as defined in RFC 2033.
-	LMTP bool
 
 	Domain            string
 	MaxRecipients     int
@@ -143,7 +141,15 @@ func (s *Server) handleConn(c *Conn) error {
 	s.conns[c] = struct{}{}
 	s.locker.Unlock()
 
+	// If panic happens during command handling - send 421 response
+	// and close connection.
 	defer func() {
+		if err := recover(); err != nil {
+			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
+			stack := debug.Stack()
+			c.server.ErrorLog.Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
+		}
+
 		c.Close()
 
 		s.locker.Lock()
@@ -166,30 +172,16 @@ func (s *Server) handleConn(c *Conn) error {
 	c.greet()
 
 	for {
-		line, err := c.readLine()
-		if err == nil {
-			cmd, arg, err := parse.Cmd(line)
-			if err != nil {
-				c.protocolError(501, smtp.EnhancedCode{5, 5, 2}, "Bad command")
-				continue
-			}
+		cmd, arg, err := c.nextCommand()
 
-			c.handle(cmd, arg)
-		} else {
-			if err == io.EOF || errors.Is(err, net.ErrClosed) {
-				return nil
-			}
-			if err == textsmtp.ErrTooLongLine {
-				c.writeResponse(500, smtp.EnhancedCode{5, 4, 0}, "Too long line, closing connection")
-				return nil
-			}
+		if err != nil {
+			c.handleError(err)
+			return err
+		}
 
-			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-				c.writeResponse(421, smtp.EnhancedCode{4, 4, 2}, "Idle timeout, bye bye")
-				return nil
-			}
-
-			c.writeResponse(421, smtp.EnhancedCode{4, 4, 0}, "Connection error, sorry")
+		err = c.handle(cmd, arg)
+		if err != nil {
+			c.handleError(err)
 			return err
 		}
 	}
@@ -198,9 +190,6 @@ func (s *Server) handleConn(c *Conn) error {
 func (s *Server) network() string {
 	if s.Network != "" {
 		return s.Network
-	}
-	if s.LMTP {
-		return "unix"
 	}
 	return "tcp"
 }
@@ -213,7 +202,7 @@ func (s *Server) ListenAndServe() error {
 	network := s.network()
 
 	addr := s.Addr
-	if !s.LMTP && addr == "" {
+	if addr == "" {
 		addr = ":smtp"
 	}
 
@@ -233,7 +222,7 @@ func (s *Server) ListenAndServeTLS() error {
 	network := s.network()
 
 	addr := s.Addr
-	if !s.LMTP && addr == "" {
+	if addr == "" {
 		addr = ":smtps"
 	}
 

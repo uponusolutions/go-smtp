@@ -36,7 +36,8 @@ func (s *session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-func (s *session) Data(r io.Reader) error {
+func (s *session) Data(r func() io.Reader) error {
+	r()
 	return nil
 }
 

@@ -31,13 +31,6 @@ type backend struct {
 	messages []*message
 	anonmsgs []*message
 
-	implementLMTPData bool
-	lmtpStatus        []struct {
-		addr string
-		err  error
-	}
-	lmtpStatusSync chan struct{}
-
 	// Errors returned by Data method.
 	dataErrors chan error
 
@@ -52,15 +45,7 @@ type backend struct {
 }
 
 func (be *backend) NewSession(_ *server.Conn) (server.Session, error) {
-	if be.implementLMTPData {
-		return &lmtpSession{&session{backend: be, anonymous: true}}, nil
-	}
-
 	return &session{backend: be, anonymous: true}, nil
-}
-
-type lmtpSession struct {
-	*session
 }
 
 type session struct {
@@ -122,11 +107,11 @@ func (s *session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-func (s *session) Data(r io.Reader) error {
+func (s *session) Data(r func() io.Reader) error {
 	if s.backend.dataErr != nil {
 
 		if s.backend.dataErrOffset != 0 {
-			io.CopyN(io.Discard, r, s.backend.dataErrOffset)
+			io.CopyN(io.Discard, r(), s.backend.dataErrOffset)
 		}
 
 		err := s.backend.dataErr
@@ -136,7 +121,7 @@ func (s *session) Data(r io.Reader) error {
 		return err
 	}
 
-	if b, err := io.ReadAll(r); err != nil {
+	if b, err := io.ReadAll(r()); err != nil {
 		if s.backend.dataErrors != nil {
 			s.backend.dataErrors <- err
 		}
@@ -152,22 +137,6 @@ func (s *session) Data(r io.Reader) error {
 			s.backend.dataErrors <- nil
 		}
 	}
-	return nil
-}
-
-func (s *session) LMTPData(r io.Reader, collector server.StatusCollector) error {
-	if err := s.Data(r); err != nil {
-		return err
-	}
-
-	for _, val := range s.backend.lmtpStatus {
-		collector.SetStatus(val.addr, val.err)
-
-		if s.backend.lmtpStatusSync != nil {
-			s.backend.lmtpStatusSync <- struct{}{}
-		}
-	}
-
 	return nil
 }
 
@@ -389,21 +358,17 @@ func TestServerAuthTwice(t *testing.T) {
 	}
 
 	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
-	scanner.Scan()
+
+	if !scanner.Scan() {
+		t.Fatal("connection is closed?")
+	}
+
 	if !strings.HasPrefix(scanner.Text(), "503 ") {
 		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 
-	io.WriteString(c, "RSET\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Invalid AUTH response:", scanner.Text())
-	}
-
-	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "503 ") {
-		t.Fatal("Invalid AUTH response:", scanner.Text())
+	if scanner.Scan() {
+		t.Fatal("connection is still open")
 	}
 }
 
@@ -755,22 +720,18 @@ func TestServer_otherCommands(t *testing.T) {
 	}
 }
 
-func TestServer_tooManyInvalidCommands(t *testing.T) {
+func TestServer_invalidCommand(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t)
 	defer s.Close()
 
-	// Let's assume XXXX is a non-existing command
-	for i := 0; i < 4; i++ {
-		io.WriteString(c, "XXXX\r\n")
-		scanner.Scan()
-		if !strings.HasPrefix(scanner.Text(), "500 ") {
-			t.Fatal("Invalid invalid command response:", scanner.Text())
-		}
-	}
-
+	io.WriteString(c, "XXXX\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "500 ") {
 		t.Fatal("Invalid invalid command response:", scanner.Text())
+	}
+
+	if scanner.Scan() {
+		t.Fatal("connection is still open")
 	}
 }
 
@@ -911,8 +872,8 @@ func TestServer_anonymousUserOK(t *testing.T) {
 	}
 }
 
-func TestServer_authParam(t *testing.T) {
-	be, s, c, scanner, _ := testServerEhlo(t)
+func TestServer_authParam_invalidHexchar(t *testing.T) {
+	_, s, c, scanner, _ := testServerEhlo(t)
 	defer s.Close()
 	defer c.Close()
 
@@ -923,12 +884,15 @@ func TestServer_authParam(t *testing.T) {
 		t.Fatal("Invalid MAIL response:", scanner.Text())
 	}
 
-	// Invalid HEXCHAR
-	io.WriteString(c, "MAIL FROM: root@nsa.gov AUTH=<he+YYa>\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "500 ") {
-		t.Fatal("Invalid MAIL response:", scanner.Text())
+	if scanner.Scan() {
+		t.Fatal("connection is still open")
 	}
+}
+
+func TestServer_authParam(t *testing.T) {
+	be, s, c, scanner, _ := testServerEhlo(t)
+	defer s.Close()
+	defer c.Close()
 
 	// https://tools.ietf.org/html/rfc4954#section-4
 	// >servers that advertise support for this
@@ -940,7 +904,6 @@ func TestServer_authParam(t *testing.T) {
 	if !strings.HasPrefix(scanner.Text(), "250 ") {
 		t.Fatal("Invalid MAIL response:", scanner.Text())
 	}
-
 	// Go on as usual.
 	io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
 	scanner.Scan()
@@ -1002,60 +965,6 @@ func TestServer_Chunking(t *testing.T) {
 	}
 	if len(msg.To) != 1 || msg.To[0] != "root@gchq.gov.uk" {
 		t.Fatal("Invalid mail recipients:", msg.To)
-	}
-	if want := "Hey <3\r\nHey :3\r\n"; string(msg.Data) != want {
-		t.Fatal("Invalid mail data:", string(msg.Data), msg.Data)
-	}
-}
-
-func TestServer_Chunking_LMTP(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
-	s.LMTP = true
-	defer s.Close()
-	defer c.Close()
-
-	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Invalid MAIL response:", scanner.Text())
-	}
-
-	io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Invalid RCPT response:", scanner.Text())
-	}
-	io.WriteString(c, "RCPT TO:<toor@gchq.gov.uk>\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Invalid RCPT response:", scanner.Text())
-	}
-
-	io.WriteString(c, "BDAT 8\r\n")
-	io.WriteString(c, "Hey <3\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Invalid BDAT response:", scanner.Text())
-	}
-
-	io.WriteString(c, "BDAT 8 LAST\r\n")
-	io.WriteString(c, "Hey :3\r\n")
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Invalid BDAT response:", scanner.Text())
-	}
-	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Invalid BDAT response:", scanner.Text())
-	}
-
-	if len(be.messages) != 1 || len(be.anonmsgs) != 0 {
-		t.Fatal("Invalid number of sent messages:", be.messages, be.anonmsgs)
-	}
-
-	msg := be.messages[0]
-	if msg.From != "root@nsa.gov" {
-		t.Fatal("Invalid mail sender:", msg.From)
 	}
 	if want := "Hey <3\r\nHey :3\r\n"; string(msg.Data) != want {
 		t.Fatal("Invalid mail data:", string(msg.Data), msg.Data)
@@ -1133,7 +1042,7 @@ func TestServer_Chunking_EarlyError(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 
-	be.dataErr = &smtp.SMTPError{
+	be.dataErr = &smtp.SMTPStatus{
 		Code:         555,
 		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
 		Message:      "I failed",
@@ -1164,7 +1073,7 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 
-	be.dataErr = &smtp.SMTPError{
+	be.dataErr = &smtp.SMTPStatus{
 		Code:         555,
 		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
 		Message:      "I failed",

@@ -173,7 +173,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok := err.(*smtp.SMTPError)
+	smtpErr, ok := err.(*smtp.SMTPStatus)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -191,7 +191,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*smtp.SMTPError)
+	smtpErr, ok = err.(*smtp.SMTPStatus)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -206,7 +206,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*smtp.SMTPError)
+	smtpErr, ok = err.(*smtp.SMTPStatus)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -495,7 +495,7 @@ func TestHello_421Response(t *testing.T) {
 		t.Errorf("Expected Hello to fail")
 	}
 
-	var smtp *smtp.SMTPError
+	var smtp *smtp.SMTPStatus
 	if !errors.As(err, &smtp) || smtp.Code != 421 || smtp.Message != "Service not available, closing transmission channel" {
 		t.Errorf("Expected error 421, got %v", err)
 	}
@@ -879,9 +879,9 @@ Line 1
 Goodbye.`
 
 	rcpts := []string{}
-	errors := []*smtp.SMTPError{}
+	errors := []*smtp.SMTPStatus{}
 
-	w, err := c.LMTPData(func(rcpt string, status *smtp.SMTPError) {
+	w, err := c.LMTPData(func(rcpt string, status *smtp.SMTPStatus) {
 		rcpts = append(rcpts, rcpt)
 		errors = append(errors, status)
 	})

@@ -40,28 +40,7 @@ type Session interface {
 	// Set currently processed message contents and send it.
 	//
 	// r must be consumed before Data returns.
-	Data(r io.Reader) error
-}
-
-// LMTPSession is an add-on interface for Session. It can be implemented by
-// LMTP servers to provide extra functionality.
-type LMTPSession interface {
-	Session
-
-	// LMTPData is the LMTP-specific version of Data method.
-	// It can be optionally implemented by the backend to provide
-	// per-recipient status information when it is used over LMTP
-	// protocol.
-	//
-	// LMTPData implementation sets status information using passed
-	// StatusCollector by calling SetStatus once per each AddRcpt
-	// call, even if AddRcpt was called multiple times with
-	// the same argument. SetStatus must not be called after
-	// LMTPData returns.
-	//
-	// Return value of LMTPData itself is used as a status for
-	// recipients that got no status set before using StatusCollector.
-	LMTPData(r io.Reader, status StatusCollector) error
+	Data(r func() io.Reader) error
 }
 
 // StatusCollector allows a backend to provide per-recipient status
