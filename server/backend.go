@@ -27,6 +27,9 @@ func (f BackendFunc) NewSession(c *Conn) (Session, error) {
 //
 // The methods are called when the remote client issues the matching command.
 type Session interface {
+	// Every HELO or EHLO
+	Greet() error
+
 	// Discard currently processed message.
 	Reset()
 
@@ -41,32 +44,7 @@ type Session interface {
 	//
 	// r must be consumed before Data returns.
 	Data(r func() io.Reader, sender string, recipients []string) (string, error)
-}
-
-// StatusCollector allows a backend to provide per-recipient status
-// information.
-type StatusCollector interface {
-	SetStatus(rcptTo string, err error)
-}
-
-// AuthSession is an add-on interface for Session. It provides support for the
-// AUTH extension.
-type AuthSession interface {
-	Session
 
 	AuthMechanisms() []string
 	Auth(mech string) (sasl.Server, error)
-}
-
-// ConnSession is an add-on interface for Session. It provides support to intercept the connection.
-type ConnSession interface {
-	Session
-
-	Connect() error
-}
-
-// ConnAuthSession is an add-on interface for Session. It merges ConnSession and AuthSession.
-type ConnAuthSession interface {
-	AuthSession
-	ConnSession
 }

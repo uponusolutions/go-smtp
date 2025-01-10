@@ -7,58 +7,47 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/emersion/go-sasl"
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/internal/parse"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
+const (
+	StateInit = iota
+	StateEnforceSecureConnection
+	StateGreeted
+	StateMail
+)
+
 type Conn struct {
 	conn net.Conn
 
+	state int
+
 	text   *textsmtp.Conn
 	server *Server
-	helo   string
 
 	session    Session
 	locker     sync.Mutex
 	binarymime bool
 
-	from       *string
-	recipients []string
+	helo       string   // set in helo / ehlo
+	from       *string  // set in MAIL FROM
+	recipients []string // set in RCPT
 	didAuth    bool
 }
 
 func newConn(c net.Conn, s *Server) *Conn {
-	sc := &Conn{
+	return &Conn{
 		server: s,
 		conn:   c,
+		text:   textsmtp.NewConn(c, s.ReaderSize, s.WriterSize, s.MaxLineLength),
 	}
-
-	sc.init()
-	return sc
-}
-
-func (c *Conn) init() {
-	if c.server.Debug != nil {
-		c.text = textsmtp.NewConn(struct {
-			io.Reader
-			io.Writer
-			io.Closer
-		}{
-			io.TeeReader(c.conn, c.server.Debug),
-			io.MultiWriter(c.conn, c.server.Debug),
-			c.conn,
-		}, c.server.ReaderSize, c.server.WriterSize, c.server.MaxLineLength)
-	}
-
-	c.text = textsmtp.NewConn(c.conn, c.server.ReaderSize, c.server.WriterSize, c.server.MaxLineLength)
 }
 
 func (c *Conn) nextCommand() (string, string, error) {
@@ -74,30 +63,60 @@ func (c *Conn) handle(cmd string, arg string) error {
 	if cmd == "" {
 		return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
 	}
-
 	cmd = strings.ToUpper(cmd)
+
+	switch c.state {
+	case StateInit:
+		return c.handleStateInit(cmd, arg)
+	case StateGreeted:
+		return c.handleStateGreeted(cmd, arg)
+	case StateEnforceSecureConnection:
+		return c.handleStateEnforceSecureConnection(cmd, arg)
+	case StateMail:
+		return c.handleStateMail(cmd, arg)
+	}
+
+	return errors.New("unsupported state, how?")
+}
+
+func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 	switch cmd {
-	case "SEND", "SOML", "SAML", "EXPN", "HELP", "TURN":
-		// These commands are not implemented in any state
-		c.writeResponse(502, smtp.EnhancedCode{5, 5, 1}, fmt.Sprintf("%v command not implemented", cmd))
-	case "HELO", "EHLO", "LHLO":
-		lmtp := cmd == "LHLO"
-		enhanced := lmtp || cmd == "EHLO"
-		if lmtp {
-			return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 1}, "This is not a LMTP server")
-		}
-		return c.handleGreet(enhanced, arg)
+	case "HELO", "EHLO":
+		return c.handleGreet(cmd == "EHLO", arg)
 	case "MAIL":
 		return c.handleMail(arg)
+	case "NOOP":
+		c.writeStatus(smtp.Noop)
+	case "VRFY":
+		c.writeStatus(smtp.VRFY)
+	case "RSET": // Reset session
+		// c.reset() - nothing to do
+		c.writeStatus(smtp.Reset)
+	case "QUIT":
+		return smtp.Quit
+	case "AUTH":
+		return c.handleAuth(arg)
+	case "STARTTLS":
+		return c.handleStartTLS()
+	default:
+		c.writeCommandUnknown(cmd)
+	}
+	return nil
+}
+
+func (c *Conn) handleStateMail(cmd string, arg string) error {
+	switch cmd {
+	case "HELO", "EHLO":
+		return c.handleGreet(cmd == "EHLO", arg)
 	case "RCPT":
 		return c.handleRcpt(arg)
-	case "VRFY":
-		c.writeResponse(252, smtp.EnhancedCode{2, 5, 0}, "Cannot VRFY user, but will accept message")
 	case "NOOP":
-		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "I have successfully done nothing")
+		c.writeStatus(smtp.Noop)
+	case "VRFY":
+		c.writeStatus(smtp.VRFY)
 	case "RSET": // Reset session
-		c.reset()
-		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "Session reset")
+		// c.reset() - nothing to do
+		c.writeStatus(smtp.Reset)
 	case "BDAT":
 		return c.handleBdat(arg)
 	case "DATA":
@@ -109,10 +128,47 @@ func (c *Conn) handle(cmd string, arg string) error {
 	case "STARTTLS":
 		return c.handleStartTLS()
 	default:
-		msg := fmt.Sprintf("Syntax errors, %v command unrecognized", cmd)
-		return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, msg)
+		c.writeCommandUnknown(cmd)
 	}
 	return nil
+}
+
+func (c *Conn) handleStateInit(cmd string, arg string) error {
+	switch cmd {
+	case "HELO", "EHLO":
+		return c.handleGreet(cmd == "EHLO", arg)
+	case "NOOP":
+		c.writeStatus(smtp.Noop)
+	case "VRFY":
+		c.writeStatus(smtp.VRFY)
+	case "QUIT":
+		return smtp.Quit
+	default:
+		c.writeCommandUnknown(cmd)
+	}
+	return nil
+}
+
+func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error {
+	switch cmd {
+	case "HELO", "EHLO":
+		return c.handleGreet(cmd == "EHLO", arg)
+	case "NOOP":
+		c.writeStatus(smtp.Noop)
+	case "VRFY":
+		c.writeStatus(smtp.VRFY)
+	case "STARTTLS":
+		return c.handleStartTLS()
+	case "QUIT":
+		return smtp.Quit
+	default:
+		c.writeResponse(530, smtp.EnhancedCode{5, 7, 0}, "Must issue a STARTTLS command first")
+	}
+	return nil
+}
+
+func (c *Conn) writeCommandUnknown(cmd string) {
+	c.writeStatus(smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, fmt.Sprintf("%s command unknown, state %d", cmd, c.state)))
 }
 
 func (c *Conn) Server() *Server {
@@ -153,17 +209,18 @@ func (c *Conn) TLSConnectionState() (state tls.ConnectionState, ok bool) {
 	return tc.ConnectionState(), true
 }
 
+// IsTLS returns if the connection is encrypted by tls.
+func (c *Conn) IsTLS() bool {
+	_, ok := c.conn.(*tls.Conn)
+	return ok
+}
+
 func (c *Conn) Hostname() string {
 	return c.helo
 }
 
 func (c *Conn) Conn() net.Conn {
 	return c.conn
-}
-
-func (c *Conn) authAllowed() bool {
-	_, isTLS := c.TLSConnectionState()
-	return isTLS || c.server.AllowInsecureAuth
 }
 
 // GREET state -> waiting for HELO
@@ -181,14 +238,25 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		// RFC 5321: "... the SMTP server MUST clear all buffers
 		// and reset the state exactly as if a RSET command has been issued."
 		c.reset()
+		c.logout()
 	} else {
 		sess, err := c.server.Backend.NewSession(c)
 		if err != nil {
-			c.helo = ""
 			return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
 		}
 
 		c.setSession(sess)
+	}
+
+	err = c.session.Greet()
+	if err != nil {
+		return err
+	}
+
+	if c.server.EnforceSecureConnection && !c.IsTLS() {
+		c.state = StateEnforceSecureConnection
+	} else {
+		c.state = StateGreeted
 	}
 
 	if !enhanced {
@@ -202,25 +270,27 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		"ENHANCEDSTATUSCODES",
 		"CHUNKING",
 	}
-	if _, isTLS := c.TLSConnectionState(); c.server.TLSConfig != nil && !isTLS {
+
+	isTLS := c.IsTLS()
+
+	if !isTLS && c.server.TLSConfig != nil {
 		caps = append(caps, "STARTTLS")
 	}
-	if c.authAllowed() {
-		mechs := c.authMechanisms()
 
+	mechs := c.Session().AuthMechanisms()
+	if len(mechs) > 0 {
 		authCap := "AUTH"
 		for _, name := range mechs {
 			authCap += " " + name
 		}
 
-		if len(mechs) > 0 {
-			caps = append(caps, authCap)
-		}
+		caps = append(caps, authCap)
 	}
+
 	if c.server.EnableSMTPUTF8 {
 		caps = append(caps, "SMTPUTF8")
 	}
-	if _, isTLS := c.TLSConnectionState(); isTLS && c.server.EnableREQUIRETLS {
+	if isTLS && c.server.EnableREQUIRETLS {
 		caps = append(caps, "REQUIRETLS")
 	}
 	if c.server.EnableBINARYMIME {
@@ -272,9 +342,6 @@ func (c *Conn) handleError(err error) {
 
 // READY state -> waiting for MAIL
 func (c *Conn) handleMail(arg string) error {
-	if c.helo == "" {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Please introduce yourself first.")
-	}
 	if c.from != nil {
 		return smtp.NewStatus(503, smtp.EnhancedCode{5, 5, 1}, "Already received FROM:")
 	}
@@ -388,163 +455,12 @@ func (c *Conn) handleMail(arg string) error {
 
 	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
 	c.from = &from
+	c.state = StateMail
 	return nil
-}
-
-// This regexp matches 'hexchar' token defined in
-// https://tools.ietf.org/html/rfc4954#section-8 however it is intentionally
-// relaxed by requiring only '+' to be present.  It allows us to detect
-// malformed values such as +A or +HH and report them appropriately.
-var hexcharRe = regexp.MustCompile(`\+[0-9A-F]?[0-9A-F]?`)
-
-func decodeXtext(val string) (string, error) {
-	if !strings.Contains(val, "+") {
-		return val, nil
-	}
-
-	var replaceErr error
-	decoded := hexcharRe.ReplaceAllStringFunc(val, func(match string) string {
-		if len(match) != 3 {
-			replaceErr = errors.New("incomplete hexchar")
-			return ""
-		}
-		char, err := strconv.ParseInt(match, 16, 8)
-		if err != nil {
-			replaceErr = err
-			return ""
-		}
-
-		return string(rune(char))
-	})
-	if replaceErr != nil {
-		return "", replaceErr
-	}
-
-	return decoded, nil
-}
-
-// This regexp matches 'EmbeddedUnicodeChar' token defined in
-// https://datatracker.ietf.org/doc/html/rfc6533.html#section-3
-// however it is intentionally relaxed by requiring only '\x{HEX}' to be
-// present.  It also matches disallowed characters in QCHAR and QUCHAR defined
-// in above.
-// So it allows us to detect malformed values and report them appropriately.
-var eUOrDCharRe = regexp.MustCompile(`\\x[{][0-9A-F]+[}]|[[:cntrl:] \\+=]`)
-
-// Decodes the utf-8-addr-xtext or the utf-8-addr-unitext form.
-func decodeUTF8AddrXtext(val string) (string, error) {
-	var replaceErr error
-	decoded := eUOrDCharRe.ReplaceAllStringFunc(val, func(match string) string {
-		if len(match) == 1 {
-			replaceErr = errors.New("disallowed character:" + match)
-			return ""
-		}
-
-		hexpoint := match[3 : len(match)-1]
-		char, err := strconv.ParseUint(hexpoint, 16, 21)
-		if err != nil {
-			replaceErr = err
-			return ""
-		}
-		switch len(hexpoint) {
-		case 2:
-			switch {
-			// all xtext-specials
-			case 0x01 <= char && char <= 0x09 ||
-				0x11 <= char && char <= 0x19 ||
-				char == 0x10 || char == 0x20 ||
-				char == 0x2B || char == 0x3D || char == 0x7F:
-			// 2-digit forms
-			case char == 0x5C || 0x80 <= char && char <= 0xFF:
-				// This space is intentionally left blank
-			default:
-				replaceErr = errors.New("illegal hexpoint:" + hexpoint)
-				return ""
-			}
-		// 3-digit forms
-		case 3:
-			switch {
-			case 0x100 <= char && char <= 0xFFF:
-				// This space is intentionally left blank
-			default:
-				replaceErr = errors.New("illegal hexpoint:" + hexpoint)
-				return ""
-			}
-		// 4-digit forms excluding surrogate
-		case 4:
-			switch {
-			case 0x1000 <= char && char <= 0xD7FF:
-			case 0xE000 <= char && char <= 0xFFFF:
-				// This space is intentionally left blank
-			default:
-				replaceErr = errors.New("illegal hexpoint:" + hexpoint)
-				return ""
-			}
-		// 5-digit forms
-		case 5:
-			switch {
-			case 0x1_0000 <= char && char <= 0xF_FFFF:
-				// This space is intentionally left blank
-			default:
-				replaceErr = errors.New("illegal hexpoint:" + hexpoint)
-				return ""
-			}
-		// 6-digit forms
-		case 6:
-			switch {
-			case 0x10_0000 <= char && char <= 0x10_FFFF:
-				// This space is intentionally left blank
-			default:
-				replaceErr = errors.New("illegal hexpoint:" + hexpoint)
-				return ""
-			}
-		// the other invalid forms
-		default:
-			replaceErr = errors.New("illegal hexpoint:" + hexpoint)
-			return ""
-		}
-
-		return string(rune(char))
-	})
-	if replaceErr != nil {
-		return "", replaceErr
-	}
-
-	return decoded, nil
-}
-
-func decodeTypedAddress(val string) (smtp.DSNAddressType, string, error) {
-	tv := strings.SplitN(val, ";", 2)
-	if len(tv) != 2 || tv[0] == "" || tv[1] == "" {
-		return "", "", errors.New("bad address")
-	}
-	aType, aAddr := strings.ToUpper(tv[0]), tv[1]
-
-	var err error
-	switch smtp.DSNAddressType(aType) {
-	case smtp.DSNAddressTypeRFC822:
-		aAddr, err = decodeXtext(aAddr)
-		if err == nil && !textsmtp.IsPrintableASCII(aAddr) {
-			err = errors.New("illegal address:" + aAddr)
-		}
-	case smtp.DSNAddressTypeUTF8:
-		aAddr, err = decodeUTF8AddrXtext(aAddr)
-	default:
-		err = errors.New("unknown address type:" + aType)
-	}
-	if err != nil {
-		return "", "", err
-	}
-
-	return smtp.DSNAddressType(aType), aAddr, nil
 }
 
 // MAIL state -> waiting for RCPTs followed by DATA
 func (c *Conn) handleRcpt(arg string) error {
-	if c.from == nil {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Missing MAIL FROM command.")
-	}
-
 	arg, ok := parse.CutPrefixFold(arg, "TO:")
 	if !ok {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
@@ -605,20 +521,12 @@ func (c *Conn) handleRcpt(arg string) error {
 }
 
 func (c *Conn) handleAuth(arg string) error {
-	if c.helo == "" {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Please introduce yourself first.")
-	}
 	if c.didAuth {
 		return smtp.NewStatus(503, smtp.EnhancedCode{5, 5, 1}, "Already authenticated")
 	}
-
 	parts := strings.Fields(arg)
 	if len(parts) == 0 {
 		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 4}, "Missing parameter")
-	}
-
-	if !c.authAllowed() {
-		return smtp.NewStatus(523, smtp.EnhancedCode{5, 7, 10}, "TLS is required")
 	}
 
 	mechanism := strings.ToUpper(parts[0])
@@ -633,7 +541,7 @@ func (c *Conn) handleAuth(arg string) error {
 		}
 	}
 
-	sasl, err := c.auth(mechanism)
+	sasl, err := c.session.Auth(mechanism)
 	if err != nil {
 		return c.newStatusError(454, smtp.EnhancedCode{4, 7, 0}, err)
 	}
@@ -672,30 +580,8 @@ func (c *Conn) handleAuth(arg string) error {
 	}
 
 	c.writeResponse(235, smtp.EnhancedCode{2, 0, 0}, "Authentication succeeded")
-
 	c.didAuth = true
 	return nil
-}
-
-func decodeSASLResponse(s string) ([]byte, error) {
-	if s == "=" {
-		return []byte{}, nil
-	}
-	return base64.StdEncoding.DecodeString(s)
-}
-
-func (c *Conn) authMechanisms() []string {
-	if authSession, ok := c.Session().(AuthSession); ok {
-		return authSession.AuthMechanisms()
-	}
-	return nil
-}
-
-func (c *Conn) auth(mech string) (sasl.Server, error) {
-	if authSession, ok := c.Session().(AuthSession); ok {
-		return authSession.Auth(mech)
-	}
-	return nil, smtp.ErrAuthUnknownMechanism
 }
 
 func (c *Conn) handleStartTLS() error {
@@ -717,18 +603,9 @@ func (c *Conn) handleStartTLS() error {
 	}
 
 	c.conn = tlsConn
-	c.init()
+	c.text.Replace(tlsConn)
+	c.state = StateInit
 
-	// Reset all state and close the previous Session.
-	// This is different from just calling reset() since we want the Backend to
-	// be able to see the information about TLS connection in the
-	// ConnectionState object passed to it.
-	if session := c.Session(); session != nil {
-		session.Logout()
-		c.setSession(nil)
-	}
-	c.helo = ""
-	c.reset()
 	return nil
 }
 
@@ -740,8 +617,7 @@ func (c *Conn) handleData(arg string) error {
 	if c.binarymime {
 		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed for BINARYMIME messages")
 	}
-
-	if c.from == nil || len(c.recipients) == 0 {
+	if len(c.recipients) == 0 {
 		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
 	}
 
@@ -769,7 +645,7 @@ func (c *Conn) handleData(arg string) error {
 }
 
 func (c *Conn) handleBdat(arg string) error {
-	if c.from == nil || len(c.recipients) == 0 {
+	if len(c.recipients) == 0 {
 		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
 	}
 
@@ -822,7 +698,7 @@ func (c *Conn) Reject() {
 
 func (c *Conn) greet() {
 	protocol := "ESMTP"
-	c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.Domain, protocol))
+	c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.Hostname, protocol))
 }
 
 func (c *Conn) writeStatus(status *smtp.SMTPStatus) {
@@ -876,6 +752,11 @@ func (c *Conn) readLine() (string, error) {
 	return c.text.ReadLine()
 }
 
+func (c *Conn) logout() {
+	c.didAuth = false
+	c.session.Logout()
+}
+
 func (c *Conn) reset() {
 	c.locker.Lock()
 	defer c.locker.Unlock()
@@ -884,7 +765,11 @@ func (c *Conn) reset() {
 		c.session.Reset()
 	}
 
-	c.didAuth = false
+	// Reset state to running
+	if c.state != StateEnforceSecureConnection && c.state != StateInit {
+		c.state = StateGreeted
+	}
+
 	c.from = nil
 	c.recipients = nil
 }

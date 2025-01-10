@@ -211,6 +211,13 @@ func (t *Conn) readLineSlice() ([]byte, error) {
 	return line, nil
 }
 
+// Replace conn.
+func (c *Conn) Replace(conn io.ReadWriteCloser) {
+	c.conn = conn
+	c.R.Reset(c.conn)
+	c.W.Reset(c.conn)
+}
+
 // Close closes the connection.
 func (c *Conn) Close() error {
 	return c.conn.Close()

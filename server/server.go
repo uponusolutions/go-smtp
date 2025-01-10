@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -33,17 +32,25 @@ type Server struct {
 	// The server TLS configuration.
 	TLSConfig *tls.Config
 
-	Domain            string
-	MaxRecipients     int
-	MaxMessageBytes   int64
-	MaxLineLength     int
-	ReaderSize        int
-	WriterSize        int
-	AllowInsecureAuth bool
-	Debug             io.Writer
-	ErrorLog          Logger
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
+	Hostname string
+
+	MaxRecipients int
+	// Max line length for every command except data and bdat.
+	MaxLineLength int
+	// Maximum size when receiving data and bdat.
+	MaxMessageBytes int64
+	// Reader buffer size.
+	ReaderSize int
+	// Writer buffer size.
+	WriterSize int
+
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
+
+	// Enforces usage of implicit tls or starttls before accepting commands except NOOP, EHLO, STARTTLS, or QUIT.
+	EnforceSecureConnection bool
+
+	ErrorLog Logger
 
 	// Advertise SMTPUTF8 (RFC 6531) capability.
 	// Should be used only if backend supports it.
@@ -108,7 +115,7 @@ func (s *Server) Serve(l net.Listener) error {
 				return nil
 			default:
 			}
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
 				if tempDelay == 0 {
 					tempDelay = 5 * time.Millisecond
 				} else {

@@ -55,6 +55,16 @@ var (
 		EnhancedCode: EnhancedCode{2, 0, 0},
 		Message:      "Session reset",
 	}
+	VRFY = &SMTPStatus{
+		Code:         252,
+		EnhancedCode: EnhancedCode{2, 5, 0},
+		Message:      "Cannot VRFY user, but will accept message",
+	}
+	Noop = &SMTPStatus{
+		Code:         250,
+		EnhancedCode: EnhancedCode{2, 0, 0},
+		Message:      "I have successfully done nothing",
+	}
 	// ErrDataReset is returned by Reader pased to Data function if client does not
 	// send another BDAT command and instead issues QUIT command.
 	Quit = &SMTPStatus{

@@ -55,7 +55,9 @@ type session struct {
 	msg *message
 }
 
-var _ server.AuthSession = (*session)(nil)
+func (s *session) Greet() error {
+	return nil
+}
 
 func (s *session) AuthMechanisms() []string {
 	if s.backend.authDisabled {
@@ -182,21 +184,21 @@ func (l *failingListener) Addr() net.Addr {
 }
 
 type mockError struct {
-	msg       string
-	temporary bool
+	msg     string
+	timeout bool
 }
 
 func newMockError(msg string, temporary bool) *mockError {
 	return &mockError{
-		msg:       msg,
-		temporary: temporary,
+		msg:     msg,
+		timeout: temporary,
 	}
 }
 
 func (m *mockError) Error() string   { return m.msg }
 func (m *mockError) String() string  { return m.msg }
-func (m *mockError) Timeout() bool   { return false }
-func (m *mockError) Temporary() bool { return m.temporary }
+func (m *mockError) Timeout() bool   { return m.timeout }
+func (m *mockError) Temporary() bool { return false }
 
 type serverConfigureFunc func(*server.Server)
 
@@ -214,8 +216,7 @@ func testServer(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server
 
 	be = new(backend)
 	s = server.NewServer(be)
-	s.Domain = "localhost"
-	s.AllowInsecureAuth = true
+	s.Hostname = "localhost"
 	for _, f := range fn {
 		f(s)
 	}
@@ -282,8 +283,7 @@ func TestServerAcceptErrorHandling(t *testing.T) {
 	errorLog := bytes.NewBuffer(nil)
 	be := new(backend)
 	s := server.NewServer(be)
-	s.Domain = "localhost"
-	s.AllowInsecureAuth = true
+	s.Hostname = "localhost"
 	s.ErrorLog = log.New(errorLog, "", 0)
 
 	l := newFailingListener()
@@ -726,12 +726,8 @@ func TestServer_invalidCommand(t *testing.T) {
 
 	io.WriteString(c, "XXXX\r\n")
 	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "500 ") {
+	if !strings.HasPrefix(scanner.Text(), "502 ") {
 		t.Fatal("Invalid invalid command response:", scanner.Text())
-	}
-
-	if scanner.Scan() {
-		t.Fatal("connection is still open")
 	}
 }
 
