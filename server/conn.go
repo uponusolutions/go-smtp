@@ -9,7 +9,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/uponusolutions/go-smtp"
@@ -33,7 +32,6 @@ type Conn struct {
 	server *Server
 
 	session    Session
-	locker     sync.Mutex
 	binarymime bool
 
 	helo       string   // set in helo / ehlo
@@ -175,27 +173,11 @@ func (c *Conn) Server() *Server {
 	return c.server
 }
 
-func (c *Conn) Session() Session {
-	c.locker.Lock()
-	defer c.locker.Unlock()
-	return c.session
-}
-
-func (c *Conn) setSession(session Session) {
-	c.locker.Lock()
-	defer c.locker.Unlock()
-	c.session = session
-}
-
 func (c *Conn) Close() error {
-	c.locker.Lock()
-	defer c.locker.Unlock()
-
 	if c.session != nil {
 		c.session.Logout()
 		c.session = nil
 	}
-
 	return c.conn.Close()
 }
 
@@ -245,7 +227,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 			return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
 		}
 
-		c.setSession(sess)
+		c.session = sess
 	}
 
 	err = c.session.Greet()
@@ -277,7 +259,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		caps = append(caps, "STARTTLS")
 	}
 
-	mechs := c.Session().AuthMechanisms()
+	mechs := c.session.AuthMechanisms()
 	if len(mechs) > 0 {
 		authCap := "AUTH"
 		for _, name := range mechs {
@@ -449,7 +431,7 @@ func (c *Conn) handleMail(arg string) error {
 		}
 	}
 
-	if err := c.Session().Mail(from, opts); err != nil {
+	if err := c.session.Mail(from, opts); err != nil {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
 	}
 
@@ -512,7 +494,7 @@ func (c *Conn) handleRcpt(arg string) error {
 		}
 	}
 
-	if err := c.Session().Rcpt(recipient, opts); err != nil {
+	if err := c.session.Rcpt(recipient, opts); err != nil {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
 	}
 	c.recipients = append(c.recipients, recipient)
@@ -634,7 +616,7 @@ func (c *Conn) handleData(arg string) error {
 		return r
 	}
 
-	uuid, err := c.Session().Data(rstart, *c.from, c.recipients)
+	uuid, err := c.session.Data(rstart, *c.from, c.recipients)
 	if err != nil {
 		return err
 	}
@@ -666,7 +648,7 @@ func (c *Conn) handleBdat(arg string) error {
 		},
 	}
 
-	uuid, err := c.Session().Data(func() io.Reader { return data }, *c.from, c.recipients)
+	uuid, err := c.session.Data(func() io.Reader { return data }, *c.from, c.recipients)
 
 	if err == smtp.Reset {
 		c.reset()
@@ -758,9 +740,6 @@ func (c *Conn) logout() {
 }
 
 func (c *Conn) reset() {
-	c.locker.Lock()
-	defer c.locker.Unlock()
-
 	if c.session != nil {
 		c.session.Reset()
 	}
