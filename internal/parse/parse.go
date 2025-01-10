@@ -13,15 +13,6 @@ func CutPrefixFold(s, prefix string) (string, bool) {
 	return s[len(prefix):], true
 }
 
-func IsPrintableASCII(val string) bool {
-	for _, ch := range val {
-		if ch < ' ' || '~' < ch {
-			return false
-		}
-	}
-	return true
-}
-
 func Cmd(line string) (cmd string, arg string, err error) {
 	line = strings.TrimRight(line, "\r\n")
 

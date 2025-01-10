@@ -57,3 +57,16 @@ type AuthSession interface {
 	AuthMechanisms() []string
 	Auth(mech string) (sasl.Server, error)
 }
+
+// ConnSession is an add-on interface for Session. It provides support to intercept the connection.
+type ConnSession interface {
+	Session
+
+	Connect() error
+}
+
+// ConnAuthSession is an add-on interface for Session. It merges ConnSession and AuthSession.
+type ConnAuthSession interface {
+	AuthSession
+	ConnSession
+}

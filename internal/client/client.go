@@ -465,12 +465,12 @@ func (c *Client) Mail(from string, opts *smtp.MailOptions) error {
 			if !textsmtp.IsPrintableASCII(opts.EnvelopeID) {
 				return errors.New("smtp: Malformed ENVID parameter value")
 			}
-			fmt.Fprintf(&sb, " ENVID=%s", textsmtp.EncodeXtext(opts.EnvelopeID))
+			fmt.Fprintf(&sb, " ENVID=%s", encodeXtext(opts.EnvelopeID))
 		}
 	}
 	if opts != nil && opts.Auth != nil {
 		if _, ok := c.ext["AUTH"]; ok {
-			fmt.Fprintf(&sb, " AUTH=%s", textsmtp.EncodeXtext(*opts.Auth))
+			fmt.Fprintf(&sb, " AUTH=%s", encodeXtext(*opts.Auth))
 		}
 		// We can safely discard parameter if server does not support AUTH.
 	}
@@ -515,12 +515,12 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 				if !textsmtp.IsPrintableASCII(opts.OriginalRecipient) {
 					return errors.New("smtp: Illegal address")
 				}
-				enc = textsmtp.EncodeXtext(opts.OriginalRecipient)
+				enc = encodeXtext(opts.OriginalRecipient)
 			case smtp.DSNAddressTypeUTF8:
 				if _, ok := c.ext["SMTPUTF8"]; ok {
-					enc = textsmtp.EncodeUTF8AddrUnitext(opts.OriginalRecipient)
+					enc = encodeUTF8AddrUnitext(opts.OriginalRecipient)
 				} else {
-					enc = textsmtp.EncodeUTF8AddrXtext(opts.OriginalRecipient)
+					enc = encodeUTF8AddrXtext(opts.OriginalRecipient)
 				}
 			default:
 				return errors.New("smtp: Unknown address type")
@@ -871,4 +871,67 @@ func validateLine(line string) error {
 		return errors.New("smtp: a line must not contain CR or LF")
 	}
 	return nil
+}
+
+func encodeXtext(raw string) string {
+	var out strings.Builder
+	out.Grow(len(raw))
+
+	for _, ch := range raw {
+		switch {
+		case ch >= '!' && ch <= '~' && ch != '+' && ch != '=':
+			// printable non-space US-ASCII except '+' and '='
+			out.WriteRune(ch)
+		default:
+			out.WriteRune('+')
+			out.WriteString(strings.ToUpper(strconv.FormatInt(int64(ch), 16)))
+		}
+	}
+	return out.String()
+}
+
+// encodeUTF8AddrUnitext encodes raw string to the utf-8-addr-unitext form in RFC 6533.
+func encodeUTF8AddrUnitext(raw string) string {
+	var out strings.Builder
+	out.Grow(len(raw))
+
+	for _, ch := range raw {
+		switch {
+		case ch >= '!' && ch <= '~' && ch != '+' && ch != '=':
+			// printable non-space US-ASCII except '+' and '='
+			out.WriteRune(ch)
+		case ch <= '\x7F':
+			// other ASCII: CTLs, space and specials
+			out.WriteRune('\\')
+			out.WriteRune('x')
+			out.WriteRune('{')
+			out.WriteString(strings.ToUpper(strconv.FormatInt(int64(ch), 16)))
+			out.WriteRune('}')
+		default:
+			// UTF-8 non-ASCII
+			out.WriteRune(ch)
+		}
+	}
+	return out.String()
+}
+
+// encodeUTF8AddrXtext encodes raw string to the utf-8-addr-xtext form in RFC 6533.
+func encodeUTF8AddrXtext(raw string) string {
+	var out strings.Builder
+	out.Grow(len(raw))
+
+	for _, ch := range raw {
+		switch {
+		case ch >= '!' && ch <= '~' && ch != '+' && ch != '=':
+			// printable non-space US-ASCII except '+' and '='
+			out.WriteRune(ch)
+		default:
+			out.WriteRune('\\')
+			out.WriteRune('x')
+			out.WriteRune('{')
+			out.WriteString(strings.ToUpper(strconv.FormatInt(int64(ch), 16)))
+			out.WriteRune('}')
+		}
+	}
+	return out.String()
 }
