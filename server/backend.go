@@ -43,7 +43,7 @@ type Session interface {
 	// Set currently processed message contents and send it.
 	//
 	// r must be consumed before Data returns.
-	Data(r func() io.Reader, sender string, recipients []string) (string, error)
+	Data(r func() io.Reader) (string, error)
 
 	AuthMechanisms() []string
 	Auth(mech string) (sasl.Server, error)

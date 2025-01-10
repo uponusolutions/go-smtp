@@ -34,9 +34,8 @@ type Conn struct {
 	session    Session
 	binarymime bool
 
-	helo       string   // set in helo / ehlo
-	from       *string  // set in MAIL FROM
-	recipients []string // set in RCPT
+	helo       string // set in helo / ehlo
+	recipients int    // count recipients
 	didAuth    bool
 }
 
@@ -324,10 +323,6 @@ func (c *Conn) handleError(err error) {
 
 // READY state -> waiting for MAIL
 func (c *Conn) handleMail(arg string) error {
-	if c.from != nil {
-		return smtp.NewStatus(503, smtp.EnhancedCode{5, 5, 1}, "Already received FROM:")
-	}
-
 	arg, ok := parse.CutPrefixFold(arg, "FROM:")
 	if !ok {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
@@ -436,7 +431,6 @@ func (c *Conn) handleMail(arg string) error {
 	}
 
 	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
-	c.from = &from
 	c.state = StateMail
 	return nil
 }
@@ -454,7 +448,7 @@ func (c *Conn) handleRcpt(arg string) error {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
 	}
 
-	if c.server.MaxRecipients > 0 && len(c.recipients) >= c.server.MaxRecipients {
+	if c.server.MaxRecipients > 0 && c.recipients >= c.server.MaxRecipients {
 		return smtp.NewStatus(452, smtp.EnhancedCode{4, 5, 3}, fmt.Sprintf("Maximum limit of %v recipients reached", c.server.MaxRecipients))
 	}
 
@@ -497,7 +491,7 @@ func (c *Conn) handleRcpt(arg string) error {
 	if err := c.session.Rcpt(recipient, opts); err != nil {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
 	}
-	c.recipients = append(c.recipients, recipient)
+	c.recipients++
 	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
 	return nil
 }
@@ -599,9 +593,6 @@ func (c *Conn) handleData(arg string) error {
 	if c.binarymime {
 		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed for BINARYMIME messages")
 	}
-	if len(c.recipients) == 0 {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
-	}
 
 	var r io.Reader
 
@@ -616,7 +607,7 @@ func (c *Conn) handleData(arg string) error {
 		return r
 	}
 
-	uuid, err := c.session.Data(rstart, *c.from, c.recipients)
+	uuid, err := c.session.Data(rstart)
 	if err != nil {
 		return err
 	}
@@ -627,10 +618,6 @@ func (c *Conn) handleData(arg string) error {
 }
 
 func (c *Conn) handleBdat(arg string) error {
-	if len(c.recipients) == 0 {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
-	}
-
 	size, last, err := bdatArg(arg)
 	if err != nil {
 		return err
@@ -648,7 +635,7 @@ func (c *Conn) handleBdat(arg string) error {
 		},
 	}
 
-	uuid, err := c.session.Data(func() io.Reader { return data }, *c.from, c.recipients)
+	uuid, err := c.session.Data(func() io.Reader { return data })
 
 	if err == smtp.Reset {
 		c.reset()
@@ -740,15 +727,14 @@ func (c *Conn) logout() {
 }
 
 func (c *Conn) reset() {
-	if c.session != nil {
-		c.session.Reset()
-	}
-
 	// Reset state to running
 	if c.state != StateEnforceSecureConnection && c.state != StateInit {
 		c.state = StateGreeted
 	}
 
-	c.from = nil
-	c.recipients = nil
+	c.recipients = 0
+
+	if c.session != nil {
+		c.session.Reset()
+	}
 }

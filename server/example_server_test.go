@@ -52,7 +52,7 @@ func (s *Session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-func (s *Session) Data(r func() io.Reader, _ string, _ []string) (string, error) {
+func (s *Session) Data(r func() io.Reader) (string, error) {
 	if b, err := io.ReadAll(r()); err != nil {
 		return "", err
 	} else {
