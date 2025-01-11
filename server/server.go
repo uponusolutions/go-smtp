@@ -86,11 +86,6 @@ type Server struct {
 // New creates a new SMTP server.
 func NewServer(be Backend) *Server {
 	return &Server{
-		// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
-		MaxLineLength: 4096,
-		ReaderSize:    4096,
-		WriterSize:    4096,
-
 		Backend:  be,
 		done:     make(chan struct{}, 1),
 		ErrorLog: log.New(os.Stderr, "smtp/server ", log.LstdFlags),
