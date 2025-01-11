@@ -82,17 +82,19 @@ func (s *Session) Logout() error {
 //	.
 func ExampleServer() {
 	be := &Backend{}
+	addr := "localhost:1025"
 
-	s := server.NewServer(be)
+	s := server.NewServer(
+		server.WithBackend(be),
+		server.WithAddr(addr),
+		server.WithHostname("localhost"),
+		server.WithWriteTimeout(10*time.Second),
+		server.WithReadTimeout(10*time.Second),
+		server.WithMaxMessageBytes(1024*1024),
+		server.WithMaxRecipients(50),
+	)
 
-	s.Addr = "localhost:1025"
-	s.Hostname = "localhost"
-	s.WriteTimeout = 10 * time.Second
-	s.ReadTimeout = 10 * time.Second
-	s.MaxMessageBytes = 1024 * 1024
-	s.MaxRecipients = 50
-
-	log.Println("Starting server at", s.Addr)
+	log.Println("Starting server at", addr)
 	if err := s.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}

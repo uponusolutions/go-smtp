@@ -3,97 +3,13 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"log"
 	"net"
-	"os"
-	"sync"
 	"time"
 
 	"runtime/debug"
 
 	"github.com/uponusolutions/go-smtp"
 )
-
-var ErrServerClosed = errors.New("smtp: server already closed")
-
-// Logger interface is used by Server to report unexpected internal errors.
-type Logger interface {
-	Printf(format string, v ...interface{})
-	Println(v ...interface{})
-}
-
-// A SMTP server.
-type Server struct {
-	// The type of network, "tcp" or "unix".
-	Network string
-	// TCP or Unix address to listen on.
-	Addr string
-	// The server TLS configuration.
-	TLSConfig *tls.Config
-
-	Hostname string
-
-	MaxRecipients int
-	// Max line length for every command except data and bdat.
-	MaxLineLength int
-	// Maximum size when receiving data and bdat.
-	MaxMessageBytes int64
-	// Reader buffer size.
-	ReaderSize int
-	// Writer buffer size.
-	WriterSize int
-
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-
-	// Enforces usage of implicit tls or starttls before accepting commands except NOOP, EHLO, STARTTLS, or QUIT.
-	EnforceSecureConnection bool
-
-	ErrorLog Logger
-
-	// Advertise SMTPUTF8 (RFC 6531) capability.
-	// Should be used only if backend supports it.
-	EnableSMTPUTF8 bool
-
-	// Advertise REQUIRETLS (RFC 8689) capability.
-	// Should be used only if backend supports it.
-	EnableREQUIRETLS bool
-
-	// Advertise BINARYMIME (RFC 3030) capability.
-	// Should be used only if backend supports it.
-	EnableBINARYMIME bool
-
-	// Advertise DSN (RFC 3461) capability.
-	// Should be used only if backend supports it.
-	EnableDSN bool
-
-	// Advertise XOORG capability.
-	// Should be used only if backend supports it.
-	EnableXOORG bool
-
-	// The server backend.
-	Backend Backend
-
-	wg   sync.WaitGroup
-	done chan struct{}
-
-	locker    sync.Mutex
-	listeners []net.Listener
-	conns     map[*Conn]struct{}
-}
-
-// New creates a new SMTP server.
-func NewServer(be Backend) *Server {
-	return &Server{
-		// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
-		MaxLineLength: 4096,
-		Backend:       be,
-		done:          make(chan struct{}, 1),
-		ErrorLog:      log.New(os.Stderr, "smtp/server ", log.LstdFlags),
-		conns:         make(map[*Conn]struct{}),
-	}
-}
 
 // Serve accepts incoming connections on the Listener l.
 func (s *Server) Serve(l net.Listener) error {
@@ -162,10 +78,10 @@ func (s *Server) handleConn(c *Conn) error {
 	}()
 
 	if tlsConn, ok := c.conn.(*tls.Conn); ok {
-		if d := s.ReadTimeout; d != 0 {
+		if d := s.readTimeout; d != 0 {
 			c.conn.SetReadDeadline(time.Now().Add(d))
 		}
-		if d := s.WriteTimeout; d != 0 {
+		if d := s.writeTimeout; d != 0 {
 			c.conn.SetWriteDeadline(time.Now().Add(d))
 		}
 		if err := tlsConn.Handshake(); err != nil {
@@ -191,46 +107,30 @@ func (s *Server) handleConn(c *Conn) error {
 	}
 }
 
-func (s *Server) network() string {
-	if s.Network != "" {
-		return s.Network
-	}
-	return "tcp"
-}
-
 // ListenAndServe listens on the network address s.Addr and then calls Serve
 // to handle requests on incoming connections.
 //
 // If s.Addr is blank and LMTP is disabled, ":smtp" is used.
 func (s *Server) ListenAndServe() error {
-	network := s.network()
+	network := s.network
+	if network == "" {
+		network = "tcp"
+	}
 
-	addr := s.Addr
+	addr := s.addr
 	if addr == "" {
 		addr = ":smtp"
 	}
 
-	l, err := net.Listen(network, addr)
-	if err != nil {
-		return err
+	var l net.Listener
+	var err error
+
+	if s.implicitTLS {
+		l, err = tls.Listen(network, addr, s.tlsConfig)
+	} else {
+		l, err = net.Listen(network, addr)
 	}
 
-	return s.Serve(l)
-}
-
-// ListenAndServeTLS listens on the TCP network address s.Addr and then calls
-// Serve to handle requests on incoming TLS connections.
-//
-// If s.Addr is blank and LMTP is disabled, ":smtps" is used.
-func (s *Server) ListenAndServeTLS() error {
-	network := s.network()
-
-	addr := s.Addr
-	if addr == "" {
-		addr = ":smtps"
-	}
-
-	l, err := tls.Listen(network, addr, s.TLSConfig)
 	if err != nil {
 		return err
 	}

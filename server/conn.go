@@ -43,7 +43,7 @@ func newConn(c net.Conn, s *Server) *Conn {
 	return &Conn{
 		server: s,
 		conn:   c,
-		text:   textsmtp.NewConn(c, s.ReaderSize, s.WriterSize, s.MaxLineLength),
+		text:   textsmtp.NewConn(c, s.readerSize, s.writerSize, s.maxLineLength),
 	}
 }
 
@@ -234,7 +234,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		return err
 	}
 
-	if c.server.EnforceSecureConnection && !c.IsTLS() {
+	if c.server.enforceSecureConnection && !c.IsTLS() {
 		c.state = StateEnforceSecureConnection
 	} else {
 		c.state = StateGreeted
@@ -254,7 +254,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 
 	isTLS := c.IsTLS()
 
-	if !isTLS && c.server.TLSConfig != nil {
+	if !isTLS && c.server.tlsConfig != nil {
 		caps = append(caps, "STARTTLS")
 	}
 
@@ -268,28 +268,28 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		caps = append(caps, authCap)
 	}
 
-	if c.server.EnableSMTPUTF8 {
+	if c.server.enableSMTPUTF8 {
 		caps = append(caps, "SMTPUTF8")
 	}
-	if isTLS && c.server.EnableREQUIRETLS {
+	if isTLS && c.server.enableREQUIRETLS {
 		caps = append(caps, "REQUIRETLS")
 	}
-	if c.server.EnableBINARYMIME {
+	if c.server.enableBINARYMIME {
 		caps = append(caps, "BINARYMIME")
 	}
-	if c.server.EnableDSN {
+	if c.server.enableDSN {
 		caps = append(caps, "DSN")
 	}
-	if c.server.EnableXOORG {
+	if c.server.enableXOORG {
 		caps = append(caps, "XOORG")
 	}
-	if c.server.MaxMessageBytes > 0 {
-		caps = append(caps, fmt.Sprintf("SIZE %v", c.server.MaxMessageBytes))
+	if c.server.maxMessageBytes > 0 {
+		caps = append(caps, fmt.Sprintf("SIZE %v", c.server.maxMessageBytes))
 	} else {
 		caps = append(caps, "SIZE")
 	}
-	if c.server.MaxRecipients > 0 {
-		caps = append(caps, fmt.Sprintf("LIMITS RCPTMAX=%v", c.server.MaxRecipients))
+	if c.server.maxRecipients > 0 {
+		caps = append(caps, fmt.Sprintf("LIMITS RCPTMAX=%v", c.server.maxRecipients))
 	}
 
 	args := []string{"Hello " + domain}
@@ -351,23 +351,23 @@ func (c *Conn) handleMail(arg string) error {
 				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse SIZE as an integer")
 			}
 
-			if c.server.MaxMessageBytes > 0 && int64(size) > c.server.MaxMessageBytes {
+			if c.server.maxMessageBytes > 0 && int64(size) > c.server.maxMessageBytes {
 				return smtp.NewStatus(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
 			}
 
 			opts.Size = int64(size)
 		case "XOORG":
-			if !c.server.EnableXOORG {
+			if !c.server.enableXOORG {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "EnableXOORG is not implemented")
 			}
 			opts.XOORG = value
 		case "SMTPUTF8":
-			if !c.server.EnableSMTPUTF8 {
+			if !c.server.enableSMTPUTF8 {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
 			}
 			opts.UTF8 = true
 		case "REQUIRETLS":
-			if !c.server.EnableREQUIRETLS {
+			if !c.server.enableREQUIRETLS {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "REQUIRETLS is not implemented")
 			}
 			opts.RequireTLS = true
@@ -375,7 +375,7 @@ func (c *Conn) handleMail(arg string) error {
 			value = strings.ToUpper(value)
 			switch smtp.BodyType(value) {
 			case smtp.BodyBinaryMIME:
-				if !c.server.EnableBINARYMIME {
+				if !c.server.enableBINARYMIME {
 					return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "BINARYMIME is not implemented")
 				}
 				c.binarymime = true
@@ -386,7 +386,7 @@ func (c *Conn) handleMail(arg string) error {
 			}
 			opts.Body = smtp.BodyType(value)
 		case "RET":
-			if !c.server.EnableDSN {
+			if !c.server.enableDSN {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "RET is not implemented")
 			}
 			value = strings.ToUpper(value)
@@ -398,7 +398,7 @@ func (c *Conn) handleMail(arg string) error {
 			}
 			opts.Return = smtp.DSNReturn(value)
 		case "ENVID":
-			if !c.server.EnableDSN {
+			if !c.server.enableDSN {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ENVID is not implemented")
 			}
 			value, err := decodeXtext(value)
@@ -448,8 +448,8 @@ func (c *Conn) handleRcpt(arg string) error {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
 	}
 
-	if c.server.MaxRecipients > 0 && c.recipients >= c.server.MaxRecipients {
-		return smtp.NewStatus(452, smtp.EnhancedCode{4, 5, 3}, fmt.Sprintf("Maximum limit of %v recipients reached", c.server.MaxRecipients))
+	if c.server.maxRecipients > 0 && c.recipients >= c.server.maxRecipients {
+		return smtp.NewStatus(452, smtp.EnhancedCode{4, 5, 3}, fmt.Sprintf("Maximum limit of %v recipients reached", c.server.maxRecipients))
 	}
 
 	args, err := parse.Args(p.S)
@@ -462,7 +462,7 @@ func (c *Conn) handleRcpt(arg string) error {
 	for key, value := range args {
 		switch key {
 		case "NOTIFY":
-			if !c.server.EnableDSN {
+			if !c.server.enableDSN {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
 			}
 			notify := []smtp.DSNNotify{}
@@ -474,7 +474,7 @@ func (c *Conn) handleRcpt(arg string) error {
 			}
 			opts.Notify = notify
 		case "ORCPT":
-			if !c.server.EnableDSN {
+			if !c.server.enableDSN {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
 			}
 			aType, aAddr, err := decodeTypedAddress(value)
@@ -565,14 +565,14 @@ func (c *Conn) handleStartTLS() error {
 		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Already running in TLS")
 	}
 
-	if c.server.TLSConfig == nil {
+	if c.server.tlsConfig == nil {
 		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "TLS not supported")
 	}
 
 	c.writeResponse(220, smtp.EnhancedCode{2, 0, 0}, "Ready to start TLS")
 
 	// Upgrade to TLS
-	tlsConn := tls.Server(c.conn, c.server.TLSConfig)
+	tlsConn := tls.Server(c.conn, c.server.tlsConfig)
 
 	if err := tlsConn.Handshake(); err != nil {
 		return smtp.NewStatus(550, smtp.EnhancedCode{5, 0, 0}, "Handshake error")
@@ -603,7 +603,7 @@ func (c *Conn) handleData(arg string) error {
 		// We have recipients, go to accept data
 		c.writeResponse(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>")
 
-		r := textsmtp.NewDotReader(c.text.R, c.server.MaxMessageBytes)
+		r := textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
 		return r
 	}
 
@@ -624,7 +624,7 @@ func (c *Conn) handleBdat(arg string) error {
 	}
 
 	data := &bdat{
-		maxMessageBytes: c.server.MaxMessageBytes,
+		maxMessageBytes: c.server.maxMessageBytes,
 		size:            size,
 		last:            last,
 		bytesReceived:   0,
@@ -667,7 +667,7 @@ func (c *Conn) Reject() {
 
 func (c *Conn) greet() {
 	protocol := "ESMTP"
-	c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.Hostname, protocol))
+	c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.hostname, protocol))
 }
 
 func (c *Conn) writeStatus(status *smtp.SMTPStatus) {
@@ -676,8 +676,8 @@ func (c *Conn) writeStatus(status *smtp.SMTPStatus) {
 
 func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string) {
 	// TODO: error handling
-	if c.server.WriteTimeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.server.WriteTimeout))
+	if c.server.writeTimeout != 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
 	}
 
 	// All responses must include an enhanced code, if it is missing - use
@@ -712,8 +712,8 @@ func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, err error) *s
 
 // Reads a line of input
 func (c *Conn) readLine() (string, error) {
-	if c.server.ReadTimeout != 0 {
-		if err := c.conn.SetReadDeadline(time.Now().Add(c.server.ReadTimeout)); err != nil {
+	if c.server.readTimeout != 0 {
+		if err := c.conn.SetReadDeadline(time.Now().Add(c.server.readTimeout)); err != nil {
 			return "", err
 		}
 	}

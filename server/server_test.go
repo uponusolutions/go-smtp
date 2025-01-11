@@ -200,26 +200,30 @@ func (m *mockError) String() string  { return m.msg }
 func (m *mockError) Timeout() bool   { return m.timeout }
 func (m *mockError) Temporary() bool { return false }
 
-type serverConfigureFunc func(*server.Server)
-
 var (
 	authDisabled = func(s *server.Server) {
 		s.Backend.(*backend).authDisabled = true
 	}
 )
 
-func testServer(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
+func testServer(t *testing.T, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	be = new(backend)
-	s = server.NewServer(be)
-	s.Hostname = "localhost"
-	for _, f := range fn {
-		f(s)
+
+	curOpts := []server.Option{
+		server.WithBackend(be),
+		server.WithMaxLineLength(2000),
+		server.WithHostname("localhost"),
 	}
+
+	curOpts = append(curOpts, opts...)
+
+	s = server.NewServer(
+		curOpts...,
+	)
 
 	go s.Serve(l)
 
@@ -232,8 +236,8 @@ func testServer(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server
 	return
 }
 
-func testServerGreeted(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
-	be, s, c, scanner = testServer(t, fn...)
+func testServerGreeted(t *testing.T, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
+	be, s, c, scanner = testServer(t, opts...)
 
 	scanner.Scan()
 	if scanner.Text() != "220 localhost ESMTP Service Ready" {
@@ -243,8 +247,8 @@ func testServerGreeted(t *testing.T, fn ...serverConfigureFunc) (be *backend, s 
 	return
 }
 
-func testServerEhlo(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner, caps map[string]bool) {
-	be, s, c, scanner = testServerGreeted(t, fn...)
+func testServerEhlo(t *testing.T, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner, caps map[string]bool) {
+	be, s, c, scanner = testServerGreeted(t, opts...)
 
 	io.WriteString(c, "EHLO localhost\r\n")
 
@@ -282,8 +286,7 @@ func testServerEhlo(t *testing.T, fn ...serverConfigureFunc) (be *backend, s *se
 func TestServerAcceptErrorHandling(t *testing.T) {
 	errorLog := bytes.NewBuffer(nil)
 	be := new(backend)
-	s := server.NewServer(be)
-	s.Hostname = "localhost"
+	s := server.NewServer(server.WithBackend(be))
 	s.ErrorLog = log.New(errorLog, "", 0)
 
 	l := newFailingListener()
@@ -322,8 +325,8 @@ func TestServer_helo(t *testing.T) {
 	}
 }
 
-func testServerAuthenticated(t *testing.T) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
-	be, s, c, scanner, caps := testServerEhlo(t)
+func testServerAuthenticated(t *testing.T, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
+	be, s, c, scanner, caps := testServerEhlo(t, opts...)
 
 	if _, ok := caps["AUTH PLAIN"]; !ok {
 		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
@@ -433,8 +436,7 @@ func TestServerPanicRecover(t *testing.T) {
 }
 
 func TestServerSMTPUTF8(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
-	s.EnableSMTPUTF8 = true
+	_, s, c, scanner := testServerAuthenticated(t, server.WithEnableSMTPUTF8(true))
 	defer s.Close()
 	defer c.Close()
 
@@ -506,11 +508,9 @@ func TestServerBadSize(t *testing.T) {
 }
 
 func TestServerTooBig(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, server.WithMaxMessageBytes(4294967294))
 	defer s.Close()
 	defer c.Close()
-
-	s.MaxMessageBytes = 4294967294
 
 	io.WriteString(c, "MAIL FROM:<alice@wonderland.book> SIZE=4294967295\r\n")
 	scanner.Scan()
@@ -732,10 +732,8 @@ func TestServer_invalidCommand(t *testing.T) {
 }
 
 func TestServer_tooLongMessage(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, server.WithMaxMessageBytes(50))
 	defer s.Close()
-
-	s.MaxMessageBytes = 50
 
 	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -1166,10 +1164,8 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 }
 
 func TestServer_Chunking_tooLongMessage(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, server.WithMaxMessageBytes(50))
 	defer s.Close()
-
-	s.MaxMessageBytes = 50
 
 	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -1193,10 +1189,9 @@ func TestServer_Chunking_tooLongMessage(t *testing.T) {
 }
 
 func TestServer_Chunking_Binarymime(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, server.WithEnableBINARYMIME(true))
 	defer s.Close()
 	defer c.Close()
-	s.EnableBINARYMIME = true
 
 	io.WriteString(c, "MAIL FROM:<root@nsa.gov> BODY=BINARYMIME\r\n")
 	scanner.Scan()
@@ -1241,11 +1236,13 @@ func TestServer_Chunking_Binarymime(t *testing.T) {
 }
 
 func TestServer_TooLongCommand(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	maxLineLength := 2000
+
+	_, s, c, scanner := testServerAuthenticated(t, server.WithMaxLineLength(maxLineLength))
 	defer s.Close()
 	defer c.Close()
 
-	io.WriteString(c, "MAIL FROM:<"+strings.Repeat("a", s.MaxLineLength)+">\r\n")
+	io.WriteString(c, "MAIL FROM:<"+strings.Repeat("a", maxLineLength)+">\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "500 5.4.0 ") {
 		t.Fatal("Invalid too long MAIL response:", scanner.Text())
@@ -1290,9 +1287,8 @@ const (
 
 func TestServerDSN(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t,
-		func(s *server.Server) {
-			s.EnableDSN = true
-		})
+		server.WithEnableDSN(true),
+	)
 	defer s.Close()
 	defer c.Close()
 
@@ -1375,10 +1371,9 @@ func TestServerDSN(t *testing.T) {
 
 func TestServerDSNwithSMTPUTF8(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t,
-		func(s *server.Server) {
-			s.EnableDSN = true
-			s.EnableSMTPUTF8 = true
-		})
+		server.WithEnableSMTPUTF8(true),
+		server.WithEnableDSN(true),
+	)
 	defer s.Close()
 	defer c.Close()
 
@@ -1483,9 +1478,8 @@ func TestServerDSNwithSMTPUTF8(t *testing.T) {
 
 func TestServerXOORG(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t,
-		func(s *server.Server) {
-			s.EnableXOORG = true
-		})
+		server.WithEnableXOORG(true),
+	)
 	defer s.Close()
 	defer c.Close()
 
