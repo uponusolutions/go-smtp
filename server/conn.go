@@ -18,6 +18,8 @@ import (
 
 const (
 	StateInit = iota
+	StateUpgrade
+	StateEnforceAuthentication
 	StateEnforceSecureConnection
 	StateGreeted
 	StateMail
@@ -73,16 +75,54 @@ func (c *Conn) handle(cmd string, arg string) error {
 
 	switch c.state {
 	case StateInit:
+		fallthrough
+	case StateUpgrade:
 		return c.handleStateInit(cmd, arg)
-	case StateGreeted:
-		return c.handleStateGreeted(cmd, arg)
 	case StateEnforceSecureConnection:
 		return c.handleStateEnforceSecureConnection(cmd, arg)
+	case StateEnforceAuthentication:
+		return c.handleStateEnforceAuthentication(cmd, arg)
+	case StateGreeted:
+		return c.handleStateGreeted(cmd, arg)
 	case StateMail:
 		return c.handleStateMail(cmd, arg)
 	}
 
-	return errors.New("unsupported state, how?")
+	return fmt.Errorf("unsupported state %d, how?", c.state)
+}
+
+func (c *Conn) handleStateInit(cmd string, arg string) error {
+	switch cmd {
+	case "HELO", "EHLO":
+		return c.handleGreet(cmd == "EHLO", arg)
+	case "NOOP":
+		c.writeStatus(smtp.Noop)
+	case "VRFY":
+		c.writeStatus(smtp.VRFY)
+	case "QUIT":
+		return smtp.Quit
+	default:
+		c.writeCommandUnknown(cmd)
+	}
+	return nil
+}
+
+func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
+	switch cmd {
+	case "HELO", "EHLO":
+		return c.handleGreet(cmd == "EHLO", arg)
+	case "NOOP":
+		c.writeStatus(smtp.Noop)
+	case "VRFY":
+		c.writeStatus(smtp.VRFY)
+	case "QUIT":
+		return smtp.Quit
+	case "AUTH":
+		return c.handleAuth(arg)
+	default:
+		c.writeCommandUnknown(cmd)
+	}
+	return nil
 }
 
 func (c *Conn) handleStateGreeted(cmd string, arg string) error {
@@ -96,7 +136,7 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 	case "VRFY":
 		c.writeStatus(smtp.VRFY)
 	case "RSET": // Reset session
-		// c.reset() - nothing to do
+		c.reset()
 		c.writeStatus(smtp.Reset)
 	case "QUIT":
 		return smtp.Quit
@@ -121,7 +161,7 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 	case "VRFY":
 		c.writeStatus(smtp.VRFY)
 	case "RSET": // Reset session
-		// c.reset() - nothing to do
+		c.reset()
 		c.writeStatus(smtp.Reset)
 	case "BDAT":
 		return c.handleBdat(arg)
@@ -130,25 +170,13 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
-		return c.handleAuth(arg)
+		err := c.handleAuth(arg)
+		if err == nil {
+			c.state = StateGreeted
+		}
+		return err
 	case "STARTTLS":
 		return c.handleStartTLS()
-	default:
-		c.writeCommandUnknown(cmd)
-	}
-	return nil
-}
-
-func (c *Conn) handleStateInit(cmd string, arg string) error {
-	switch cmd {
-	case "HELO", "EHLO":
-		return c.handleGreet(cmd == "EHLO", arg)
-	case "NOOP":
-		c.writeStatus(smtp.Noop)
-	case "VRFY":
-		c.writeStatus(smtp.VRFY)
-	case "QUIT":
-		return smtp.Quit
 	default:
 		c.writeCommandUnknown(cmd)
 	}
@@ -182,11 +210,12 @@ func (c *Conn) Server() *Server {
 }
 
 func (c *Conn) Close() error {
+	var sessionErr error
 	if c.session != nil {
-		c.session.Logout()
+		sessionErr = c.session.Logout()
 		c.session = nil
 	}
-	return c.conn.Close()
+	return errors.Join(sessionErr, c.conn.Close())
 }
 
 // TLSConnectionState returns the connection's TLS connection state.
@@ -224,18 +253,10 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	c.helo = domain
 
 	// RFC 5321: "An EHLO command MAY be issued by a client later in the session"
-	if c.session != nil {
-		// RFC 5321: "... the SMTP server MUST clear all buffers
-		// and reset the state exactly as if a RSET command has been issued."
+	// RFC 5321: "... the SMTP server MUST clear all buffers
+	// and reset the state exactly as if a RSET command has been issued."
+	if c.state != StateInit && c.state != StateEnforceSecureConnection && c.state != StateEnforceAuthentication {
 		c.reset()
-		c.logout()
-	} else {
-		sess, err := c.server.backend.NewSession(c)
-		if err != nil {
-			return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
-		}
-
-		c.session = sess
 	}
 
 	err = c.session.Greet()
@@ -245,6 +266,8 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 
 	if c.server.enforceSecureConnection && !c.IsTLS() {
 		c.state = StateEnforceSecureConnection
+	} else if c.server.enforceAuthentication {
+		c.state = StateEnforceAuthentication
 	} else {
 		c.state = StateGreeted
 	}
@@ -598,7 +621,7 @@ func (c *Conn) handleStartTLS() error {
 
 	c.conn = tlsConn
 	c.text.Replace(tlsConn)
-	c.state = StateInit
+	c.state = StateUpgrade // same as StateInit but calls logout/reset on ehlo/helo
 
 	return nil
 }
@@ -739,18 +762,14 @@ func (c *Conn) readLine() (string, error) {
 	return c.text.ReadLine()
 }
 
-func (c *Conn) logout() {
-	c.didAuth = false
-	c.session.Logout()
-}
-
 func (c *Conn) reset() {
-	// Reset state to running
-	if c.state != StateEnforceSecureConnection && c.state != StateInit {
+	// Reset state to Greeted
+	if c.state == StateMail {
 		c.state = StateGreeted
 	}
 
 	c.recipients = 0
+	c.didAuth = false
 
 	if c.session != nil {
 		c.session.Reset()

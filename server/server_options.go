@@ -47,6 +47,9 @@ type Server struct {
 	// Enforces usage of implicit tls or starttls before accepting commands except NOOP, EHLO, STARTTLS, or QUIT.
 	enforceSecureConnection bool
 
+	// Enforces usage of authentication.
+	enforceAuthentication bool
+
 	// Advertise SMTPUTF8 (RFC 6531) capability.
 	// Should be used only if backend supports it.
 	enableSMTPUTF8 bool
@@ -220,6 +223,13 @@ func WithTLSConfig(tlsConfig *tls.Config) Option {
 func WithEnforceSecureConnection(enforceSecureConnection bool) Option {
 	return func(s *Server) {
 		s.enforceSecureConnection = enforceSecureConnection
+	}
+}
+
+// WithEnforceAuthentication enforces authentication before mail usage.
+func WithEnforceAuthentication(enforceAuthentication bool) Option {
+	return func(s *Server) {
+		s.enforceAuthentication = enforceAuthentication
 	}
 }
 
