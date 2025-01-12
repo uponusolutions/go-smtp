@@ -200,18 +200,16 @@ func (m *mockError) String() string  { return m.msg }
 func (m *mockError) Timeout() bool   { return m.timeout }
 func (m *mockError) Temporary() bool { return false }
 
-var (
-	authDisabled = func(s *server.Server) {
-		s.Backend.(*backend).authDisabled = true
-	}
-)
-
-func testServer(t *testing.T, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
+func testServer(t *testing.T, bei *backend, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	be = new(backend)
+	if bei == nil {
+		be = new(backend)
+	} else {
+		be = bei
+	}
 
 	curOpts := []server.Option{
 		server.WithBackend(be),
@@ -236,8 +234,8 @@ func testServer(t *testing.T, opts ...server.Option) (be *backend, s *server.Ser
 	return
 }
 
-func testServerGreeted(t *testing.T, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
-	be, s, c, scanner = testServer(t, opts...)
+func testServerGreeted(t *testing.T, bei *backend, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
+	be, s, c, scanner = testServer(t, bei, opts...)
 
 	scanner.Scan()
 	if scanner.Text() != "220 localhost ESMTP Service Ready" {
@@ -247,8 +245,8 @@ func testServerGreeted(t *testing.T, opts ...server.Option) (be *backend, s *ser
 	return
 }
 
-func testServerEhlo(t *testing.T, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner, caps map[string]bool) {
-	be, s, c, scanner = testServerGreeted(t, opts...)
+func testServerEhlo(t *testing.T, bei *backend, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner, caps map[string]bool) {
+	be, s, c, scanner = testServerGreeted(t, bei, opts...)
 
 	io.WriteString(c, "EHLO localhost\r\n")
 
@@ -286,8 +284,10 @@ func testServerEhlo(t *testing.T, opts ...server.Option) (be *backend, s *server
 func TestServerAcceptErrorHandling(t *testing.T) {
 	errorLog := bytes.NewBuffer(nil)
 	be := new(backend)
-	s := server.NewServer(server.WithBackend(be))
-	s.ErrorLog = log.New(errorLog, "", 0)
+	s := server.NewServer(
+		server.WithBackend(be),
+		server.WithErrorLog(log.New(errorLog, "", 0)),
+	)
 
 	l := newFailingListener()
 	done := make(chan error, 1)
@@ -314,7 +314,7 @@ func TestServerAcceptErrorHandling(t *testing.T) {
 }
 
 func TestServer_helo(t *testing.T) {
-	_, s, c, scanner := testServerGreeted(t)
+	_, s, c, scanner := testServerGreeted(t, nil)
 	defer s.Close()
 
 	io.WriteString(c, "HELO localhost\r\n")
@@ -325,8 +325,8 @@ func TestServer_helo(t *testing.T) {
 	}
 }
 
-func testServerAuthenticated(t *testing.T, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
-	be, s, c, scanner, caps := testServerEhlo(t, opts...)
+func testServerAuthenticated(t *testing.T, bei *backend, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
+	be, s, c, scanner, caps := testServerEhlo(t, bei, opts...)
 
 	if _, ok := caps["AUTH PLAIN"]; !ok {
 		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
@@ -348,7 +348,7 @@ func testServerAuthenticated(t *testing.T, opts ...server.Option) (be *backend, 
 }
 
 func TestServerAuthTwice(t *testing.T) {
-	_, _, c, scanner, caps := testServerEhlo(t)
+	_, _, c, scanner, caps := testServerEhlo(t, nil)
 
 	if _, ok := caps["AUTH PLAIN"]; !ok {
 		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
@@ -376,7 +376,7 @@ func TestServerAuthTwice(t *testing.T) {
 }
 
 func TestServerCancelSASL(t *testing.T) {
-	_, _, c, scanner, caps := testServerEhlo(t)
+	_, _, c, scanner, caps := testServerEhlo(t, nil)
 
 	if _, ok := caps["AUTH PLAIN"]; !ok {
 		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
@@ -396,7 +396,7 @@ func TestServerCancelSASL(t *testing.T) {
 }
 
 func TestServerEmptyFrom1(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -408,7 +408,7 @@ func TestServerEmptyFrom1(t *testing.T) {
 }
 
 func TestServerEmptyFrom2(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -420,13 +420,14 @@ func TestServerEmptyFrom2(t *testing.T) {
 }
 
 func TestServerPanicRecover(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil,
+		// Don't log panic in tests to not confuse people who run 'go test'.
+		server.WithErrorLog(log.New(io.Discard, "", 0)),
+	)
 	defer s.Close()
 	defer c.Close()
 
-	s.Backend.(*backend).panicOnMail = true
-	// Don't log panic in tests to not confuse people who run 'go test'.
-	s.ErrorLog = log.New(io.Discard, "", 0)
+	be.panicOnMail = true
 
 	io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
 	scanner.Scan()
@@ -436,7 +437,7 @@ func TestServerPanicRecover(t *testing.T) {
 }
 
 func TestServerSMTPUTF8(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t, server.WithEnableSMTPUTF8(true))
+	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableSMTPUTF8(true))
 	defer s.Close()
 	defer c.Close()
 
@@ -448,7 +449,7 @@ func TestServerSMTPUTF8(t *testing.T) {
 }
 
 func TestServerSMTPUTF8_Disabled(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -460,7 +461,7 @@ func TestServerSMTPUTF8_Disabled(t *testing.T) {
 }
 
 func TestServer8BITMIME(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -472,7 +473,7 @@ func TestServer8BITMIME(t *testing.T) {
 }
 
 func TestServer_BODYInvalidValue(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -484,7 +485,7 @@ func TestServer_BODYInvalidValue(t *testing.T) {
 }
 
 func TestServerUnknownArg(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -496,7 +497,7 @@ func TestServerUnknownArg(t *testing.T) {
 }
 
 func TestServerBadSize(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -508,7 +509,7 @@ func TestServerBadSize(t *testing.T) {
 }
 
 func TestServerTooBig(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t, server.WithMaxMessageBytes(4294967294))
+	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxMessageBytes(4294967294))
 	defer s.Close()
 	defer c.Close()
 
@@ -520,7 +521,7 @@ func TestServerTooBig(t *testing.T) {
 }
 
 func TestServerEmptyTo(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -538,7 +539,7 @@ func TestServerEmptyTo(t *testing.T) {
 }
 
 func TestServer(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -587,7 +588,7 @@ func TestServer(t *testing.T) {
 }
 
 func TestServer_LFDotLF(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -631,7 +632,7 @@ func TestServer_LFDotLF(t *testing.T) {
 }
 
 func TestServer_EmptyMessage(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -670,7 +671,10 @@ func TestServer_EmptyMessage(t *testing.T) {
 }
 
 func TestServer_authDisabled(t *testing.T) {
-	_, s, c, scanner, caps := testServerEhlo(t, authDisabled)
+	bei := new(backend)
+	bei.authDisabled = true
+
+	_, s, c, scanner, caps := testServerEhlo(t, bei)
 	defer s.Close()
 	defer c.Close()
 
@@ -686,7 +690,7 @@ func TestServer_authDisabled(t *testing.T) {
 }
 
 func TestServer_otherCommands(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 
 	io.WriteString(c, "HELP\r\n")
@@ -721,7 +725,7 @@ func TestServer_otherCommands(t *testing.T) {
 }
 
 func TestServer_invalidCommand(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 
 	io.WriteString(c, "XXXX\r\n")
@@ -732,7 +736,7 @@ func TestServer_invalidCommand(t *testing.T) {
 }
 
 func TestServer_tooLongMessage(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, server.WithMaxMessageBytes(50))
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxMessageBytes(50))
 	defer s.Close()
 
 	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
@@ -787,7 +791,7 @@ func TestServer_smtpSmuggling(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			be, s, c, scanner := testServerAuthenticated(t)
+			be, s, c, scanner := testServerAuthenticated(t, nil)
 			defer s.Close()
 
 			io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
@@ -818,7 +822,7 @@ func TestServer_smtpSmuggling(t *testing.T) {
 }
 
 func TestServer_tooLongLine(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t)
+	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 
 	io.WriteString(c, "MAIL FROM:<root@nsa.gov> "+strings.Repeat("A", 2*4096))
@@ -829,7 +833,7 @@ func TestServer_tooLongLine(t *testing.T) {
 }
 
 func TestServer_anonymousUserError(t *testing.T) {
-	be, s, c, scanner, _ := testServerEhlo(t)
+	be, s, c, scanner, _ := testServerEhlo(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -843,7 +847,7 @@ func TestServer_anonymousUserError(t *testing.T) {
 }
 
 func TestServer_anonymousUserOK(t *testing.T) {
-	be, s, c, scanner, _ := testServerEhlo(t)
+	be, s, c, scanner, _ := testServerEhlo(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -867,7 +871,7 @@ func TestServer_anonymousUserOK(t *testing.T) {
 }
 
 func TestServer_authParam_invalidHexchar(t *testing.T) {
-	_, s, c, scanner, _ := testServerEhlo(t)
+	_, s, c, scanner, _ := testServerEhlo(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -884,7 +888,7 @@ func TestServer_authParam_invalidHexchar(t *testing.T) {
 }
 
 func TestServer_authParam(t *testing.T) {
-	be, s, c, scanner, _ := testServerEhlo(t)
+	be, s, c, scanner, _ := testServerEhlo(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -919,7 +923,7 @@ func TestServer_authParam(t *testing.T) {
 }
 
 func TestServer_Chunking(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -966,7 +970,7 @@ func TestServer_Chunking(t *testing.T) {
 }
 
 func TestServer_Chunking_Reset(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 	be.dataErrors = make(chan error, 10)
@@ -1021,7 +1025,7 @@ func TestServer_Chunking_Reset(t *testing.T) {
 }
 
 func TestServer_Chunking_Close(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 	be.dataErrors = make(chan error, 10)
@@ -1058,7 +1062,7 @@ func TestServer_Chunking_Close(t *testing.T) {
 }
 
 func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 	be.dataErrors = make(chan error, 10)
@@ -1087,7 +1091,7 @@ func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
 }
 
 func TestServer_Chunking_EarlyError(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -1118,7 +1122,7 @@ func TestServer_Chunking_EarlyError(t *testing.T) {
 }
 
 func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t)
+	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer s.Close()
 	defer c.Close()
 
@@ -1164,7 +1168,7 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 }
 
 func TestServer_Chunking_tooLongMessage(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, server.WithMaxMessageBytes(50))
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxMessageBytes(50))
 	defer s.Close()
 
 	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
@@ -1189,7 +1193,7 @@ func TestServer_Chunking_tooLongMessage(t *testing.T) {
 }
 
 func TestServer_Chunking_Binarymime(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, server.WithEnableBINARYMIME(true))
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableBINARYMIME(true))
 	defer s.Close()
 	defer c.Close()
 
@@ -1238,7 +1242,7 @@ func TestServer_Chunking_Binarymime(t *testing.T) {
 func TestServer_TooLongCommand(t *testing.T) {
 	maxLineLength := 2000
 
-	_, s, c, scanner := testServerAuthenticated(t, server.WithMaxLineLength(maxLineLength))
+	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxLineLength(maxLineLength))
 	defer s.Close()
 	defer c.Close()
 
@@ -1250,7 +1254,7 @@ func TestServer_TooLongCommand(t *testing.T) {
 }
 
 func TestServerShutdown(t *testing.T) {
-	_, s, c, _ := testServerGreeted(t)
+	_, s, c, _ := testServerGreeted(t, nil)
 
 	ctx := context.Background()
 	errChan := make(chan error)
@@ -1286,7 +1290,7 @@ const (
 )
 
 func TestServerDSN(t *testing.T) {
-	be, s, c, scanner, caps := testServerEhlo(t,
+	be, s, c, scanner, caps := testServerEhlo(t, nil,
 		server.WithEnableDSN(true),
 	)
 	defer s.Close()
@@ -1370,7 +1374,7 @@ func TestServerDSN(t *testing.T) {
 }
 
 func TestServerDSNwithSMTPUTF8(t *testing.T) {
-	be, s, c, scanner, caps := testServerEhlo(t,
+	be, s, c, scanner, caps := testServerEhlo(t, nil,
 		server.WithEnableSMTPUTF8(true),
 		server.WithEnableDSN(true),
 	)
@@ -1477,7 +1481,7 @@ func TestServerDSNwithSMTPUTF8(t *testing.T) {
 }
 
 func TestServerXOORG(t *testing.T) {
-	be, s, c, scanner, caps := testServerEhlo(t,
+	be, s, c, scanner, caps := testServerEhlo(t, nil,
 		server.WithEnableXOORG(true),
 	)
 	defer s.Close()

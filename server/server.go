@@ -37,7 +37,7 @@ func (s *Server) Serve(l net.Listener) error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				s.ErrorLog.Printf("accept error: %s; retrying in %s", err, tempDelay)
+				s.errorLog.Printf("accept error: %s; retrying in %s", err, tempDelay)
 				time.Sleep(tempDelay)
 				continue
 			}
@@ -50,7 +50,7 @@ func (s *Server) Serve(l net.Listener) error {
 
 			err := s.handleConn(newConn(c, s))
 			if err != nil {
-				s.ErrorLog.Printf("error handling %v: %s", c.RemoteAddr(), err)
+				s.errorLog.Printf("error handling %v: %s", c.RemoteAddr(), err)
 			}
 		}()
 	}
@@ -67,7 +67,7 @@ func (s *Server) handleConn(c *Conn) error {
 		if err := recover(); err != nil {
 			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
 			stack := debug.Stack()
-			c.server.ErrorLog.Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
+			c.server.errorLog.Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
 		}
 
 		c.Close()

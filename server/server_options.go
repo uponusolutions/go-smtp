@@ -68,8 +68,8 @@ type Server struct {
 	enableXOORG bool
 
 	// The server backend.
-	Backend  Backend
-	ErrorLog Logger
+	backend  Backend
+	errorLog Logger
 
 	wg   sync.WaitGroup
 	done chan struct{}
@@ -86,7 +86,7 @@ type Option func(*Server)
 func NewServer(opts ...Option) *Server {
 	s := &Server{
 		done:     make(chan struct{}, 1),
-		ErrorLog: log.New(os.Stderr, "smtp/server ", log.LstdFlags),
+		errorLog: log.New(os.Stderr, "smtp/server ", log.LstdFlags),
 		conns:    make(map[*Conn]struct{}),
 	}
 
@@ -97,10 +97,17 @@ func NewServer(opts ...Option) *Server {
 	return s
 }
 
+// WithErrorLog sets the backend.
+func WithErrorLog(errorLog Logger) Option {
+	return func(s *Server) {
+		s.errorLog = errorLog
+	}
+}
+
 // WithBackend sets the backend.
 func WithBackend(backend Backend) Option {
 	return func(s *Server) {
-		s.Backend = backend
+		s.backend = backend
 	}
 }
 

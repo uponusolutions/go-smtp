@@ -221,7 +221,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		c.reset()
 		c.logout()
 	} else {
-		sess, err := c.server.Backend.NewSession(c)
+		sess, err := c.server.backend.NewSession(c)
 		if err != nil {
 			return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
 		}
