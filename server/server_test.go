@@ -55,6 +55,10 @@ type session struct {
 	msg *message
 }
 
+func (s *session) Logger() server.Logger {
+	return nil
+}
+
 func (s *session) Greet() error {
 	return nil
 }

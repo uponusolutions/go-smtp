@@ -76,7 +76,7 @@ type Server struct {
 
 	locker    sync.Mutex
 	listeners []net.Listener
-	conns     map[*Conn]struct{}
+	conns     map[net.Conn]struct{}
 }
 
 // Option is an option for the server.
@@ -87,7 +87,7 @@ func NewServer(opts ...Option) *Server {
 	s := &Server{
 		done:     make(chan struct{}, 1),
 		errorLog: log.New(os.Stderr, "smtp/server ", log.LstdFlags),
-		conns:    make(map[*Conn]struct{}),
+		conns:    make(map[net.Conn]struct{}),
 	}
 
 	for _, o := range opts {

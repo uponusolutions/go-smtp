@@ -45,21 +45,30 @@ func (s *Server) Serve(l net.Listener) error {
 		}
 
 		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-
-			err := s.handleConn(newConn(c, s))
-			if err != nil {
-				s.errorLog.Printf("error handling %v: %s", c.RemoteAddr(), err)
-			}
-		}()
+		go s.handleConn(c)
 	}
 }
 
-func (s *Server) handleConn(c *Conn) error {
+func (s *Server) handleConn(conn net.Conn) {
 	s.locker.Lock()
-	s.conns[c] = struct{}{}
+	s.conns[conn] = struct{}{}
 	s.locker.Unlock()
+
+	defer func() {
+		s.locker.Lock()
+		delete(s.conns, conn)
+		s.locker.Unlock()
+
+		s.wg.Done()
+
+		_ = conn.Close()
+	}()
+
+	c, err := newConn(conn, s)
+	if err != nil {
+		s.errorLog.Printf("couldn't create conn: %v", err)
+		return
+	}
 
 	// If panic happens during command handling - send 421 response
 	// and close connection.
@@ -67,27 +76,9 @@ func (s *Server) handleConn(c *Conn) error {
 		if err := recover(); err != nil {
 			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
 			stack := debug.Stack()
-			c.server.errorLog.Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
+			c.logger().Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
 		}
-
-		c.Close()
-
-		s.locker.Lock()
-		delete(s.conns, c)
-		s.locker.Unlock()
 	}()
-
-	if tlsConn, ok := c.conn.(*tls.Conn); ok {
-		if d := s.readTimeout; d != 0 {
-			c.conn.SetReadDeadline(time.Now().Add(d))
-		}
-		if d := s.writeTimeout; d != 0 {
-			c.conn.SetWriteDeadline(time.Now().Add(d))
-		}
-		if err := tlsConn.Handshake(); err != nil {
-			return err
-		}
-	}
 
 	c.greet()
 
@@ -96,13 +87,13 @@ func (s *Server) handleConn(c *Conn) error {
 
 		if err != nil {
 			c.handleError(err)
-			return err
+			return
 		}
 
 		err = c.handle(cmd, arg)
 		if err != nil {
 			c.handleError(err)
-			return err
+			return
 		}
 	}
 }

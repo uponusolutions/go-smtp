@@ -36,6 +36,9 @@ type Session interface {
 	// Free all resources associated with session.
 	Logout() error
 
+	// Returns logger to use when an error occurs inside a session.
+	Logger() Logger
+
 	// Set return path for currently processed message.
 	Mail(from string, opts *smtp.MailOptions) error
 	// Add recipient for currently processed message.

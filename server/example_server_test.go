@@ -26,6 +26,10 @@ func (s *Session) Greet() error {
 	return nil
 }
 
+func (s *Session) Logger() server.Logger {
+	return nil
+}
+
 // AuthMechanisms returns a slice of available auth mechanisms; only PLAIN is
 // supported in this example.
 func (s *Session) AuthMechanisms() []string {

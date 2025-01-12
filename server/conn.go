@@ -39,12 +39,21 @@ type Conn struct {
 	didAuth    bool
 }
 
-func newConn(c net.Conn, s *Server) *Conn {
-	return &Conn{
+func newConn(c net.Conn, s *Server) (*Conn, error) {
+	conn := &Conn{
 		server: s,
 		conn:   c,
 		text:   textsmtp.NewConn(c, s.readerSize, s.writerSize, s.maxLineLength),
 	}
+
+	session, err := s.backend.NewSession(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	conn.session = session
+
+	return conn, nil
 }
 
 func (c *Conn) nextCommand() (string, string, error) {
@@ -318,7 +327,16 @@ func (c *Conn) handleError(err error) {
 		return
 	}
 
+	c.logger().Printf("handleError: %v", err)
 	c.writeStatus(smtp.ErrConnection)
+}
+
+func (c *Conn) logger() Logger {
+	logger := c.session.Logger()
+	if logger == nil {
+		logger = c.server.errorLog
+	}
+	return logger
 }
 
 // READY state -> waiting for MAIL
