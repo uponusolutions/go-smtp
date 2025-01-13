@@ -80,7 +80,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		if err := recover(); err != nil {
 			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
 			stack := debug.Stack()
-			c.logger(ctx).ErrorContext(
+			c.logger().ErrorContext(
 				ctx,
 				"panic serving",
 				slog.Any("remoteAddr", c.conn.RemoteAddr()),
@@ -90,22 +90,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		}
 	}()
 
-	c.greet()
-
-	for {
-		cmd, arg, err := c.nextCommand()
-
-		if err != nil {
-			c.handleError(ctx, err)
-			return
-		}
-
-		err = c.handle(ctx, cmd, arg)
-		if err != nil {
-			c.handleError(ctx, err)
-			return
-		}
-	}
+	c.run()
 }
 
 // ListenAndServe listens on the network address s.Addr and then calls Serve

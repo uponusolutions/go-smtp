@@ -28,6 +28,8 @@ const (
 )
 
 type Conn struct {
+	ctx context.Context
+
 	conn net.Conn
 
 	state int
@@ -47,6 +49,7 @@ func newConn(ctx context.Context, c net.Conn, s *Server) (context.Context, *Conn
 	conn := &Conn{
 		server: s,
 		conn:   c,
+		ctx:    ctx,
 		text:   textsmtp.NewConn(c, s.readerSize, s.writerSize, s.maxLineLength),
 	}
 
@@ -60,6 +63,25 @@ func newConn(ctx context.Context, c net.Conn, s *Server) (context.Context, *Conn
 	return ctx, conn, nil
 }
 
+func (c *Conn) run() {
+	c.greet()
+
+	for {
+		cmd, arg, err := c.nextCommand()
+
+		if err != nil {
+			c.handleError(err)
+			return
+		}
+
+		err = c.handle(cmd, arg)
+		if err != nil {
+			c.handleError(err)
+			return
+		}
+	}
+}
+
 func (c *Conn) nextCommand() (string, string, error) {
 	line, err := c.readLine()
 	if err != nil {
@@ -69,7 +91,7 @@ func (c *Conn) nextCommand() (string, string, error) {
 }
 
 // Commands are dispatched to the appropriate handler functions.
-func (c *Conn) handle(ctx context.Context, cmd string, arg string) error {
+func (c *Conn) handle(cmd string, arg string) error {
 	if cmd == "" {
 		return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
 	}
@@ -79,24 +101,24 @@ func (c *Conn) handle(ctx context.Context, cmd string, arg string) error {
 	case StateInit:
 		fallthrough
 	case StateUpgrade:
-		return c.handleStateInit(ctx, cmd, arg)
+		return c.handleStateInit(cmd, arg)
 	case StateEnforceSecureConnection:
-		return c.handleStateEnforceSecureConnection(ctx, cmd, arg)
+		return c.handleStateEnforceSecureConnection(cmd, arg)
 	case StateEnforceAuthentication:
-		return c.handleStateEnforceAuthentication(ctx, cmd, arg)
+		return c.handleStateEnforceAuthentication(cmd, arg)
 	case StateGreeted:
-		return c.handleStateGreeted(ctx, cmd, arg)
+		return c.handleStateGreeted(cmd, arg)
 	case StateMail:
-		return c.handleStateMail(ctx, cmd, arg)
+		return c.handleStateMail(cmd, arg)
 	}
 
 	return fmt.Errorf("unsupported state %d, how?", c.state)
 }
 
-func (c *Conn) handleStateInit(ctx context.Context, cmd string, arg string) error {
+func (c *Conn) handleStateInit(cmd string, arg string) error {
 	switch cmd {
 	case "HELO", "EHLO":
-		return c.handleGreet(ctx, cmd == "EHLO", arg)
+		return c.handleGreet(cmd == "EHLO", arg)
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
@@ -109,10 +131,10 @@ func (c *Conn) handleStateInit(ctx context.Context, cmd string, arg string) erro
 	return nil
 }
 
-func (c *Conn) handleStateEnforceAuthentication(ctx context.Context, cmd string, arg string) error {
+func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 	switch cmd {
 	case "HELO", "EHLO":
-		return c.handleGreet(ctx, cmd == "EHLO", arg)
+		return c.handleGreet(cmd == "EHLO", arg)
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
@@ -120,30 +142,30 @@ func (c *Conn) handleStateEnforceAuthentication(ctx context.Context, cmd string,
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
-		return c.handleAuth(ctx, arg)
+		return c.handleAuth(arg)
 	default:
 		c.writeCommandUnknown(cmd)
 	}
 	return nil
 }
 
-func (c *Conn) handleStateGreeted(ctx context.Context, cmd string, arg string) error {
+func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 	switch cmd {
 	case "HELO", "EHLO":
-		return c.handleGreet(ctx, cmd == "EHLO", arg)
+		return c.handleGreet(cmd == "EHLO", arg)
 	case "MAIL":
-		return c.handleMail(ctx, arg)
+		return c.handleMail(arg)
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
 		c.writeStatus(smtp.VRFY)
 	case "RSET": // Reset session
-		c.reset(ctx)
+		c.reset()
 		c.writeStatus(smtp.Reset)
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
-		return c.handleAuth(ctx, arg)
+		return c.handleAuth(arg)
 	case "STARTTLS":
 		return c.handleStartTLS()
 	default:
@@ -152,27 +174,27 @@ func (c *Conn) handleStateGreeted(ctx context.Context, cmd string, arg string) e
 	return nil
 }
 
-func (c *Conn) handleStateMail(ctx context.Context, cmd string, arg string) error {
+func (c *Conn) handleStateMail(cmd string, arg string) error {
 	switch cmd {
 	case "HELO", "EHLO":
-		return c.handleGreet(ctx, cmd == "EHLO", arg)
+		return c.handleGreet(cmd == "EHLO", arg)
 	case "RCPT":
-		return c.handleRcpt(ctx, arg)
+		return c.handleRcpt(arg)
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
 		c.writeStatus(smtp.VRFY)
 	case "RSET": // Reset session
-		c.reset(ctx)
+		c.reset()
 		c.writeStatus(smtp.Reset)
 	case "BDAT":
-		return c.handleBdat(ctx, arg)
+		return c.handleBdat(arg)
 	case "DATA":
-		return c.handleData(ctx, arg)
+		return c.handleData(arg)
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
-		err := c.handleAuth(ctx, arg)
+		err := c.handleAuth(arg)
 		if err == nil {
 			c.state = StateGreeted
 		}
@@ -185,10 +207,10 @@ func (c *Conn) handleStateMail(ctx context.Context, cmd string, arg string) erro
 	return nil
 }
 
-func (c *Conn) handleStateEnforceSecureConnection(ctx context.Context, cmd string, arg string) error {
+func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error {
 	switch cmd {
 	case "HELO", "EHLO":
-		return c.handleGreet(ctx, cmd == "EHLO", arg)
+		return c.handleGreet(cmd == "EHLO", arg)
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
@@ -214,7 +236,7 @@ func (c *Conn) Server() *Server {
 func (c *Conn) Close(ctx context.Context) error {
 	var sessionErr error
 	if c.session != nil {
-		sessionErr = c.session.Logout(ctx)
+		sessionErr = c.session.Close(ctx)
 		c.session = nil
 	}
 	return errors.Join(sessionErr, c.conn.Close())
@@ -245,7 +267,7 @@ func (c *Conn) Conn() net.Conn {
 }
 
 // GREET state -> waiting for HELO
-func (c *Conn) handleGreet(ctx context.Context, enhanced bool, arg string) error {
+func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	domain, err := parse.HelloArgument(arg)
 	if err != nil {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Domain/address argument required for HELO")
@@ -258,12 +280,7 @@ func (c *Conn) handleGreet(ctx context.Context, enhanced bool, arg string) error
 	// RFC 5321: "... the SMTP server MUST clear all buffers
 	// and reset the state exactly as if a RSET command has been issued."
 	if c.state != StateInit && c.state != StateEnforceSecureConnection && c.state != StateEnforceAuthentication {
-		c.reset(ctx)
-	}
-
-	err = c.session.Greet(ctx)
-	if err != nil {
-		return err
+		c.reset()
 	}
 
 	if c.server.enforceSecureConnection && !c.IsTLS() {
@@ -292,7 +309,7 @@ func (c *Conn) handleGreet(ctx context.Context, enhanced bool, arg string) error
 		caps = append(caps, "STARTTLS")
 	}
 
-	mechs := c.session.AuthMechanisms(ctx)
+	mechs := c.session.AuthMechanisms(c.ctx)
 	if len(mechs) > 0 {
 		authCap := "AUTH"
 		for _, name := range mechs {
@@ -332,7 +349,7 @@ func (c *Conn) handleGreet(ctx context.Context, enhanced bool, arg string) error
 	return nil
 }
 
-func (c *Conn) handleError(ctx context.Context, err error) {
+func (c *Conn) handleError(err error) {
 	if err == io.EOF || errors.Is(err, net.ErrClosed) {
 		return
 	}
@@ -352,12 +369,12 @@ func (c *Conn) handleError(ctx context.Context, err error) {
 		return
 	}
 
-	c.logger(ctx).ErrorContext(ctx, "handleError", slog.Any("error", err))
+	c.logger().ErrorContext(c.ctx, "handleError", slog.Any("error", err))
 	c.writeStatus(smtp.ErrConnection)
 }
 
-func (c *Conn) logger(ctx context.Context) *slog.Logger {
-	logger := c.session.Logger(ctx)
+func (c *Conn) logger() *slog.Logger {
+	logger := c.session.Logger(c.ctx)
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -365,7 +382,7 @@ func (c *Conn) logger(ctx context.Context) *slog.Logger {
 }
 
 // READY state -> waiting for MAIL
-func (c *Conn) handleMail(ctx context.Context, arg string) error {
+func (c *Conn) handleMail(arg string) error {
 	arg, ok := parse.CutPrefixFold(arg, "FROM:")
 	if !ok {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
@@ -469,7 +486,7 @@ func (c *Conn) handleMail(ctx context.Context, arg string) error {
 		}
 	}
 
-	if err := c.session.Mail(ctx, from, opts); err != nil {
+	if err := c.session.Mail(c.ctx, from, opts); err != nil {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
 	}
 
@@ -479,7 +496,7 @@ func (c *Conn) handleMail(ctx context.Context, arg string) error {
 }
 
 // MAIL state -> waiting for RCPTs followed by DATA
-func (c *Conn) handleRcpt(ctx context.Context, arg string) error {
+func (c *Conn) handleRcpt(arg string) error {
 	arg, ok := parse.CutPrefixFold(arg, "TO:")
 	if !ok {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
@@ -531,7 +548,7 @@ func (c *Conn) handleRcpt(ctx context.Context, arg string) error {
 		}
 	}
 
-	if err := c.session.Rcpt(ctx, recipient, opts); err != nil {
+	if err := c.session.Rcpt(c.ctx, recipient, opts); err != nil {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
 	}
 	c.recipients++
@@ -539,7 +556,7 @@ func (c *Conn) handleRcpt(ctx context.Context, arg string) error {
 	return nil
 }
 
-func (c *Conn) handleAuth(ctx context.Context, arg string) error {
+func (c *Conn) handleAuth(arg string) error {
 	if c.didAuth {
 		return smtp.NewStatus(503, smtp.EnhancedCode{5, 5, 1}, "Already authenticated")
 	}
@@ -560,7 +577,7 @@ func (c *Conn) handleAuth(ctx context.Context, arg string) error {
 		}
 	}
 
-	sasl, err := c.session.Auth(ctx, mechanism)
+	sasl, err := c.session.Auth(c.ctx, mechanism)
 	if err != nil {
 		return c.newStatusError(454, smtp.EnhancedCode{4, 7, 0}, err)
 	}
@@ -629,7 +646,7 @@ func (c *Conn) handleStartTLS() error {
 }
 
 // DATA
-func (c *Conn) handleData(ctx context.Context, arg string) error {
+func (c *Conn) handleData(arg string) error {
 	if arg != "" {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "DATA command should not have any arguments")
 	}
@@ -650,17 +667,17 @@ func (c *Conn) handleData(ctx context.Context, arg string) error {
 		return r
 	}
 
-	uuid, err := c.session.Data(ctx, rstart)
+	uuid, err := c.session.Data(c.ctx, rstart)
 	if err != nil {
 		return err
 	}
 
 	c.accepted(uuid)
-	c.reset(ctx)
+	c.reset()
 	return nil
 }
 
-func (c *Conn) handleBdat(ctx context.Context, arg string) error {
+func (c *Conn) handleBdat(arg string) error {
 	size, last, err := bdatArg(arg)
 	if err != nil {
 		return err
@@ -678,10 +695,10 @@ func (c *Conn) handleBdat(ctx context.Context, arg string) error {
 		},
 	}
 
-	uuid, err := c.session.Data(ctx, func() io.Reader { return data })
+	uuid, err := c.session.Data(c.ctx, func() io.Reader { return data })
 
 	if err == smtp.Reset {
-		c.reset(ctx)
+		c.reset()
 		c.writeStatus(smtp.Reset)
 		return nil
 	}
@@ -691,7 +708,7 @@ func (c *Conn) handleBdat(ctx context.Context, arg string) error {
 	}
 
 	c.accepted(uuid)
-	c.reset(ctx)
+	c.reset()
 	return nil
 }
 
@@ -764,7 +781,7 @@ func (c *Conn) readLine() (string, error) {
 	return c.text.ReadLine()
 }
 
-func (c *Conn) reset(ctx context.Context) {
+func (c *Conn) reset() {
 	// Reset state to Greeted
 	if c.state == StateMail {
 		c.state = StateGreeted
@@ -774,6 +791,6 @@ func (c *Conn) reset(ctx context.Context) {
 	c.didAuth = false
 
 	if c.session != nil {
-		c.session.Reset(ctx)
+		c.session.Reset(c.ctx, c.state == StateUpgrade)
 	}
 }

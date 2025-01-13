@@ -59,10 +59,6 @@ func (s *session) Logger(ctx context.Context) *slog.Logger {
 	return nil
 }
 
-func (s *session) Greet(ctx context.Context) error {
-	return nil
-}
-
 func (s *session) AuthMechanisms(ctx context.Context) []string {
 	if s.backend.authDisabled {
 		return nil
@@ -86,11 +82,12 @@ func (s *session) Auth(ctx context.Context, mech string) (sasl.Server, error) {
 	}), nil
 }
 
-func (s *session) Reset(ctx context.Context) {
+func (s *session) Reset(ctx context.Context, upgrade bool) context.Context {
 	s.msg = &message{}
+	return ctx
 }
 
-func (s *session) Logout(ctx context.Context) error {
+func (s *session) Close(ctx context.Context) error {
 	return nil
 }
 
@@ -101,7 +98,7 @@ func (s *session) Mail(ctx context.Context, from string, opts *smtp.MailOptions)
 	if s.backend.panicOnMail {
 		panic("Everything is on fire!")
 	}
-	s.Reset(ctx)
+	s.Reset(ctx, false)
 	s.msg.From = from
 	s.msg.Opts = opts
 	return nil

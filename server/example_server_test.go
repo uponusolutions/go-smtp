@@ -24,10 +24,6 @@ func (bkd *Backend) NewSession(ctx context.Context, c *server.Conn) (context.Con
 // A Session is returned after successful login.
 type Session struct{}
 
-func (s *Session) Greet(ctx context.Context) error {
-	return nil
-}
-
 func (s *Session) Logger(ctx context.Context) *slog.Logger {
 	return nil
 }
@@ -67,9 +63,11 @@ func (s *Session) Data(ctx context.Context, r func() io.Reader) (string, error) 
 	return "", nil
 }
 
-func (s *Session) Reset(ctx context.Context) {}
+func (s *Session) Reset(ctx context.Context, _ bool) context.Context {
+	return ctx
+}
 
-func (s *Session) Logout(ctx context.Context) error {
+func (s *Session) Close(ctx context.Context) error {
 	return nil
 }
 

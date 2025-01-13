@@ -27,14 +27,11 @@ func (f BackendFunc) NewSession(ctx context.Context, c *Conn) (context.Context, 
 //
 // The methods are called when the remote client issues the matching command.
 type Session interface {
-	// Every HELO or EHLO
-	Greet(ctx context.Context) error
-
 	// Discard currently processed message.
-	Reset(ctx context.Context)
+	Reset(ctx context.Context, upgrade bool) context.Context
 
 	// Free all resources associated with session.
-	Logout(ctx context.Context) error
+	Close(ctx context.Context) error
 
 	// Returns logger to use when an error occurs inside a session.
 	Logger(ctx context.Context) *slog.Logger
