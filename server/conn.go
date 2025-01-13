@@ -45,23 +45,16 @@ type Conn struct {
 	didAuth    bool
 }
 
-func newConn(ctx context.Context, c net.Conn, s *Server) (*Conn, error) {
-	conn := &Conn{
+func newConn(ctx context.Context, c net.Conn, s *Server) (conn *Conn, err error) {
+	conn = &Conn{
 		server: s,
 		conn:   c,
-		ctx:    ctx,
 		text:   textsmtp.NewConn(c, s.readerSize, s.writerSize, s.maxLineLength),
 	}
 
-	ctx, session, err := s.backend.NewSession(ctx, conn)
-	if err != nil {
-		return nil, err
-	}
+	conn.ctx, conn.session, err = s.backend.NewSession(ctx, conn)
 
-	conn.ctx = ctx
-	conn.session = session
-
-	return conn, nil
+	return conn, err
 }
 
 func (c *Conn) run() {
