@@ -45,7 +45,7 @@ type Conn struct {
 	didAuth    bool
 }
 
-func newConn(ctx context.Context, c net.Conn, s *Server) (context.Context, *Conn, error) {
+func newConn(ctx context.Context, c net.Conn, s *Server) (*Conn, error) {
 	conn := &Conn{
 		server: s,
 		conn:   c,
@@ -55,12 +55,13 @@ func newConn(ctx context.Context, c net.Conn, s *Server) (context.Context, *Conn
 
 	ctx, session, err := s.backend.NewSession(ctx, conn)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
+	conn.ctx = ctx
 	conn.session = session
 
-	return ctx, conn, nil
+	return conn, nil
 }
 
 func (c *Conn) run() {
@@ -123,6 +124,8 @@ func (c *Conn) handleStateInit(cmd string, arg string) error {
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
 		c.writeStatus(smtp.VRFY)
+	case "RSET": // Reset session
+		return c.handleRSET()
 	case "QUIT":
 		return smtp.Quit
 	default:
@@ -139,6 +142,8 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
 		c.writeStatus(smtp.VRFY)
+	case "RSET": // Reset session
+		return c.handleRSET()
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
@@ -160,8 +165,7 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 	case "VRFY":
 		c.writeStatus(smtp.VRFY)
 	case "RSET": // Reset session
-		c.reset()
-		c.writeStatus(smtp.Reset)
+		return c.handleRSET()
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
@@ -185,8 +189,7 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 	case "VRFY":
 		c.writeStatus(smtp.VRFY)
 	case "RSET": // Reset session
-		c.reset()
-		c.writeStatus(smtp.Reset)
+		return c.handleRSET()
 	case "BDAT":
 		return c.handleBdat(arg)
 	case "DATA":
@@ -266,6 +269,15 @@ func (c *Conn) Conn() net.Conn {
 	return c.conn
 }
 
+func (c *Conn) handleRSET() error {
+	err := c.reset()
+	if err != nil {
+		return err
+	}
+	c.writeStatus(smtp.Reset)
+	return nil
+}
+
 // GREET state -> waiting for HELO
 func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	domain, err := parse.HelloArgument(arg)
@@ -280,7 +292,10 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	// RFC 5321: "... the SMTP server MUST clear all buffers
 	// and reset the state exactly as if a RSET command has been issued."
 	if c.state != StateInit && c.state != StateEnforceSecureConnection && c.state != StateEnforceAuthentication {
-		c.reset()
+		err := c.reset()
+		if err != nil {
+			return err
+		}
 	}
 
 	if c.server.enforceSecureConnection && !c.IsTLS() {
@@ -673,8 +688,7 @@ func (c *Conn) handleData(arg string) error {
 	}
 
 	c.accepted(uuid)
-	c.reset()
-	return nil
+	return c.reset()
 }
 
 func (c *Conn) handleBdat(arg string) error {
@@ -708,8 +722,7 @@ func (c *Conn) handleBdat(arg string) error {
 	}
 
 	c.accepted(uuid)
-	c.reset()
-	return nil
+	return c.reset()
 }
 
 func (c *Conn) accepted(uuid string) {
@@ -781,7 +794,7 @@ func (c *Conn) readLine() (string, error) {
 	return c.text.ReadLine()
 }
 
-func (c *Conn) reset() {
+func (c *Conn) reset() error {
 	// Reset state to Greeted
 	if c.state == StateMail {
 		c.state = StateGreeted
@@ -790,7 +803,7 @@ func (c *Conn) reset() {
 	c.recipients = 0
 	c.didAuth = false
 
-	if c.session != nil {
-		c.session.Reset(c.ctx, c.state == StateUpgrade)
-	}
+	ctx, err := c.session.Reset(c.ctx, c.state == StateUpgrade)
+	c.ctx = ctx
+	return err
 }

@@ -5,9 +5,8 @@ import (
 	"crypto/tls"
 	"log/slog"
 	"net"
-	"time"
-
 	"runtime/debug"
+	"time"
 
 	"github.com/uponusolutions/go-smtp"
 )
@@ -50,6 +49,16 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 	}
 }
 
+func (s *Server) sessionLogger(c *Conn) *slog.Logger {
+	var l *slog.Logger
+	if c != nil {
+		l = c.logger()
+	} else {
+		l = s.logger
+	}
+	return l
+}
+
 func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	s.locker.Lock()
 	s.conns[conn] = struct{}{}
@@ -57,7 +66,22 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	ctx, cancel := context.WithCancel(ctx)
 
+	var c *Conn
+	var err error
+
 	defer func() {
+		if err := recover(); err != nil {
+			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
+			stack := debug.Stack()
+			s.sessionLogger(c).ErrorContext(
+				ctx,
+				"panic serving",
+				slog.Any("remoteAddr", c.conn.RemoteAddr()),
+				slog.Any("err", err),
+				slog.Any("stack", stack),
+			)
+		}
+
 		s.locker.Lock()
 		delete(s.conns, conn)
 		s.locker.Unlock()
@@ -68,27 +92,11 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		_ = conn.Close()
 	}()
 
-	ctx, c, err := newConn(ctx, conn, s)
+	c, err = newConn(ctx, conn, s)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "couldn't create connection wrapper")
+		s.sessionLogger(c).ErrorContext(ctx, "couldn't create connection wrapper", slog.Any("error", err))
 		return
 	}
-
-	// If panic happens during command handling - send 421 response
-	// and close connection.
-	defer func() {
-		if err := recover(); err != nil {
-			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
-			stack := debug.Stack()
-			c.logger().ErrorContext(
-				ctx,
-				"panic serving",
-				slog.Any("remoteAddr", c.conn.RemoteAddr()),
-				slog.Any("err", err),
-				slog.Any("stack", stack),
-			)
-		}
-	}()
 
 	c.run()
 }

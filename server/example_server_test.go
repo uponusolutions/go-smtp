@@ -63,8 +63,8 @@ func (s *Session) Data(ctx context.Context, r func() io.Reader) (string, error) 
 	return "", nil
 }
 
-func (s *Session) Reset(ctx context.Context, _ bool) context.Context {
-	return ctx
+func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) {
+	return ctx, nil
 }
 
 func (s *Session) Close(ctx context.Context) error {

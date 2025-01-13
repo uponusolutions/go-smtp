@@ -82,9 +82,9 @@ func (s *session) Auth(ctx context.Context, mech string) (sasl.Server, error) {
 	}), nil
 }
 
-func (s *session) Reset(ctx context.Context, upgrade bool) context.Context {
+func (s *session) Reset(ctx context.Context, upgrade bool) (context.Context, error) {
 	s.msg = &message{}
-	return ctx
+	return ctx, nil
 }
 
 func (s *session) Close(ctx context.Context) error {

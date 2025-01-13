@@ -28,7 +28,7 @@ func (f BackendFunc) NewSession(ctx context.Context, c *Conn) (context.Context, 
 // The methods are called when the remote client issues the matching command.
 type Session interface {
 	// Discard currently processed message.
-	Reset(ctx context.Context, upgrade bool) context.Context
+	Reset(ctx context.Context, upgrade bool) (context.Context, error)
 
 	// Free all resources associated with session.
 	Close(ctx context.Context) error
