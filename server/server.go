@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"log/slog"
 	"net"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 // Serve accepts incoming connections on the Listener l.
-func (s *Server) Serve(l net.Listener) error {
+func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 	s.locker.Lock()
 	s.listeners = append(s.listeners, l)
 	s.locker.Unlock()
@@ -37,7 +38,7 @@ func (s *Server) Serve(l net.Listener) error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				s.errorLog.Printf("accept error: %s; retrying in %s", err, tempDelay)
+				s.logger.ErrorContext(ctx, "accept error, retrying", slog.Any("error", err), slog.Any("temp_delay", tempDelay))
 				time.Sleep(tempDelay)
 				continue
 			}
@@ -45,14 +46,16 @@ func (s *Server) Serve(l net.Listener) error {
 		}
 
 		s.wg.Add(1)
-		go s.handleConn(c)
+		go s.handleConn(ctx, c)
 	}
 }
 
-func (s *Server) handleConn(conn net.Conn) {
+func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	s.locker.Lock()
 	s.conns[conn] = struct{}{}
 	s.locker.Unlock()
+
+	ctx, cancel := context.WithCancel(ctx)
 
 	defer func() {
 		s.locker.Lock()
@@ -61,12 +64,13 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		s.wg.Done()
 
+		cancel()
 		_ = conn.Close()
 	}()
 
-	c, err := newConn(conn, s)
+	ctx, c, err := newConn(ctx, conn, s)
 	if err != nil {
-		s.errorLog.Printf("couldn't create conn: %v", err)
+		s.logger.ErrorContext(ctx, "couldn't create connection wrapper")
 		return
 	}
 
@@ -76,7 +80,13 @@ func (s *Server) handleConn(conn net.Conn) {
 		if err := recover(); err != nil {
 			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
 			stack := debug.Stack()
-			c.logger().Printf("panic serving %v: %v\n%s", c.conn.RemoteAddr(), err, stack)
+			c.logger(ctx).ErrorContext(
+				ctx,
+				"panic serving",
+				slog.Any("remoteAddr", c.conn.RemoteAddr()),
+				slog.Any("err", err),
+				slog.Any("stack", stack),
+			)
 		}
 	}()
 
@@ -86,13 +96,13 @@ func (s *Server) handleConn(conn net.Conn) {
 		cmd, arg, err := c.nextCommand()
 
 		if err != nil {
-			c.handleError(err)
+			c.handleError(ctx, err)
 			return
 		}
 
-		err = c.handle(cmd, arg)
+		err = c.handle(ctx, cmd, arg)
 		if err != nil {
-			c.handleError(err)
+			c.handleError(ctx, err)
 			return
 		}
 	}
@@ -102,7 +112,7 @@ func (s *Server) handleConn(conn net.Conn) {
 // to handle requests on incoming connections.
 //
 // If s.Addr is blank and LMTP is disabled, ":smtp" is used.
-func (s *Server) ListenAndServe() error {
+func (s *Server) ListenAndServe(ctx context.Context) error {
 	network := s.network
 	if network == "" {
 		network = "tcp"
@@ -126,7 +136,7 @@ func (s *Server) ListenAndServe() error {
 		return err
 	}
 
-	return s.Serve(l)
+	return s.Serve(ctx, l)
 }
 
 // Close immediately closes all active listeners and connections.

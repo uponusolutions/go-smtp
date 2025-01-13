@@ -1,9 +1,11 @@
 package server_test
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log"
+	"log/slog"
 	"time"
 
 	"github.com/emersion/go-sasl"
@@ -15,29 +17,29 @@ import (
 type Backend struct{}
 
 // NewSession is called after client greeting (EHLO, HELO).
-func (bkd *Backend) NewSession(c *server.Conn) (server.Session, error) {
-	return &Session{}, nil
+func (bkd *Backend) NewSession(ctx context.Context, c *server.Conn) (context.Context, server.Session, error) {
+	return ctx, &Session{}, nil
 }
 
 // A Session is returned after successful login.
 type Session struct{}
 
-func (s *Session) Greet() error {
+func (s *Session) Greet(ctx context.Context) error {
 	return nil
 }
 
-func (s *Session) Logger() server.Logger {
+func (s *Session) Logger(ctx context.Context) *slog.Logger {
 	return nil
 }
 
 // AuthMechanisms returns a slice of available auth mechanisms; only PLAIN is
 // supported in this example.
-func (s *Session) AuthMechanisms() []string {
+func (s *Session) AuthMechanisms(ctx context.Context) []string {
 	return []string{sasl.Plain}
 }
 
 // Auth is the handler for supported authenticators.
-func (s *Session) Auth(mech string) (sasl.Server, error) {
+func (s *Session) Auth(ctx context.Context, mech string) (sasl.Server, error) {
 	return sasl.NewPlainServer(func(identity, username, password string) error {
 		if username != "username" || password != "password" {
 			return errors.New("Invalid username or password")
@@ -46,17 +48,17 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 	}), nil
 }
 
-func (s *Session) Mail(from string, opts *smtp.MailOptions) error {
+func (s *Session) Mail(ctx context.Context, from string, opts *smtp.MailOptions) error {
 	log.Println("Mail from:", from)
 	return nil
 }
 
-func (s *Session) Rcpt(to string, opts *smtp.RcptOptions) error {
+func (s *Session) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) error {
 	log.Println("Rcpt to:", to)
 	return nil
 }
 
-func (s *Session) Data(r func() io.Reader) (string, error) {
+func (s *Session) Data(ctx context.Context, r func() io.Reader) (string, error) {
 	if b, err := io.ReadAll(r()); err != nil {
 		return "", err
 	} else {
@@ -65,9 +67,9 @@ func (s *Session) Data(r func() io.Reader) (string, error) {
 	return "", nil
 }
 
-func (s *Session) Reset() {}
+func (s *Session) Reset(ctx context.Context) {}
 
-func (s *Session) Logout() error {
+func (s *Session) Logout(ctx context.Context) error {
 	return nil
 }
 
@@ -99,7 +101,7 @@ func ExampleServer() {
 	)
 
 	log.Println("Starting server at", addr)
-	if err := s.ListenAndServe(); err != nil {
+	if err := s.ListenAndServe(context.Background()); err != nil {
 		log.Fatal(err)
 	}
 }

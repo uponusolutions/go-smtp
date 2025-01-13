@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -44,8 +44,8 @@ type backend struct {
 	userErr     error
 }
 
-func (be *backend) NewSession(_ *server.Conn) (server.Session, error) {
-	return &session{backend: be, anonymous: true}, nil
+func (be *backend) NewSession(ctx context.Context, _ *server.Conn) (context.Context, server.Session, error) {
+	return ctx, &session{backend: be, anonymous: true}, nil
 }
 
 type session struct {
@@ -55,22 +55,22 @@ type session struct {
 	msg *message
 }
 
-func (s *session) Logger() server.Logger {
+func (s *session) Logger(ctx context.Context) *slog.Logger {
 	return nil
 }
 
-func (s *session) Greet() error {
+func (s *session) Greet(ctx context.Context) error {
 	return nil
 }
 
-func (s *session) AuthMechanisms() []string {
+func (s *session) AuthMechanisms(ctx context.Context) []string {
 	if s.backend.authDisabled {
 		return nil
 	}
 	return []string{sasl.Plain}
 }
 
-func (s *session) Auth(mech string) (sasl.Server, error) {
+func (s *session) Auth(ctx context.Context, mech string) (sasl.Server, error) {
 	if s.backend.authDisabled {
 		return nil, smtp.ErrAuthUnsupported
 	}
@@ -86,34 +86,34 @@ func (s *session) Auth(mech string) (sasl.Server, error) {
 	}), nil
 }
 
-func (s *session) Reset() {
+func (s *session) Reset(ctx context.Context) {
 	s.msg = &message{}
 }
 
-func (s *session) Logout() error {
+func (s *session) Logout(ctx context.Context) error {
 	return nil
 }
 
-func (s *session) Mail(from string, opts *smtp.MailOptions) error {
+func (s *session) Mail(ctx context.Context, from string, opts *smtp.MailOptions) error {
 	if s.backend.userErr != nil {
 		return s.backend.userErr
 	}
 	if s.backend.panicOnMail {
 		panic("Everything is on fire!")
 	}
-	s.Reset()
+	s.Reset(ctx)
 	s.msg.From = from
 	s.msg.Opts = opts
 	return nil
 }
 
-func (s *session) Rcpt(to string, opts *smtp.RcptOptions) error {
+func (s *session) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) error {
 	s.msg.To = append(s.msg.To, to)
 	s.msg.RcptOpts = append(s.msg.RcptOpts, opts)
 	return nil
 }
 
-func (s *session) Data(r func() io.Reader) (string, error) {
+func (s *session) Data(ctx context.Context, r func() io.Reader) (string, error) {
 	if s.backend.dataErr != nil {
 
 		if s.backend.dataErrOffset != 0 {
@@ -227,7 +227,7 @@ func testServer(t *testing.T, bei *backend, opts ...server.Option) (be *backend,
 		curOpts...,
 	)
 
-	go s.Serve(l)
+	go s.Serve(context.Background(), l)
 
 	c, err = net.Dial("tcp", l.Addr().String())
 	if err != nil {
@@ -287,16 +287,18 @@ func testServerEhlo(t *testing.T, bei *backend, opts ...server.Option) (be *back
 
 func TestServerAcceptErrorHandling(t *testing.T) {
 	errorLog := bytes.NewBuffer(nil)
+	logger := slog.New(slog.NewTextHandler(errorLog, nil))
+
 	be := new(backend)
 	s := server.NewServer(
 		server.WithBackend(be),
-		server.WithErrorLog(log.New(errorLog, "", 0)),
+		server.WithLogger(logger),
 	)
 
 	l := newFailingListener()
 	done := make(chan error, 1)
 	go func() {
-		done <- s.Serve(l)
+		done <- s.Serve(context.Background(), l)
 		l.Close()
 	}()
 
@@ -424,10 +426,12 @@ func TestServerEmptyFrom2(t *testing.T) {
 }
 
 func TestServerPanicRecover(t *testing.T) {
+
 	be, s, c, scanner := testServerAuthenticated(t, nil,
 		// Don't log panic in tests to not confuse people who run 'go test'.
-		server.WithErrorLog(log.New(io.Discard, "", 0)),
+		server.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
+
 	defer s.Close()
 	defer c.Close()
 

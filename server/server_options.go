@@ -3,20 +3,13 @@ package server
 import (
 	"crypto/tls"
 	"errors"
-	"log"
+	"log/slog"
 	"net"
-	"os"
 	"sync"
 	"time"
 )
 
 var ErrServerClosed = errors.New("smtp: server already closed")
-
-// Logger interface is used by Server to report unexpected internal errors.
-type Logger interface {
-	Printf(format string, v ...interface{})
-	Println(v ...interface{})
-}
 
 // A SMTP server.
 type Server struct {
@@ -71,8 +64,9 @@ type Server struct {
 	enableXOORG bool
 
 	// The server backend.
-	backend  Backend
-	errorLog Logger
+	backend Backend
+
+	logger *slog.Logger
 
 	wg   sync.WaitGroup
 	done chan struct{}
@@ -88,22 +82,25 @@ type Option func(*Server)
 // New creates a new SMTP server.
 func NewServer(opts ...Option) *Server {
 	s := &Server{
-		done:     make(chan struct{}, 1),
-		errorLog: log.New(os.Stderr, "smtp/server ", log.LstdFlags),
-		conns:    make(map[net.Conn]struct{}),
+		done:  make(chan struct{}, 1),
+		conns: make(map[net.Conn]struct{}),
 	}
 
 	for _, o := range opts {
 		o(s)
 	}
 
+	if s.logger == nil {
+		s.logger = slog.Default()
+	}
+
 	return s
 }
 
-// WithErrorLog sets the backend.
-func WithErrorLog(errorLog Logger) Option {
+// WithLogger sets the backend.
+func WithLogger(logger *slog.Logger) Option {
 	return func(s *Server) {
-		s.errorLog = errorLog
+		s.logger = logger
 	}
 }
 
