@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"log/slog"
@@ -27,6 +28,7 @@ type message struct {
 
 type backend struct {
 	authDisabled bool
+	clientTls    bool
 
 	messages []*message
 	anonmsgs []*message
@@ -202,10 +204,7 @@ func (m *mockError) Timeout() bool   { return m.timeout }
 func (m *mockError) Temporary() bool { return false }
 
 func testServer(t *testing.T, bei *backend, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	if bei == nil {
 		be = new(backend)
 	} else {
@@ -213,6 +212,7 @@ func testServer(t *testing.T, bei *backend, opts ...server.Option) (be *backend,
 	}
 
 	curOpts := []server.Option{
+		server.WithAddr("127.0.0.1:0"),
 		server.WithBackend(be),
 		server.WithMaxLineLength(2000),
 		server.WithHostname("localhost"),
@@ -224,11 +224,27 @@ func testServer(t *testing.T, bei *backend, opts ...server.Option) (be *backend,
 		curOpts...,
 	)
 
-	go s.Serve(context.Background(), l)
+	ctx := context.Background()
 
-	c, err = net.Dial("tcp", l.Addr().String())
+	l, err := s.Listen(ctx)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	go s.Serve(ctx, l)
+
+	if be.clientTls {
+		c, err = tls.Dial("tcp", l.Addr().String(), &tls.Config{
+			InsecureSkipVerify: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		c, err = net.Dial("tcp", l.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	scanner = bufio.NewScanner(c)
@@ -375,6 +391,40 @@ func TestServerAuthTwice(t *testing.T) {
 
 	if scanner.Scan() {
 		t.Fatal("connection is still open")
+	}
+}
+
+func TestServerAuthForbiddenInsideMailTransaction(t *testing.T) {
+	_, _, c, scanner, caps := testServerEhlo(t, nil)
+
+	if _, ok := caps["AUTH PLAIN"]; !ok {
+		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
+	}
+
+	io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid MAIL response:", scanner.Text())
+	}
+
+	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "502 ") {
+		t.Fatal("Invalid AUTH response:", scanner.Text())
+	}
+}
+
+func TestServerAuthEnforced(t *testing.T) {
+	_, _, c, scanner, caps := testServerEhlo(t, nil, server.WithEnforceAuthentication(true))
+
+	if _, ok := caps["AUTH PLAIN"]; !ok {
+		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
+	}
+
+	io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "530 ") {
+		t.Fatal("Should require authentication:", scanner.Text())
 	}
 }
 

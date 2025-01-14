@@ -101,6 +101,37 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	c.run()
 }
 
+// Listen listens on the network address s.Addr
+// to handle requests on incoming connections.
+//
+// If s.Addr is blank and LMTP is disabled, ":smtp" is used.
+func (s *Server) Listen(ctx context.Context) (net.Listener, error) {
+	network := s.network
+	if network == "" {
+		network = "tcp"
+	}
+
+	addr := s.addr
+	if addr == "" {
+		addr = ":smtp"
+	}
+
+	var l net.Listener
+	var err error
+
+	if s.implicitTLS {
+		l, err = tls.Listen(network, addr, s.tlsConfig)
+	} else {
+		l, err = net.Listen(network, addr)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return l, nil
+}
+
 // ListenAndServe listens on the network address s.Addr and then calls Serve
 // to handle requests on incoming connections.
 //

@@ -17,8 +17,8 @@ import (
 	"testing"
 
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/faker"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/tester"
 
 	"github.com/emersion/go-sasl"
 )
@@ -30,7 +30,7 @@ func TestClientAuthTrimSpace(t *testing.T) {
 		"200 some more"
 	wrote := &bytes.Buffer{}
 
-	fake := faker.NewConn(server, wrote)
+	fake := tester.NewConn(server, wrote)
 
 	c := NewClient(fake)
 	c.didHello = true
@@ -60,7 +60,7 @@ func TestBasic(t *testing.T) {
 	client := strings.Join(strings.Split(basicClient, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := faker.NewConn(server, cmdbuf)
+	fake := tester.NewConn(server, cmdbuf)
 
 	c := &Client{text: textsmtp.NewConn(fake, 4096, 4096, 0), conn: fake, localName: "localhost"}
 
@@ -165,7 +165,7 @@ func TestBasic_smtp(t *testing.T) {
 	faultyServer = strings.Join(strings.Split(faultyServer, "\n"), "\r\n")
 
 	wrote := &bytes.Buffer{}
-	fake := faker.NewConn(faultyServer, wrote)
+	fake := tester.NewConn(faultyServer, wrote)
 
 	c := NewClient(fake)
 
@@ -238,7 +238,7 @@ func TestClient_TooLongLine(t *testing.T) {
 	}()
 
 	wrote := &bytes.Buffer{}
-	fake := faker.NewConnStream(pr, wrote)
+	fake := tester.NewConnStream(pr, wrote)
 
 	c := NewClient(fake)
 
@@ -298,7 +298,7 @@ func TestNewClient(t *testing.T) {
 	client := strings.Join(strings.Split(newClientClient, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
 
 	c := NewClient(fake)
 	defer c.Close()
@@ -335,7 +335,7 @@ func TestNewClient2(t *testing.T) {
 	client := strings.Join(strings.Split(newClient2Client, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
 
 	c := NewClient(fake)
 	defer c.Close()
@@ -377,7 +377,7 @@ func TestHello(t *testing.T) {
 		client := strings.Join(strings.Split(baseHelloClient+helloClient[i], "\n"), "\r\n")
 
 		cmdbuf := &bytes.Buffer{}
-		fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+		fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
 
 		c := NewClient(fake)
 		defer c.Close()
@@ -483,7 +483,7 @@ func TestHello_421Response(t *testing.T) {
 	client := "EHLO customhost\r\n"
 
 	cmdbuf := &bytes.Buffer{}
-	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
 
 	c := NewClient(fake)
 	defer c.Close()
@@ -538,7 +538,7 @@ func TestAuthFailed(t *testing.T) {
 	client := strings.Join(strings.Split(authFailedClient, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
 
 	c := NewClient(fake)
 	defer c.Close()
@@ -767,7 +767,7 @@ func TestLMTP(t *testing.T) {
 	client := strings.Join(strings.Split(lmtpClient, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
 
 	c := &Client{text: textsmtp.NewConn(fake, 4096, 4096, 0), conn: fake, lmtp: true}
 
@@ -852,7 +852,7 @@ func TestLMTPData(t *testing.T) {
 	server := strings.Join(strings.Split(lmtpServerPartial, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := faker.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
 
 	c := &Client{text: textsmtp.NewConn(fake, 4096, 4096, 0), conn: fake, lmtp: true}
 
@@ -925,7 +925,7 @@ func TestClientXtext(t *testing.T) {
 	client := strings.Join(strings.Split(xtextClient, "\n"), "\r\n")
 
 	wrote := &bytes.Buffer{}
-	fake := faker.NewConnStream(strings.NewReader(server), wrote)
+	fake := tester.NewConnStream(strings.NewReader(server), wrote)
 
 	c := NewClient(fake)
 	c.didHello = true
@@ -966,7 +966,7 @@ func TestClientDSN(t *testing.T) {
 	client := strings.Join(strings.Split(dsnClient, "\n"), "\r\n")
 
 	wrote := &bytes.Buffer{}
-	fake := faker.NewConnStream(strings.NewReader(server), wrote)
+	fake := tester.NewConnStream(strings.NewReader(server), wrote)
 
 	c := NewClient(fake)
 	c.didHello = true

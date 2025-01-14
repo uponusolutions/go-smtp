@@ -1,4 +1,4 @@
-package faker
+package tester
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 
 type Conn struct {
 	io.ReadWriter
+	RemoteAddrReturn net.Addr
 }
 
 func NewConnStream(in io.Reader, out *bytes.Buffer) *Conn {
@@ -42,7 +43,7 @@ func NewConn(in string, out *bytes.Buffer) *Conn {
 
 func (f Conn) Close() error                     { return nil }
 func (f Conn) LocalAddr() net.Addr              { return nil }
-func (f Conn) RemoteAddr() net.Addr             { return nil }
+func (f Conn) RemoteAddr() net.Addr             { return f.RemoteAddrReturn }
 func (f Conn) SetDeadline(time.Time) error      { return nil }
 func (f Conn) SetReadDeadline(time.Time) error  { return nil }
 func (f Conn) SetWriteDeadline(time.Time) error { return nil }

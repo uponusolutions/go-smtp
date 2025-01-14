@@ -10,11 +10,11 @@ import (
 	"net/textproto"
 	"testing"
 
-	"github.com/uponusolutions/go-smtp/internal/faker"
+	"github.com/uponusolutions/go-smtp/tester"
 )
 
 func reader(in string, out *bytes.Buffer) *Conn {
-	return NewConn(faker.NewConn(in, out), 4096, 4096, 0)
+	return NewConn(tester.NewConn(in, out), 4096, 4096, 0)
 }
 
 func TestPrintfLine(t *testing.T) {

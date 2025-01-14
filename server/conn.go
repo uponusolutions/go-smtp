@@ -142,7 +142,7 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 	case "AUTH":
 		return c.handleAuth(arg)
 	default:
-		c.writeCommandUnknown(cmd)
+		c.writeResponse(530, smtp.EnhancedCode{5, 7, 0}, "Authentication required")
 	}
 	return nil
 }
@@ -189,12 +189,6 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 		return c.handleData(arg)
 	case "QUIT":
 		return smtp.Quit
-	case "AUTH":
-		err := c.handleAuth(arg)
-		if err == nil {
-			c.state = StateGreeted
-		}
-		return err
 	case "STARTTLS":
 		return c.handleStartTLS()
 	default:
