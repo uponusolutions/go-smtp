@@ -62,7 +62,6 @@ func (c *Conn) run() {
 
 	for {
 		cmd, arg, err := c.nextCommand()
-
 		if err != nil {
 			c.handleError(err)
 			return
@@ -619,6 +618,11 @@ func (c *Conn) handleAuth(arg string) error {
 
 	c.writeResponse(235, smtp.EnhancedCode{2, 0, 0}, "Authentication succeeded")
 	c.didAuth = true
+
+	if c.state == StateEnforceAuthentication {
+		c.state = StateGreeted
+	}
+
 	return nil
 }
 

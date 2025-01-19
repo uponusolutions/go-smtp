@@ -204,7 +204,6 @@ func (m *mockError) Timeout() bool   { return m.timeout }
 func (m *mockError) Temporary() bool { return false }
 
 func testServer(t *testing.T, bei *backend, opts ...server.Option) (be *backend, s *server.Server, c net.Conn, scanner *bufio.Scanner) {
-
 	if bei == nil {
 		be = new(backend)
 	} else {
@@ -426,6 +425,18 @@ func TestServerAuthEnforced(t *testing.T) {
 	if !strings.HasPrefix(scanner.Text(), "530 ") {
 		t.Fatal("Should require authentication:", scanner.Text())
 	}
+
+	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "235 ") {
+		t.Fatal("Invalid AUTH response:", scanner.Text())
+	}
+
+	io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Should require authentication:", scanner.Text())
+	}
 }
 
 func TestServerCancelSASL(t *testing.T) {
@@ -473,7 +484,6 @@ func TestServerEmptyFrom2(t *testing.T) {
 }
 
 func TestServerPanicRecover(t *testing.T) {
-
 	be, s, c, scanner := testServerAuthenticated(t, nil,
 		// Don't log panic in tests to not confuse people who run 'go test'.
 		server.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
