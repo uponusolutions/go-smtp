@@ -1583,7 +1583,7 @@ func TestServerXOORG(t *testing.T) {
 		t.Fatal("Invalid number of sent messages:", be.messages, be.anonmsgs)
 	}
 
-	if val := be.anonmsgs[0].Opts.XOORG; val != "test.com" {
+	if val := be.anonmsgs[0].Opts.XOORG; *val != "test.com" {
 		t.Fatal("Invalid XOORG parameter value:", val)
 	}
 }
