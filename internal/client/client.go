@@ -474,6 +474,14 @@ func (c *Client) Mail(from string, opts *smtp.MailOptions) error {
 		}
 		// We can safely discard parameter if server does not support AUTH.
 	}
+
+	if opts != nil && opts.XOORG != nil {
+		if _, ok := c.ext["XOORG"]; ok {
+			fmt.Fprintf(&sb, " XOORG=%s", encodeXtext(*opts.XOORG))
+		}
+		// We can safely discard parameter if server does not support AUTH.
+	}
+
 	_, _, err := c.cmd(250, "%s", sb.String())
 	return err
 }

@@ -217,6 +217,10 @@ func (c *Client) SendMail(in io.Reader, from string, rcpt []string) error {
 	return err
 }
 
+func (c *Client) SetXOORG(xoorg *string) {
+	c.options.XOORG = xoorg
+}
+
 func (c *Client) sendMail(in io.Reader, from string, rcpt []string) (code int, msg string, err error) {
 	w, err := c.prepare(from, rcpt)
 	if err != nil {

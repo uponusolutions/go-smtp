@@ -418,10 +418,14 @@ func (c *Conn) handleMail(arg string) error {
 
 			opts.Size = int64(size)
 		case "XOORG":
+			value, err := decodeXtext(value)
+			if err != nil || value == "" {
+				return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Malformed XOORG parameter value")
+			}
 			if !c.server.enableXOORG {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "EnableXOORG is not implemented")
 			}
-			opts.XOORG = value
+			opts.XOORG = &value
 		case "SMTPUTF8":
 			if !c.server.enableSMTPUTF8 {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
