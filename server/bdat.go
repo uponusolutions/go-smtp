@@ -44,75 +44,63 @@ func bdatArg(arg string) (int64, bool, error) {
 	return int64(size), last, nil
 }
 
-func (d *bdat) Read(b []byte) (n int, err error) {
-	for {
-		if d.maxMessageBytes != 0 && d.bytesReceived+d.size > d.maxMessageBytes {
-			return 0, smtp.NewStatus(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
-		}
-
-		if d.size > 0 {
-			if d.chunk == nil {
-				d.chunk = io.LimitReader(d.input, int64(d.size))
-			}
-
-			for {
-				in, err := d.chunk.Read(b[n:])
-				d.bytesReceived += int64(in)
-				n = in + n
-
-				// error while reading, not eof
-				if err != nil && err != io.EOF {
-					return n, err
-				}
-
-				// limit reader has ended, need to end or next command
-				if err == io.EOF {
-					d.chunk = nil
-					d.size = 0
-				}
-
-				// buffer full => return
-				if n == len(b) {
-					return n, err
-				}
-
-				// next comand needed
-				if err == io.EOF {
-					break
-				}
-			}
-
-		}
+func (d *bdat) Read(b []byte) (int, error) {
+	if d.size == 0 {
 
 		if d.last {
-			return n, io.EOF
+			return 0, io.EOF
 		}
+
+		d.chunk = nil
 
 		cmd, arg, err := d.nextCommand()
 		if err != nil {
 			if err == io.EOF {
-				return n, smtp.ErrConnection
+				return 0, smtp.ErrConnection
 			}
-			return n, err
+			return 0, err
 		}
 
 		switch cmd {
 		case "RSET":
-			return n, smtp.Reset
+			return 0, smtp.Reset
 		case "QUIT":
-			return n, smtp.Quit
+			return 0, smtp.Quit
 		case "BDAT":
 			d.size, d.last, err = bdatArg(arg)
 			if err != nil {
-				return n, err
+				return 0, err
 			}
 
 			if d.last && d.size == 0 {
-				return n, io.EOF
+				return 0, io.EOF
 			}
 		default:
-			return n, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "BDAT command expected")
+			return 0, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "BDAT command expected")
 		}
 	}
 
+	if d.maxMessageBytes != 0 && d.bytesReceived+d.size > d.maxMessageBytes {
+		return 0, smtp.NewStatus(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
+	}
+
+	if d.chunk == nil {
+		d.chunk = io.LimitReader(d.input, int64(d.size))
+	}
+
+	n, err := d.chunk.Read(b)
+	d.bytesReceived += int64(n)
+	d.size -= int64(n)
+
+	// this isn't the end
+	if err == io.EOF && !d.last {
+		// stream broke in the middle
+		if d.size > 0 {
+			err = smtp.ErrConnection
+		} else {
+			err = nil
+		}
+	}
+
+	return n, err
 }
