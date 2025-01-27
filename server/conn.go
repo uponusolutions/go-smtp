@@ -304,7 +304,6 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		"PIPELINING",
 		"8BITMIME",
 		"ENHANCEDSTATUSCODES",
-		"CHUNKING",
 	}
 
 	if c.server.enableCHUNKING {
