@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1030,6 +1031,55 @@ func TestServer_Chunking(t *testing.T) {
 		t.Fatal("Invalid mail recipients:", msg.To)
 	}
 	if want := "Hey <3\r\nHey :3\r\n"; string(msg.Data) != want {
+		t.Fatal("Invalid mail data:", string(msg.Data), msg.Data)
+	}
+}
+
+func TestServer_Chunking_Large(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true), server.WithMaxLineLength(100))
+	defer s.Close()
+	defer c.Close()
+
+	largeMessage := strings.Repeat("a", 5000)
+
+	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid MAIL response:", scanner.Text())
+	}
+
+	io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RCPT response:", scanner.Text())
+	}
+
+	io.WriteString(c, "BDAT "+strconv.Itoa(len(largeMessage)+2)+"\r\n")
+	io.WriteString(c, largeMessage+"\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid BDAT response:", scanner.Text())
+	}
+
+	io.WriteString(c, "BDAT 8 LAST\r\n")
+	io.WriteString(c, "Hey :3\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid BDAT response:", scanner.Text())
+	}
+
+	if len(be.messages) != 1 || len(be.anonmsgs) != 0 {
+		t.Fatal("Invalid number of sent messages:", be.messages, be.anonmsgs)
+	}
+
+	msg := be.messages[0]
+	if msg.From != "root@nsa.gov" {
+		t.Fatal("Invalid mail sender:", msg.From)
+	}
+	if len(msg.To) != 1 || msg.To[0] != "root@gchq.gov.uk" {
+		t.Fatal("Invalid mail recipients:", msg.To)
+	}
+	if want := largeMessage + "\r\nHey :3\r\n"; string(msg.Data) != want {
 		t.Fatal("Invalid mail data:", string(msg.Data), msg.Data)
 	}
 }

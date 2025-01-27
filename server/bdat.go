@@ -46,7 +46,7 @@ func bdatArg(arg string) (int64, bool, error) {
 
 func (d *bdat) Read(b []byte) (n int, err error) {
 	for {
-		if d.maxMessageBytes != 0 && d.bytesReceived+int64(n)+d.size > d.maxMessageBytes {
+		if d.maxMessageBytes != 0 && d.bytesReceived+d.size > d.maxMessageBytes {
 			return 0, smtp.NewStatus(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
 		}
 
@@ -55,21 +55,39 @@ func (d *bdat) Read(b []byte) (n int, err error) {
 				d.chunk = io.LimitReader(d.input, int64(d.size))
 			}
 
-			in, err := d.chunk.Read(b[n:])
-			d.bytesReceived += int64(in)
-			n = in + n
+			for {
+				in, err := d.chunk.Read(b[n:])
+				d.bytesReceived += int64(in)
+				n = in + n
 
-			// More data to read
-			if (err != io.EOF || err == nil) && n >= len(b) {
-				return n, err
+				// error while reading, not eof
+				if err != nil && err != io.EOF {
+					return n, err
+				}
+
+				// limit reader has ended, need to end or next command
+				if err == io.EOF {
+					d.chunk = nil
+					d.size = 0
+				}
+
+				// buffer full => return
+				if n == len(b) {
+					return n, err
+				}
+
+				// next comand needed
+				if err == io.EOF {
+					break
+				}
 			}
+
 		}
 
 		if d.last {
 			return n, io.EOF
 		}
 
-		d.chunk = nil
 		cmd, arg, err := d.nextCommand()
 		if err != nil {
 			if err == io.EOF {
