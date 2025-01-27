@@ -988,7 +988,7 @@ func TestServer_authParam(t *testing.T) {
 }
 
 func TestServer_Chunking(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil)
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
 	defer s.Close()
 	defer c.Close()
 
@@ -1035,7 +1035,7 @@ func TestServer_Chunking(t *testing.T) {
 }
 
 func TestServer_Chunking_Reset(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil)
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
 	defer s.Close()
 	defer c.Close()
 	be.dataErrors = make(chan error, 10)
@@ -1090,7 +1090,7 @@ func TestServer_Chunking_Reset(t *testing.T) {
 }
 
 func TestServer_Chunking_Close(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil)
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
 	defer s.Close()
 	defer c.Close()
 	be.dataErrors = make(chan error, 10)
@@ -1127,7 +1127,7 @@ func TestServer_Chunking_Close(t *testing.T) {
 }
 
 func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil)
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
 	defer s.Close()
 	defer c.Close()
 	be.dataErrors = make(chan error, 10)
@@ -1156,7 +1156,7 @@ func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
 }
 
 func TestServer_Chunking_EarlyError(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil)
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
 	defer s.Close()
 	defer c.Close()
 
@@ -1187,7 +1187,7 @@ func TestServer_Chunking_EarlyError(t *testing.T) {
 }
 
 func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil)
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
 	defer s.Close()
 	defer c.Close()
 
@@ -1233,7 +1233,7 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 }
 
 func TestServer_Chunking_tooLongMessage(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxMessageBytes(50))
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxMessageBytes(50), server.WithEnableCHUNKING(true))
 	defer s.Close()
 
 	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
@@ -1258,7 +1258,7 @@ func TestServer_Chunking_tooLongMessage(t *testing.T) {
 }
 
 func TestServer_Chunking_Binarymime(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableBINARYMIME(true))
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableBINARYMIME(true), server.WithEnableCHUNKING(true))
 	defer s.Close()
 	defer c.Close()
 

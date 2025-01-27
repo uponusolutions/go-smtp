@@ -51,6 +51,9 @@ type Server struct {
 	// Should be used only if backend supports it.
 	enableREQUIRETLS bool
 
+	// Advertise CHUNKING (RFC 1830) capability.
+	enableCHUNKING bool
+
 	// Advertise BINARYMIME (RFC 3030) capability.
 	// Should be used only if backend supports it.
 	enableBINARYMIME bool
@@ -178,6 +181,13 @@ func WithEnableBINARYMIME(enableBINARYMIME bool) Option {
 func WithEnableREQUIRETLS(enableREQUIRETLS bool) Option {
 	return func(s *Server) {
 		s.enableREQUIRETLS = enableREQUIRETLS
+	}
+}
+
+// WithEnableCHUNKING sets EnableCHUNKING.
+func WithEnableCHUNKING(enableCHUNKING bool) Option {
+	return func(s *Server) {
+		s.enableCHUNKING = enableCHUNKING
 	}
 }
 

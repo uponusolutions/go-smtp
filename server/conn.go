@@ -183,6 +183,9 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 	case "RSET": // Reset session
 		return c.handleRSET()
 	case "BDAT":
+		if !c.server.enableCHUNKING {
+			return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "CHUNKING is not implemented")
+		}
 		return c.handleBdat(arg)
 	case "DATA":
 		return c.handleData(arg)
@@ -302,6 +305,10 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		"8BITMIME",
 		"ENHANCEDSTATUSCODES",
 		"CHUNKING",
+	}
+
+	if c.server.enableCHUNKING {
+		caps = append(caps, "CHUNKING")
 	}
 
 	isTLS := c.IsTLS()
