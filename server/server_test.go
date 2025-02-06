@@ -440,6 +440,30 @@ func TestServerAuthEnforced(t *testing.T) {
 	}
 }
 
+func TestServerAuthClosedOnFailedAuth(t *testing.T) {
+	_, _, c, scanner, caps := testServerEhlo(t, nil, server.WithEnforceAuthentication(true))
+
+	if _, ok := caps["AUTH PLAIN"]; !ok {
+		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
+	}
+
+	io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "530 ") {
+		t.Fatal("Should require authentication:", scanner.Text())
+	}
+
+	io.WriteString(c, "AUTH PLAIN invalid\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "454 ") {
+		t.Fatal("Invalid AUTH response:", scanner.Text())
+	}
+
+	if scanner.Scan() || scanner.Err() != nil {
+		t.Fatal("connection isn't closed")
+	}
+}
+
 func TestServerCancelSASL(t *testing.T) {
 	_, _, c, scanner, caps := testServerEhlo(t, nil)
 
