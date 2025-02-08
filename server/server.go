@@ -37,7 +37,12 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				s.logger.ErrorContext(ctx, "accept error, retrying", slog.Any("error", err), slog.Any("temp_delay", tempDelay))
+				s.logger.ErrorContext(
+					ctx,
+					"accept error, retrying",
+					slog.Any("error", err),
+					slog.Any("temp_delay", tempDelay),
+				)
 				time.Sleep(tempDelay)
 				continue
 			}
@@ -78,7 +83,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 				"panic serving",
 				slog.Any("remoteAddr", c.conn.RemoteAddr()),
 				slog.Any("err", err),
-				slog.Any("stack", stack),
+				slog.Any("stack", string(stack)),
 			)
 		}
 
