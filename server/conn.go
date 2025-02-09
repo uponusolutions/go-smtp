@@ -68,7 +68,6 @@ func (c *Conn) nextCommand() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	c.logger().DebugContext(c.ctx, "read", slog.String("read", line))
 	return parse.Cmd(line)
 }
 
@@ -790,8 +789,11 @@ func (c *Conn) readLine() (string, error) {
 			return "", err
 		}
 	}
-
-	return c.text.ReadLine()
+	line, err := c.text.ReadLine()
+	if err == nil {
+		c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
+	}
+	return line, err
 }
 
 func (c *Conn) reset() error {
