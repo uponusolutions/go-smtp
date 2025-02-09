@@ -111,6 +111,20 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	c.logger().InfoContext(c.ctx, "connection is opened")
 
+	// explicit tls handshake call
+	if tlsConn, ok := c.conn.(*tls.Conn); ok {
+		if d := s.readTimeout; d != 0 {
+			c.conn.SetReadDeadline(time.Now().Add(d))
+		}
+		if d := s.writeTimeout; d != 0 {
+			c.conn.SetWriteDeadline(time.Now().Add(d))
+		}
+		if err := tlsConn.Handshake(); err != nil {
+			c.handleError(err)
+			return
+		}
+	}
+
 	c.run()
 }
 

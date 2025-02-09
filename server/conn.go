@@ -68,6 +68,7 @@ func (c *Conn) nextCommand() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	c.logger().DebugContext(c.ctx, "read", slog.String("read", line))
 	return parse.Cmd(line)
 }
 
@@ -345,27 +346,32 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 }
 
 func (c *Conn) handleError(err error) {
-	c.logger().ErrorContext(c.ctx, "handleError", slog.Any("err", err))
-
 	if err == io.EOF || errors.Is(err, net.ErrClosed) {
+		c.logger().ErrorContext(c.ctx, "connection closed unexpectedly", slog.Any("err", err))
 		return
 	}
 
 	if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+		c.logger().ErrorContext(c.ctx, "idle timeout", slog.Any("err", err))
 		c.writeResponse(421, smtp.EnhancedCode{4, 4, 2}, "Idle timeout, bye bye")
 		return
 	}
 
 	if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
+		if smtpErr.Code != 221 {
+			c.logger().ErrorContext(c.ctx, "smtp error", slog.Any("err", err))
+		}
 		c.writeResponse(smtpErr.Code, smtpErr.EnhancedCode, smtpErr.Message)
 		return
 	}
 
 	if err == textsmtp.ErrTooLongLine {
+		c.logger().ErrorContext(c.ctx, "line too long")
 		c.writeResponse(500, smtp.EnhancedCode{5, 4, 0}, "Too long line, closing connection")
 		return
 	}
 
+	c.logger().ErrorContext(c.ctx, "line too long", slog.Any("err", err))
 	c.writeStatus(smtp.ErrConnection)
 }
 
@@ -739,6 +745,8 @@ func (c *Conn) writeStatus(status *smtp.SMTPStatus) {
 }
 
 func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string) {
+	c.logger().DebugContext(c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", text))
+
 	// TODO: error handling
 	if c.server.writeTimeout != 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
