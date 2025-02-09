@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
 // Serve accepts incoming connections on the Listener l.
@@ -40,7 +41,7 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 				s.logger.ErrorContext(
 					ctx,
 					"accept error, retrying",
-					slog.Any("error", err),
+					slog.Any("err", err),
 					slog.Any("temp_delay", tempDelay),
 				)
 				time.Sleep(tempDelay)
@@ -54,16 +55,6 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 	}
 }
 
-func (s *Server) sessionLogger(c *Conn) *slog.Logger {
-	var l *slog.Logger
-	if c != nil {
-		l = c.logger()
-	} else {
-		l = s.logger
-	}
-	return l
-}
-
 func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	s.locker.Lock()
 	s.conns[conn] = struct{}{}
@@ -71,17 +62,21 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	ctx, cancel := context.WithCancel(ctx)
 
-	var c *Conn
+	c := &Conn{
+		ctx:    ctx,
+		server: s,
+		conn:   conn,
+		text:   textsmtp.NewConn(conn, s.readerSize, s.writerSize, s.maxLineLength),
+	}
 	var err error
 
 	defer func() {
 		if err := recover(); err != nil {
 			c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
 			stack := debug.Stack()
-			s.sessionLogger(c).ErrorContext(
-				ctx,
+			c.logger().ErrorContext(
+				c.ctx,
 				"panic serving",
-				slog.Any("remoteAddr", c.conn.RemoteAddr()),
 				slog.Any("err", err),
 				slog.Any("stack", string(stack)),
 			)
@@ -93,15 +88,28 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 		s.wg.Done()
 
+		c.logger().InfoContext(c.ctx, "connection is closing")
+
 		cancel()
 		_ = conn.Close()
+
 	}()
 
-	c, err = newConn(ctx, conn, s)
+	sctx, session, err := s.backend.NewSession(ctx, c)
 	if err != nil {
-		s.sessionLogger(c).ErrorContext(ctx, "couldn't create connection wrapper", slog.Any("error", err))
+		c.logger().ErrorContext(
+			c.ctx,
+			"couldn't create connection wrapper",
+			slog.Any("err", err),
+		)
 		return
 	}
+
+	// update ctx and set session
+	c.ctx = sctx
+	c.session = session
+
+	c.logger().InfoContext(c.ctx, "connection is opened")
 
 	c.run()
 }

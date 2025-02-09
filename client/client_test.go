@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 
 	defer func() {
 		if err := s.Close(); err != nil {
-			slog.Error("error closing server", "error", err)
+			slog.Error("error closing server", "err", err)
 		}
 	}()
 

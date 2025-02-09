@@ -45,18 +45,6 @@ type Conn struct {
 	didAuth    bool
 }
 
-func newConn(ctx context.Context, c net.Conn, s *Server) (conn *Conn, err error) {
-	conn = &Conn{
-		server: s,
-		conn:   c,
-		text:   textsmtp.NewConn(c, s.readerSize, s.writerSize, s.maxLineLength),
-	}
-
-	conn.ctx, conn.session, err = s.backend.NewSession(ctx, conn)
-
-	return conn, err
-}
-
 func (c *Conn) run() {
 	c.greet()
 
@@ -357,6 +345,8 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 }
 
 func (c *Conn) handleError(err error) {
+	c.logger().ErrorContext(c.ctx, "handleError", slog.Any("err", err))
+
 	if err == io.EOF || errors.Is(err, net.ErrClosed) {
 		return
 	}
@@ -376,7 +366,6 @@ func (c *Conn) handleError(err error) {
 		return
 	}
 
-	c.logger().ErrorContext(c.ctx, "handleError", slog.Any("error", err))
 	c.writeStatus(smtp.ErrConnection)
 }
 
@@ -498,7 +487,7 @@ func (c *Conn) handleMail(arg string) error {
 	}
 
 	if err := c.session.Mail(c.ctx, from, opts); err != nil {
-		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
+		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Mail not accepted", err)
 	}
 
 	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
@@ -560,7 +549,7 @@ func (c *Conn) handleRcpt(arg string) error {
 	}
 
 	if err := c.session.Rcpt(c.ctx, recipient, opts); err != nil {
-		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, err)
+		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Recipient not accepted", err)
 	}
 	c.recipients++
 	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
@@ -590,14 +579,14 @@ func (c *Conn) handleAuth(arg string) error {
 
 	sasl, err := c.session.Auth(c.ctx, mechanism)
 	if err != nil {
-		return c.newStatusError(454, smtp.EnhancedCode{4, 7, 0}, err)
+		return c.newStatusError(454, smtp.EnhancedCode{4, 7, 0}, "Authentication failed", err)
 	}
 
 	response := ir
 	for {
 		challenge, done, err := sasl.Next(response)
 		if err != nil {
-			return c.newStatusError(454, smtp.EnhancedCode{4, 7, 0}, err)
+			return c.newStatusError(454, smtp.EnhancedCode{4, 7, 0}, "Authentication failed", err)
 		}
 
 		if done {
@@ -651,7 +640,7 @@ func (c *Conn) handleStartTLS() error {
 	tlsConn := tls.Server(c.conn, c.server.tlsConfig)
 
 	if err := tlsConn.Handshake(); err != nil {
-		c.logger().ErrorContext(c.ctx, "handleStartTLS", slog.Any("error", err))
+		c.logger().ErrorContext(c.ctx, "handleStartTLS", slog.Any("err", err))
 		return smtp.NewStatus(550, smtp.EnhancedCode{5, 0, 0}, "Handshake error")
 	}
 
@@ -777,11 +766,12 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string
 	}
 }
 
-func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, err error) *smtp.SMTPStatus {
+func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, err error) *smtp.SMTPStatus {
 	if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
 		return smtpErr
 	} else {
-		return smtp.NewStatus(code, enhCode, err.Error())
+		c.logger().ErrorContext(c.ctx, msg, slog.Any("err", err))
+		return smtp.NewStatus(code, enhCode, msg)
 	}
 }
 
