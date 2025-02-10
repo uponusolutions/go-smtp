@@ -247,7 +247,7 @@ func (c *Conn) Conn() net.Conn {
 }
 
 func (c *Conn) handleRSET() error {
-	err := c.reset()
+	err := c.clear(true)
 	if err != nil {
 		return err
 	}
@@ -269,7 +269,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	// RFC 5321: "... the SMTP server MUST clear all buffers
 	// and reset the state exactly as if a RSET command has been issued."
 	if c.state != StateInit && c.state != StateEnforceSecureConnection && c.state != StateEnforceAuthentication {
-		err := c.reset()
+		err := c.clear(true)
 		if err != nil {
 			return err
 		}
@@ -684,7 +684,7 @@ func (c *Conn) handleData(arg string) error {
 	}
 
 	c.accepted(uuid)
-	return c.reset()
+	return c.clear(false)
 }
 
 func (c *Conn) handleBdat(arg string) error {
@@ -708,7 +708,7 @@ func (c *Conn) handleBdat(arg string) error {
 	uuid, err := c.session.Data(c.ctx, func() io.Reader { return data })
 
 	if err == smtp.Reset {
-		c.reset()
+		c.clear(true)
 		c.writeStatus(smtp.Reset)
 		return nil
 	}
@@ -718,11 +718,14 @@ func (c *Conn) handleBdat(arg string) error {
 	}
 
 	c.accepted(uuid)
-	return c.reset()
+	return c.clear(false)
 }
 
 func (c *Conn) accepted(uuid string) {
 	if uuid != "" {
+		if len(uuid) > 977 {
+			uuid = uuid[:974] + "..."
+		}
 		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued as "+uuid)
 	} else {
 		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")
@@ -796,16 +799,20 @@ func (c *Conn) readLine() (string, error) {
 	return line, err
 }
 
-func (c *Conn) reset() error {
+func (c *Conn) clear(reset bool) error {
 	// Reset state to Greeted
 	if c.state == StateMail {
 		c.state = StateGreeted
 	}
 
 	c.recipients = 0
-	c.didAuth = false
 
-	ctx, err := c.session.Reset(c.ctx, c.state == StateUpgrade)
-	c.ctx = ctx
-	return err
+	if reset {
+		c.didAuth = false
+		ctx, err := c.session.Reset(c.ctx, c.state == StateUpgrade)
+		c.ctx = ctx
+		return err
+	}
+
+	return nil
 }
