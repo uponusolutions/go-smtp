@@ -20,7 +20,7 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 	"github.com/uponusolutions/go-smtp/tester"
 
-	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-sasl"
 )
 
 // Don't send a trailing space on AUTH command when there's no initial response:

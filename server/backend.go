@@ -5,7 +5,7 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
 )
 
