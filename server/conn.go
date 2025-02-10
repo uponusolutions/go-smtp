@@ -247,7 +247,7 @@ func (c *Conn) Conn() net.Conn {
 }
 
 func (c *Conn) handleRSET() error {
-	err := c.clear(true)
+	err := c.reset()
 	if err != nil {
 		return err
 	}
@@ -269,7 +269,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	// RFC 5321: "... the SMTP server MUST clear all buffers
 	// and reset the state exactly as if a RSET command has been issued."
 	if c.state != StateInit && c.state != StateEnforceSecureConnection && c.state != StateEnforceAuthentication {
-		err := c.clear(true)
+		err := c.reset()
 		if err != nil {
 			return err
 		}
@@ -684,7 +684,7 @@ func (c *Conn) handleData(arg string) error {
 	}
 
 	c.accepted(uuid)
-	return c.clear(false)
+	return c.reset()
 }
 
 func (c *Conn) handleBdat(arg string) error {
@@ -708,7 +708,7 @@ func (c *Conn) handleBdat(arg string) error {
 	uuid, err := c.session.Data(c.ctx, func() io.Reader { return data })
 
 	if err == smtp.Reset {
-		c.clear(true)
+		c.reset()
 		c.writeStatus(smtp.Reset)
 		return nil
 	}
@@ -718,7 +718,7 @@ func (c *Conn) handleBdat(arg string) error {
 	}
 
 	c.accepted(uuid)
-	return c.clear(false)
+	return c.reset()
 }
 
 func (c *Conn) accepted(uuid string) {
@@ -799,7 +799,7 @@ func (c *Conn) readLine() (string, error) {
 	return line, err
 }
 
-func (c *Conn) clear(reset bool) error {
+func (c *Conn) reset() error {
 	// Reset state to Greeted
 	if c.state == StateMail {
 		c.state = StateGreeted
@@ -807,12 +807,13 @@ func (c *Conn) clear(reset bool) error {
 
 	c.recipients = 0
 
-	if reset {
-		c.didAuth = false
-		ctx, err := c.session.Reset(c.ctx, c.state == StateUpgrade)
-		c.ctx = ctx
-		return err
-	}
+	upgrade := c.state == StateUpgrade
 
-	return nil
+	// Authentication is only revoked if starttls is used.
+	if upgrade {
+		c.didAuth = false
+	}
+	ctx, err := c.session.Reset(c.ctx, upgrade)
+	c.ctx = ctx
+	return err
 }
