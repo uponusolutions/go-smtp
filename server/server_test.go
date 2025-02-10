@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/server"
 )

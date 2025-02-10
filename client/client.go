@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/internal/client"
 )

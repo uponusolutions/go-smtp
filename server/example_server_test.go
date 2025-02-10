@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/server"
 )

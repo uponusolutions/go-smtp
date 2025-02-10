@@ -9,7 +9,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/emersion/go-sasl"
+	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp/internal/client"
 )
 
