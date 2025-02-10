@@ -172,6 +172,12 @@ func (c *Client) Auth(a sasl.Client) error {
 	return c.c.Auth(a)
 }
 
+// Reset sends the RSET command to the server, aborting the current mail
+// transaction.
+func (c *Client) Reset() error {
+	return c.c.Reset()
+}
+
 func (c *Client) prepare(from string, rcpt []string) (*client.DataCloser, error) {
 	if c.c == nil {
 		return nil, errors.New("client is nil or not connected")
