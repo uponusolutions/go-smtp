@@ -375,9 +375,13 @@ func (c *Conn) handleError(err error) {
 }
 
 func (c *Conn) logger() *slog.Logger {
+	// Fallback if the connection couldn't be created or is already closed.
+	if c.session == nil {
+		return slog.Default()
+	}
 	logger := c.session.Logger(c.ctx)
 	if logger == nil {
-		logger = slog.Default()
+		return slog.Default()
 	}
 	return logger
 }
