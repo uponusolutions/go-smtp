@@ -644,7 +644,7 @@ func (c *Conn) handleStartTLS() error {
 	// Upgrade to TLS
 	tlsConn := tls.Server(c.conn, c.server.tlsConfig)
 
-	if err := tlsConn.Handshake(); err != nil {
+	if err := tlsConn.HandshakeContext(c.ctx); err != nil {
 		c.logger().ErrorContext(c.ctx, "handleStartTLS", slog.Any("err", err))
 		return smtp.NewStatus(550, smtp.EnhancedCode{5, 0, 0}, "Handshake error")
 	}
