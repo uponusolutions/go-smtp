@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,8 +41,9 @@ type Conn struct {
 	session    Session
 	binarymime bool
 
-	helo       string // set in helo / ehlo
-	recipients int    // count recipients
+	helo       string   // set in helo / ehlo
+	mechanisms []string // seh in helo / ehlo
+	recipients int      // count recipients
 	didAuth    bool
 }
 
@@ -127,6 +129,7 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
+		// there is always a mechanism, as it is an enforce authentication precondition
 		return c.handleAuth(arg)
 	default:
 		c.writeResponse(530, smtp.EnhancedCode{5, 7, 0}, "Authentication required")
@@ -149,7 +152,10 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
-		return c.handleAuth(arg)
+		if len(c.mechanisms) > 0 {
+			return c.handleAuth(arg)
+		}
+		c.writeStatus(smtp.ErrAuthUnsupported)
 	case "STARTTLS":
 		return c.handleStartTLS()
 	default:
@@ -242,6 +248,10 @@ func (c *Conn) Hostname() string {
 	return c.helo
 }
 
+func (c *Conn) Mechanisms() []string {
+	return c.mechanisms
+}
+
 func (c *Conn) Conn() net.Conn {
 	return c.conn
 }
@@ -304,14 +314,17 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		caps = append(caps, "STARTTLS")
 	}
 
-	mechs := c.session.AuthMechanisms(c.ctx)
-	if len(mechs) > 0 {
+	c.mechanisms = c.session.AuthMechanisms(c.ctx)
+	if len(c.mechanisms) > 0 {
 		authCap := "AUTH"
-		for _, name := range mechs {
+		for _, name := range c.mechanisms {
 			authCap += " " + name
 		}
 
 		caps = append(caps, authCap)
+	} else if c.server.enforceAuthentication {
+		// without any auth mechanism, no authentication can happen => deadlock
+		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "No auth mechanism available but authentication enforced", err)
 	}
 
 	if c.server.enableSMTPUTF8 {
@@ -576,6 +589,11 @@ func (c *Conn) handleAuth(arg string) error {
 
 	mechanism := strings.ToUpper(parts[0])
 
+	// Is mechanism allowed?
+	if !slices.Contains(c.mechanisms, mechanism) {
+		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 4}, "Invalid mechanism")
+	}
+
 	// Parse client initial response if there is one
 	var ir []byte
 	if len(parts) > 1 {
@@ -589,6 +607,10 @@ func (c *Conn) handleAuth(arg string) error {
 	sasl, err := c.session.Auth(c.ctx, mechanism)
 	if err != nil {
 		return c.newStatusError(454, smtp.EnhancedCode{4, 7, 0}, "Authentication failed", err)
+	}
+
+	if sasl == nil {
+		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "No auth handler received, but mechanism seems valid.", err)
 	}
 
 	response := ir

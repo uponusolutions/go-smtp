@@ -71,7 +71,7 @@ func (s *session) AuthMechanisms(ctx context.Context) []string {
 
 func (s *session) Auth(ctx context.Context, mech string) (sasl.Server, error) {
 	if s.backend.authDisabled {
-		return nil, smtp.ErrAuthUnsupported
+		return nil, nil
 	}
 	return sasl.NewPlainServer(func(identity, username, password string) error {
 		if identity != "" && identity != username {
@@ -776,6 +776,24 @@ func TestServer_authDisabled(t *testing.T) {
 	scanner.Scan()
 	if scanner.Text() != "502 5.7.0 Authentication not supported" {
 		t.Fatal("Invalid AUTH response with auth disabled:", scanner.Text())
+	}
+}
+
+func TestServer_authWrongMechanism(t *testing.T) {
+	bei := new(backend)
+
+	_, s, c, scanner, caps := testServerEhlo(t, bei)
+	defer s.Close()
+	defer c.Close()
+
+	if _, ok := caps["AUTH PLAIN"]; !ok {
+		t.Fatal("AUTH PLAIN capability isn't present when auth is enabled")
+	}
+
+	io.WriteString(c, "AUTH HI\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "502 ") {
+		t.Fatal("Invalid AUTH response with wrong auth mechanism:", scanner.Text())
 	}
 }
 
