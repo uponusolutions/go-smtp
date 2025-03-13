@@ -665,10 +665,19 @@ func (c *Conn) handleStartTLS() error {
 		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "TLS not supported")
 	}
 
+	// allow the session to change tlsConfig
+	tlsConfig, err := c.session.STARTTLS(c.ctx, c.server.tlsConfig)
+	if err != nil {
+		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "TLS config retrieval failed", err)
+	}
+	if tlsConfig == nil {
+		return smtp.NewStatus(451, smtp.EnhancedCode{4, 0, 0}, "TLS config retrieval nil returned")
+	}
+
 	c.writeResponse(220, smtp.EnhancedCode{2, 0, 0}, "Ready to start TLS")
 
 	// Upgrade to TLS
-	tlsConn := tls.Server(c.conn, c.server.tlsConfig)
+	tlsConn := tls.Server(c.conn, tlsConfig)
 
 	if err := tlsConn.HandshakeContext(c.ctx); err != nil {
 		c.logger().ErrorContext(c.ctx, "handleStartTLS", slog.Any("err", err))

@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"log"
@@ -52,6 +53,10 @@ func (s *Session) Mail(ctx context.Context, from string, opts *smtp.MailOptions)
 func (s *Session) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) error {
 	log.Println("Rcpt to:", to)
 	return nil
+}
+
+func (s *Session) STARTTLS(ctx context.Context, tls *tls.Config) (*tls.Config, error) {
+	return tls, nil
 }
 
 func (s *Session) Data(ctx context.Context, r func() io.Reader) (string, error) {

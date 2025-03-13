@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"log/slog"
 
@@ -45,6 +46,12 @@ type Session interface {
 	// r must be consumed before Data returns.
 	Data(ctx context.Context, r func() io.Reader) (string, error)
 
+	// AuthMechanisms returns valid auth mechanism.
 	AuthMechanisms(ctx context.Context) []string
+
+	// Auth returns a matching sasl server for the given mech.
 	Auth(ctx context.Context, mech string) (sasl.Server, error)
+
+	// STARTTLS returns a valid *tls.Config
+	STARTTLS(ctx context.Context, tls *tls.Config) (*tls.Config, error)
 }
