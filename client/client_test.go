@@ -64,6 +64,38 @@ func TestClient_SendMail(t *testing.T) {
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
+func TestClient_SendMailRequireServerHelo(t *testing.T) {
+	c := NewClient(WithServerAddress("127.0.0.1:2525"), WithUseTLS(false), WithTLSConfig(nil), WithServerHeloName("test"))
+	require.NotNil(t, c)
+	require.ErrorContains(t, c.Connect(), "test got Hello")
+
+	c = NewClient(WithServerAddress("127.0.0.1:2525"), WithUseTLS(false), WithTLSConfig(nil), WithServerHeloName("Hello"))
+	require.NotNil(t, c)
+	require.NoError(t, c.Connect())
+
+	defer func() {
+		assert.NoError(t, c.Close())
+
+		// Calling again must be ok.
+		assert.NoError(t, c.Quit())
+	}()
+
+	data := []byte("Hello World!")
+	from := "alice@internal.com"
+	recipients := []string{"Bob@external.com", "mal@external.com"}
+
+	in := bytes.NewBuffer(data)
+
+	err := c.SendMail(in, from, recipients)
+	require.NoError(t, err)
+
+	// Lookup email.
+	m, found := smtptester.GetBackend(s).Load(from, recipients)
+	assert.True(t, found)
+
+	t.Logf("Found %t, mail %+v\n", found, m)
+}
+
 func TestClient_Send(t *testing.T) {
 	c := NewClient(WithServerAddress("127.0.0.1:2525"), WithTLSConfig(nil))
 	require.NotNil(t, c)
