@@ -23,7 +23,9 @@ func (bkd *Backend) NewSession(ctx context.Context, c *server.Conn) (context.Con
 }
 
 // A Session is returned after successful login.
-type Session struct{}
+type Session struct {
+	auth bool
+}
 
 func (s *Session) Logger(ctx context.Context) *slog.Logger {
 	return nil
@@ -31,7 +33,7 @@ func (s *Session) Logger(ctx context.Context) *slog.Logger {
 
 // AuthMechanisms returns a slice of available auth mechanisms; only PLAIN is
 // supported in this example.
-func (s *Session) AuthMechanisms(ctx context.Context) []string {
+func (s *Session) AuthMechanisms() []string {
 	return []string{sasl.Plain}
 }
 
@@ -41,16 +43,23 @@ func (s *Session) Auth(ctx context.Context, mech string) (sasl.Server, error) {
 		if username != "username" || password != "password" {
 			return errors.New("Invalid username or password")
 		}
+		s.auth = true
 		return nil
 	}), nil
 }
 
 func (s *Session) Mail(ctx context.Context, from string, opts *smtp.MailOptions) error {
+	if !s.auth {
+		return smtp.ErrAuthRequired
+	}
 	log.Println("Mail from:", from)
 	return nil
 }
 
 func (s *Session) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) error {
+	if !s.auth {
+		return smtp.ErrAuthRequired
+	}
 	log.Println("Rcpt to:", to)
 	return nil
 }
@@ -59,7 +68,10 @@ func (s *Session) STARTTLS(ctx context.Context, tls *tls.Config) (*tls.Config, e
 	return tls, nil
 }
 
-func (s *Session) Data(ctx context.Context, r func() io.Reader) (string, error) {
+func (s *Session) Data(ctx context.Context, r func() io.Reader) error {
+	if !s.auth {
+		return smtp.ErrAuthRequired
+	}
 	if b, err := io.ReadAll(r()); err != nil {
 		return "", err
 	} else {
