@@ -42,8 +42,6 @@ type Client struct {
 	// Time to wait for responses after final dot.
 	SubmissionTimeout time.Duration
 
-	ServerHeloName string
-
 	// Logger for all network activity.
 	Debug io.Writer
 }
@@ -268,25 +266,8 @@ func (c *Client) cmd(expectCode int, format string, args ...interface{}) (int, s
 // server does not support ehlo.
 func (c *Client) helo() error {
 	c.ext = nil
-	_, msg, err := c.cmd(250, "HELO %s", c.localName)
-	if err != nil {
-		return err
-	}
-	return c.verifyServerHeloName(msg)
-}
-
-func (c *Client) verifyServerHeloName(msg string) error {
-	if c.ServerHeloName == "" {
-		return nil
-	}
-
-	res := strings.SplitN(msg, " ", 2)
-
-	if res[0] == c.ServerHeloName {
-		return nil
-	}
-
-	return fmt.Errorf("Expected %s got %s as server name on helo/ehlo", c.ServerHeloName, res[0])
+	_, _, err := c.cmd(250, "HELO %s", c.localName)
+	return err
 }
 
 // ehlo sends the EHLO (extended hello) greeting to the server. It
@@ -301,15 +282,8 @@ func (c *Client) ehlo() error {
 	if err != nil {
 		return err
 	}
-
-	extList := strings.Split(msg, "\n")
-
-	err = c.verifyServerHeloName(extList[0])
-	if err != nil {
-		return err
-	}
-
 	ext := make(map[string]string)
+	extList := strings.Split(msg, "\n")
 	if len(extList) > 1 {
 		extList = extList[1:]
 		for _, line := range extList {

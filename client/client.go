@@ -15,12 +15,11 @@ import (
 // It sends one or more mails to a SMTP server over a single connection.
 // TODO: Add context support.
 type Client struct {
-	ServerAddress  string // Format address:port.
-	UseTLS         bool
-	TLSConfig      *tls.Config
-	SASLClient     sasl.Client
-	HeloName       string
-	ServerHeloName string
+	ServerAddress string // Format address:port.
+	UseTLS        bool
+	TLSConfig     *tls.Config
+	SASLClient    sasl.Client
+	HeloName      string
 
 	c       *client.Client
 	options *smtp.MailOptions
@@ -59,13 +58,6 @@ func WithServerAddress(addr string) ClientOption {
 func WithHeloName(localName string) ClientOption {
 	return func(c *Client) {
 		c.HeloName = localName
-	}
-}
-
-// WithServerHeloName sets the expteced/required HELO server name.
-func WithServerHeloName(serverName string) ClientOption {
-	return func(c *Client) {
-		c.ServerHeloName = serverName
 	}
 }
 
@@ -129,8 +121,6 @@ func (c *Client) ConnectTLS() error {
 }
 
 func (c *Client) heloAuthAndUTF8() error {
-	c.c.ServerHeloName = c.ServerHeloName
-
 	// Set LocalName (otherwise localhost inside c.c.Mail)
 	if err := c.c.Hello(c.HeloName); err != nil {
 		return err
