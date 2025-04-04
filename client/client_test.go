@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"log"
 	"log/slog"
 	"os"
@@ -88,4 +89,31 @@ func TestClient_Send(t *testing.T) {
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
+}
+
+var server = "" // ends with .mail.protection.outlook.com:25
+var priv = ``
+var certs = ``
+var eml = ``
+var from = ""
+var recipients = []string{}
+
+func TestClient_SendMicrosoft(t *testing.T) {
+	t.Skip()
+	cert, err := tls.X509KeyPair([]byte(certs), []byte(priv))
+	require.NoError(t, err)
+
+	c := NewClient(WithServerAddress(server), WithTLSConfig(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}), WithUseTLS(true))
+	require.NotNil(t, c)
+
+	require.NoError(t, c.Connect())
+	defer func() {
+		assert.NoError(t, c.Close())
+		assert.NoError(t, c.Quit())
+	}()
+
+	err = c.Send(from, recipients, []byte(eml))
+	require.NoError(t, err)
 }
