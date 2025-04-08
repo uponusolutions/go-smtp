@@ -84,8 +84,7 @@ func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) {
 	return ctx, nil
 }
 
-func (s *Session) Close(ctx context.Context) error {
-	return nil
+func (s *Session) Close(ctx context.Context, err error) {
 }
 
 // ExampleServer runs an example SMTP server.

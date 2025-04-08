@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"runtime/debug"
@@ -56,10 +58,6 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 }
 
 func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
-	s.locker.Lock()
-	s.conns[conn] = struct{}{}
-	s.locker.Unlock()
-
 	ctx, cancel := context.WithCancel(ctx)
 
 	c := &Conn{
@@ -68,6 +66,11 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		conn:   conn,
 		text:   textsmtp.NewConn(conn, s.readerSize, s.writerSize, s.maxLineLength),
 	}
+
+	s.locker.Lock()
+	s.conns[c] = struct{}{}
+	s.locker.Unlock()
+
 	var err error
 
 	defer func() {
@@ -80,28 +83,21 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 				slog.Any("err", err),
 				slog.Any("stack", string(stack)),
 			)
+			c.Close(errors.New("recovered from panic inside handleConn"))
 		}
 
 		s.locker.Lock()
-		delete(s.conns, conn)
+		delete(s.conns, c)
 		s.locker.Unlock()
 
 		s.wg.Done()
 
-		c.logger().InfoContext(c.ctx, "connection is closing")
-
 		cancel()
-		_ = conn.Close()
-
 	}()
 
 	sctx, session, err := s.backend.NewSession(ctx, c)
 	if err != nil {
-		c.logger().ErrorContext(
-			c.ctx,
-			"couldn't create connection wrapper",
-			slog.Any("err", err),
-		)
+		c.Close(fmt.Errorf("couldn't create connection wrapper: %w", err))
 		return
 	}
 
@@ -125,7 +121,8 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		}
 	}
 
-	c.run()
+	// run always returns an error when finished
+	c.handleError(c.run())
 }
 
 // Listen listens on the network address s.Addr
@@ -194,7 +191,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 //
 // Close returns any error returned from closing the server's underlying
 // listener(s).
-func (s *Server) Close() error {
+func (s *Server) Close(ctx context.Context) error {
 	select {
 	case <-s.done:
 		return ErrServerClosed
@@ -211,7 +208,7 @@ func (s *Server) Close() error {
 	}
 
 	for conn := range s.conns {
-		conn.Close()
+		conn.Close(errors.New("close called"))
 	}
 	s.locker.Unlock()
 

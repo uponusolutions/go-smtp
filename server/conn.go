@@ -47,20 +47,19 @@ type Conn struct {
 	didAuth    bool
 }
 
-func (c *Conn) run() {
+// run loops until an error occurs (quit for example)
+func (c *Conn) run() error {
 	c.greet()
 
 	for {
 		cmd, arg, err := c.nextCommand()
 		if err != nil {
-			c.handleError(err)
-			return
+			return err
 		}
 
 		err = c.handle(cmd, arg)
 		if err != nil {
-			c.handleError(err)
-			return
+			return err
 		}
 	}
 }
@@ -219,13 +218,26 @@ func (c *Conn) Server() *Server {
 	return c.server
 }
 
-func (c *Conn) Close(ctx context.Context) error {
-	var sessionErr error
+func (c *Conn) Close(err error) {
+	c.logger().InfoContext(c.ctx, "connection is closing")
+
+	closeErr := c.conn.Close()
+	if closeErr != nil {
+		if err == nil {
+			err = closeErr
+		} else {
+			err = errors.Join(err, closeErr)
+		}
+	}
+
+	if err != nil {
+		c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
+	}
+
 	if c.session != nil {
-		sessionErr = c.session.Close(ctx)
+		c.session.Close(c.ctx, err)
 		c.session = nil
 	}
-	return errors.Join(sessionErr, c.conn.Close())
 }
 
 // TLSConnectionState returns the connection's TLS connection state.
@@ -357,34 +369,39 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	return nil
 }
 
+// handleError handles error and closes the connection afterwards.
 func (c *Conn) handleError(err error) {
 	if err == io.EOF || errors.Is(err, net.ErrClosed) {
-		c.logger().ErrorContext(c.ctx, "connection closed unexpectedly", slog.Any("err", err))
+		c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
 		return
 	}
 
 	if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-		c.logger().ErrorContext(c.ctx, "idle timeout", slog.Any("err", err))
 		c.writeResponse(421, smtp.EnhancedCode{4, 4, 2}, "Idle timeout, bye bye")
+		c.Close(fmt.Errorf("idle timeout: %w", err))
 		return
 	}
 
 	if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
-		if smtpErr.Code != 221 {
-			c.logger().ErrorContext(c.ctx, "smtp error", slog.Any("err", err))
-		}
 		c.writeResponse(smtpErr.Code, smtpErr.EnhancedCode, smtpErr.Message)
+
+		if smtpErr.Code != 221 {
+			c.Close(fmt.Errorf("smtp error: %w", err))
+		} else {
+			c.Close(nil)
+		}
+
 		return
 	}
 
 	if err == textsmtp.ErrTooLongLine {
-		c.logger().ErrorContext(c.ctx, "line too long")
-		c.writeResponse(500, smtp.EnhancedCode{5, 4, 0}, "Too long line, closing connection")
+		c.writeResponse(500, smtp.EnhancedCode{5, 4, 0}, "Too long line")
+		c.Close(errors.New("line too long"))
 		return
 	}
 
-	c.logger().ErrorContext(c.ctx, "line too long", slog.Any("err", err))
 	c.writeStatus(smtp.ErrConnection)
+	c.Close(fmt.Errorf("unknown error: %w", err))
 }
 
 func (c *Conn) logger() *slog.Logger {
@@ -769,7 +786,7 @@ func (c *Conn) accepted(uuid string) {
 
 func (c *Conn) Reject(ctx context.Context) {
 	c.writeResponse(421, smtp.EnhancedCode{4, 4, 5}, "Too busy. Try again later.")
-	c.Close(ctx)
+	c.Close(errors.New("rejected"))
 }
 
 func (c *Conn) greet() {
@@ -805,7 +822,7 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string
 	text = strings.Split(strings.Join(text, "\n"), "\n")
 
 	lastLineIndex := len(text) - 1
-	for i := 0; i < lastLineIndex; i++ {
+	for i := range lastLineIndex {
 		c.text.PrintfLine("%d-%v", code, text[i])
 	}
 	if enhCode == smtp.NoEnhancedCode {

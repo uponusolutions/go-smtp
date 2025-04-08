@@ -32,7 +32,7 @@ type Session interface {
 	Reset(ctx context.Context, upgrade bool) (context.Context, error)
 
 	// Free all resources associated with session.
-	Close(ctx context.Context) error
+	Close(ctx context.Context, err error)
 
 	// Returns logger to use when an error occurs inside a session.
 	Logger(ctx context.Context) *slog.Logger
