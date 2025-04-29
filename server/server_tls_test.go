@@ -117,3 +117,44 @@ func TestServerEnforceSecureConnectionStartTlsStarttls(t *testing.T) {
 		t.Fatal("Should succeed:", scanner.Text())
 	}
 }
+
+func TestServerNoEnforceSecureConnectionStartTlsStarttls(t *testing.T) {
+	cert, err := tester.GenX509KeyPair("localhost")
+	require.NoError(t, err)
+
+	_, _, c, _, _ := testServerEhlo(
+		t,
+		nil,
+		server.WithEnforceAuthentication(true),
+		server.WithEnforceSecureConnection(false),
+		server.WithTLSConfig(&tls.Config{
+			Certificates: []tls.Certificate{cert},
+		}),
+	)
+
+	io.WriteString(c, "STARTTLS\r\n")
+
+	buf := make([]byte, 30)
+	c.Read(buf)
+
+	if string(buf) != "220 2.0.0 Ready to start TLS\r\n" {
+		t.Fatal("Ready to start expected:", string(buf))
+	}
+
+	// Upgrade to TLS
+	c = tls.Client(c, &tls.Config{InsecureSkipVerify: true, Certificates: []tls.Certificate{cert}})
+
+	scanner := bufio.NewScanner(c)
+
+	io.WriteString(c, "HELO localhost\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("hello expected expected:", scanner.Text())
+	}
+
+	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "235 ") {
+		t.Fatal("Should succeed:", scanner.Text())
+	}
+}

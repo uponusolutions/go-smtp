@@ -130,6 +130,8 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 	case "AUTH":
 		// there is always a mechanism, as it is an enforce authentication precondition
 		return c.handleAuth(arg)
+	case "STARTTLS":
+		return c.handleStartTLS()
 	default:
 		c.writeResponse(530, smtp.EnhancedCode{5, 7, 0}, "Authentication required")
 	}
