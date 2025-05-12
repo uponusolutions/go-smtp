@@ -169,8 +169,11 @@ func (c *Client) setConn(conn net.Conn) {
 			c.conn,
 		}, readerSize, writerSize, maxLineLength)
 	}
-
-	c.text = textsmtp.NewConn(conn, readerSize, writerSize, maxLineLength)
+	if c.text != nil {
+		c.text.Replace(conn)
+	} else {
+		c.text = textsmtp.NewConn(conn, readerSize, writerSize, maxLineLength)
+	}
 }
 
 // Close closes the connection.
