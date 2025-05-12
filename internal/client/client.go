@@ -38,6 +38,9 @@ type Client struct {
 	rcpts      []string          // recipients accumulated for the current session
 
 	// Time to wait for command responses (this includes 3xx reply to DATA).
+	TLSHandshakeTimeout time.Duration
+
+	// Time to wait for command responses (this includes 3xx reply to DATA).
 	CommandTimeout time.Duration
 	// Time to wait for responses after final dot.
 	SubmissionTimeout time.Duration
@@ -111,6 +114,8 @@ func NewClient(conn net.Conn) *Client {
 		// 10 minutes + 2 minute buffer in case the server is doing transparent
 		// forwarding and also follows recommended timeouts.
 		SubmissionTimeout: 12 * time.Minute,
+		// 30 seconds, very generous
+		TLSHandshakeTimeout: 30 * time.Second,
 	}
 
 	c.setConn(conn)
@@ -251,7 +256,7 @@ func (c *Client) readResponse(expectCode int) (int, string, error) {
 
 // cmd is a convenience function that sends a command and returns the response
 // textproto.Error returned by c.text.ReadResponse is converted into smtp.
-func (c *Client) cmd(expectCode int, format string, args ...interface{}) (int, string, error) {
+func (c *Client) cmd(expectCode int, format string, args ...any) (int, string, error) {
 	c.conn.SetDeadline(time.Now().Add(c.CommandTimeout))
 	defer c.conn.SetDeadline(time.Time{})
 
@@ -327,7 +332,18 @@ func (c *Client) startTLS(config *tls.Config) error {
 	if testHookStartTLS != nil {
 		testHookStartTLS(config)
 	}
-	c.setConn(tls.Client(c.conn, config))
+
+	conn := tls.Client(c.conn, config)
+
+	conn.SetDeadline(time.Now().Add(c.TLSHandshakeTimeout))
+	defer conn.SetDeadline(time.Time{})
+
+	err = conn.Handshake()
+	if err != nil {
+		return err
+	}
+
+	c.setConn(conn)
 	c.didHello = false
 	return nil
 }
