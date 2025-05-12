@@ -7,7 +7,7 @@ require (
 
 require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
-	github.com/emersion/go-smtp v0.21.3 // indirect
+	github.com/emersion/go-smtp v0.22.0 // indirect
 )
 
 require (
@@ -17,4 +17,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-go 1.23.5
+go 1.24.3
