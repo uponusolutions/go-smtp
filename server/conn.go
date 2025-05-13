@@ -759,7 +759,7 @@ func (c *Conn) handleBdat(arg string) error {
 		},
 	}
 
-	uuid, err := c.session.Data(c.ctx, func() io.Reader { return data })
+	queueid, err := c.session.Data(c.ctx, func() io.Reader { return data })
 
 	if err == smtp.Reset {
 		c.reset()
@@ -771,16 +771,17 @@ func (c *Conn) handleBdat(arg string) error {
 		return err
 	}
 
-	c.accepted(uuid)
+	c.accepted(queueid)
 	return c.reset()
 }
 
-func (c *Conn) accepted(uuid string) {
-	if uuid != "" {
-		if len(uuid) > 977 {
-			uuid = uuid[:974] + "..."
+func (c *Conn) accepted(queueid string) {
+	if queueid != "" {
+		// limit length if queueid is too long (< 1000)
+		if len(queueid) > 977 {
+			queueid = queueid[:974] + "..."
 		}
-		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued as "+uuid)
+		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued as "+queueid)
 	} else {
 		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")
 	}
