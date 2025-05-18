@@ -104,7 +104,7 @@ func (c *Conn) handleStateInit(cmd string, arg string) error {
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
-		c.writeStatus(smtp.VRFY)
+		return c.handleVrfy(arg)
 	case "RSET": // Reset session
 		return c.handleRSET()
 	case "QUIT":
@@ -122,7 +122,7 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
-		c.writeStatus(smtp.VRFY)
+		return c.handleVrfy(arg)
 	case "RSET": // Reset session
 		return c.handleRSET()
 	case "QUIT":
@@ -147,7 +147,7 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
-		c.writeStatus(smtp.VRFY)
+		return c.handleVrfy(arg)
 	case "RSET": // Reset session
 		return c.handleRSET()
 	case "QUIT":
@@ -174,7 +174,7 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
-		c.writeStatus(smtp.VRFY)
+		return c.handleVrfy(arg)
 	case "RSET": // Reset session
 		return c.handleRSET()
 	case "BDAT":
@@ -201,7 +201,7 @@ func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error 
 	case "NOOP":
 		c.writeStatus(smtp.Noop)
 	case "VRFY":
-		c.writeStatus(smtp.VRFY)
+		return c.handleVrfy(arg)
 	case "STARTTLS":
 		return c.handleStartTLS()
 	case "QUIT":
@@ -595,6 +595,22 @@ func (c *Conn) handleRcpt(arg string) error {
 	c.recipients++
 	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
 	return nil
+}
+
+func (c *Conn) handleVrfy(arg string) error {
+	res := c.session.Verify(c.ctx, arg)
+
+	if res == nil {
+		c.writeStatus(smtp.VRFY)
+		return nil
+	}
+
+	if smtpStatus, ok := res.(*smtp.SMTPStatus); ok {
+		c.writeStatus(smtpStatus)
+		return nil
+	}
+
+	return res
 }
 
 func (c *Conn) handleAuth(arg string) error {

@@ -159,6 +159,16 @@ func (c *Client) Quit() error {
 	return err
 }
 
+// Verify checks the validity of an email address on the server.
+// If Verify returns nil, the address is valid. A non-nil return
+// does not necessarily indicate an invalid address. Many servers
+// will not verify addresses for security reasons.
+//
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Verify(addr string) error {
+	return c.c.Verify(addr)
+}
+
 // Close is a wrapper for Quit.
 func (c *Client) Close() error {
 	return c.Quit()

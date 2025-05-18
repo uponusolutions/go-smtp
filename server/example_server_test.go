@@ -56,6 +56,10 @@ func (s *Session) Mail(ctx context.Context, from string, opts *smtp.MailOptions)
 	return nil
 }
 
+func (s *Session) Verify(ctx context.Context, addr string) error {
+	return nil
+}
+
 func (s *Session) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) error {
 	if !s.auth {
 		return smtp.ErrAuthRequired

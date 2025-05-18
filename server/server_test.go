@@ -97,6 +97,10 @@ func (s *session) STARTTLS(ctx context.Context, tls *tls.Config) (*tls.Config, e
 	return tls, nil
 }
 
+func (s *session) Verify(ctx context.Context, addr string) error {
+	return nil
+}
+
 func (s *session) Mail(ctx context.Context, from string, opts *smtp.MailOptions) error {
 	if s.backend.userErr != nil {
 		return s.backend.userErr
