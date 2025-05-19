@@ -188,6 +188,41 @@ func (c *Client) Reset() error {
 	return c.c.Reset()
 }
 
+// Mail issues a MAIL command to the server using the provided email address.
+// If the server supports the 8BITMIME extension, Mail adds the BODY=8BITMIME
+// parameter.
+// This initiates a mail transaction and is followed by one or more Rcpt calls.
+//
+// If opts is not nil, MAIL arguments provided in the structure will be added
+// to the command. Handling of unsupported options depends on the extension.
+//
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Mail(from string, opts *smtp.MailOptions) error {
+	return c.c.Mail(from, opts)
+}
+
+// Rcpt issues a RCPT command to the server using the provided email address.
+// A call to Rcpt must be preceded by a call to Mail and may be followed by
+// a Data call or another Rcpt call.
+//
+// If opts is not nil, RCPT arguments provided in the structure will be added
+// to the command. Handling of unsupported options depends on the extension.
+//
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
+	return c.c.Rcpt(to, opts)
+}
+
+// Data issues a DATA command to the server and returns a writer that
+// can be used to write the mail headers and body. The caller should
+// close the writer before calling any more methods on c. A call to
+// Data must be preceded by one or more calls to Rcpt.
+//
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Data() (*client.DataCloser, error) {
+	return c.c.Data()
+}
+
 func (c *Client) prepare(from string, rcpt []string) (*client.DataCloser, error) {
 	if c.c == nil {
 		return nil, errors.New("client is nil or not connected")
