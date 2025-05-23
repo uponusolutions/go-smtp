@@ -122,11 +122,6 @@ func (s *session) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) e
 
 func (s *session) Data(ctx context.Context, r func() io.Reader) (string, error) {
 	if s.backend.dataErr != nil {
-
-		if s.backend.dataErrOffset != 0 {
-			io.CopyN(io.Discard, r(), s.backend.dataErrOffset)
-		}
-
 		err := s.backend.dataErr
 		if s.backend.dataErrors != nil {
 			s.backend.dataErrors <- err
@@ -392,12 +387,18 @@ func TestServerAuthTwice(t *testing.T) {
 		t.Fatal("connection is closed?")
 	}
 
-	if !strings.HasPrefix(scanner.Text(), "503 ") {
+	if !strings.HasPrefix(scanner.Text(), "503 5.5.1 Already authenticated") {
 		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 
-	if scanner.Scan() {
-		t.Fatal("connection is still open")
+	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+
+	if !scanner.Scan() {
+		t.Fatal("connection is closed?")
+	}
+
+	if !strings.HasPrefix(scanner.Text(), "503 5.5.1 Already authenticated") {
+		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 }
 
@@ -447,7 +448,7 @@ func TestServerAuthEnforced(t *testing.T) {
 	}
 }
 
-func TestServerAuthClosedOnFailedAuth(t *testing.T) {
+func TestServerAuthMultipleFailedAuth(t *testing.T) {
 	_, _, c, scanner, caps := testServerEhlo(t, nil, server.WithEnforceAuthentication(true))
 
 	if _, ok := caps["AUTH PLAIN"]; !ok {
@@ -462,12 +463,14 @@ func TestServerAuthClosedOnFailedAuth(t *testing.T) {
 
 	io.WriteString(c, "AUTH PLAIN invalid\r\n")
 	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "454 ") {
+	if !strings.HasPrefix(scanner.Text(), "454 4.7.0 Invalid base64 data") {
 		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 
-	if scanner.Scan() || scanner.Err() != nil {
-		t.Fatal("connection isn't closed")
+	io.WriteString(c, "AUTH PLAIN invalid\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "454 4.7.0 Invalid base64 data") {
+		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 }
 
@@ -993,12 +996,15 @@ func TestServer_authParam_invalidHexchar(t *testing.T) {
 	// Invalid HEXCHAR
 	io.WriteString(c, "MAIL FROM: root@nsa.gov AUTH=<hey+A>\r\n")
 	scanner.Scan()
-	if !strings.HasPrefix(scanner.Text(), "500 ") {
+	if !strings.HasPrefix(scanner.Text(), "500 5.5.4 Malformed AUTH parameter value") {
 		t.Fatal("Invalid MAIL response:", scanner.Text())
 	}
 
-	if scanner.Scan() {
-		t.Fatal("connection is still open")
+	// Invalid HEXCHAR
+	io.WriteString(c, "MAIL FROM: root@nsa.gov AUTH=<hey+A>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "500 5.5.4 Malformed AUTH parameter value") {
+		t.Fatal("Invalid MAIL response:", scanner.Text())
 	}
 }
 
@@ -1295,7 +1301,6 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
 		Message:      "I failed",
 	}
-	be.dataErrOffset = 5
 
 	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -1311,24 +1316,21 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 
 	io.WriteString(c, "BDAT 8\r\n")
 	io.WriteString(c, "Hey <3\r\n")
+
+	// Noop is send before failure has read, to check if pipelining is working.
+	io.WriteString(c, "NOOP\r\n")
+
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "555 5.0.0 I failed") {
 		t.Fatal("Invalid BDAT response:", scanner.Text())
 	}
 
-	if scanner.Scan() {
-		t.Fatal("connection is still open")
+	// See that command stream state is not corrupted e.g. server is still not
+	// waiting for remaining chunk octets.
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RCPT response:", scanner.Text())
 	}
-
-	/*
-		// See that command stream state is not corrupted e.g. server is still not
-		// waiting for remaining chunk octets.
-		io.WriteString(c, "NOOP\r\n")
-		scanner.Scan()
-		if !strings.HasPrefix(scanner.Text(), "250 ") {
-			t.Fatal("Invalid RCPT response:", scanner.Text())
-		}
-	*/
 }
 
 func TestServer_Chunking_tooLongMessage(t *testing.T) {

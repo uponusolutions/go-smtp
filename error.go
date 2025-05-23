@@ -2,6 +2,7 @@ package smtp
 
 import (
 	"fmt"
+	"strings"
 )
 
 type EnhancedCode [3]int
@@ -27,11 +28,11 @@ var NoEnhancedCode = EnhancedCode{-1, -1, -1}
 // be used (X is derived from error code).
 var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
 
-func NewStatus(code int, enhCode EnhancedCode, msg string) *SMTPStatus {
+func NewStatus(code int, enhCode EnhancedCode, msg ...string) *SMTPStatus {
 	return &SMTPStatus{
 		Code:         code,
 		EnhancedCode: enhCode,
-		Message:      msg,
+		Message:      strings.Join(msg, "\n"),
 	}
 }
 
@@ -43,8 +44,16 @@ func (err *SMTPStatus) Error() string {
 	return s
 }
 
+func (err *SMTPStatus) Positive() bool {
+	return err.Code/100 == 2
+}
+
 func (err *SMTPStatus) Temporary() bool {
 	return err.Code/100 == 4
+}
+
+func (err *SMTPStatus) Permanent() bool {
+	return err.Code/100 == 5
 }
 
 var (

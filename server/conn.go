@@ -59,6 +59,20 @@ func (c *Conn) run() error {
 
 		err = c.handle(cmd, arg)
 		if err != nil {
+			// if error is a smtp status it isn't necessary to close the connection
+			if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
+
+				// Service closing transmission channel, after quit
+				if smtpErr.Code == 221 {
+					return smtpErr
+				}
+
+				// ToDo: close connection on repeated errors (e.g. authentication tries)
+
+				c.writeStatus(smtpErr)
+				continue
+			}
+
 			return err
 		}
 	}
@@ -102,7 +116,7 @@ func (c *Conn) handleStateInit(cmd string, arg string) error {
 	case "HELO", "EHLO":
 		return c.handleGreet(cmd == "EHLO", arg)
 	case "NOOP":
-		c.writeStatus(smtp.Noop)
+		return smtp.Noop
 	case "VRFY":
 		return c.handleVrfy(arg)
 	case "RSET": // Reset session
@@ -110,9 +124,8 @@ func (c *Conn) handleStateInit(cmd string, arg string) error {
 	case "QUIT":
 		return smtp.Quit
 	default:
-		c.writeCommandUnknown(cmd)
+		return c.commandUnknown(cmd)
 	}
-	return nil
 }
 
 func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
@@ -120,7 +133,7 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 	case "HELO", "EHLO":
 		return c.handleGreet(cmd == "EHLO", arg)
 	case "NOOP":
-		c.writeStatus(smtp.Noop)
+		return smtp.Noop
 	case "VRFY":
 		return c.handleVrfy(arg)
 	case "RSET": // Reset session
@@ -133,9 +146,8 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 	case "STARTTLS":
 		return c.handleStartTLS()
 	default:
-		c.writeResponse(530, smtp.EnhancedCode{5, 7, 0}, "Authentication required")
+		return smtp.NewStatus(530, smtp.EnhancedCode{5, 7, 0}, "Authentication required")
 	}
-	return nil
 }
 
 func (c *Conn) handleStateGreeted(cmd string, arg string) error {
@@ -145,7 +157,7 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 	case "MAIL":
 		return c.handleMail(arg)
 	case "NOOP":
-		c.writeStatus(smtp.Noop)
+		return smtp.Noop
 	case "VRFY":
 		return c.handleVrfy(arg)
 	case "RSET": // Reset session
@@ -156,13 +168,12 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 		if len(c.mechanisms) > 0 {
 			return c.handleAuth(arg)
 		}
-		c.writeStatus(smtp.ErrAuthUnsupported)
+		return smtp.ErrAuthUnsupported
 	case "STARTTLS":
 		return c.handleStartTLS()
 	default:
-		c.writeCommandUnknown(cmd)
+		return c.commandUnknown(cmd)
 	}
-	return nil
 }
 
 func (c *Conn) handleStateMail(cmd string, arg string) error {
@@ -172,7 +183,7 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 	case "RCPT":
 		return c.handleRcpt(arg)
 	case "NOOP":
-		c.writeStatus(smtp.Noop)
+		return smtp.Noop
 	case "VRFY":
 		return c.handleVrfy(arg)
 	case "RSET": // Reset session
@@ -189,9 +200,8 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 	case "STARTTLS":
 		return c.handleStartTLS()
 	default:
-		c.writeCommandUnknown(cmd)
+		return c.commandUnknown(cmd)
 	}
-	return nil
 }
 
 func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error {
@@ -199,7 +209,7 @@ func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error 
 	case "HELO", "EHLO":
 		return c.handleGreet(cmd == "EHLO", arg)
 	case "NOOP":
-		c.writeStatus(smtp.Noop)
+		return smtp.Noop
 	case "VRFY":
 		return c.handleVrfy(arg)
 	case "STARTTLS":
@@ -207,13 +217,12 @@ func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error 
 	case "QUIT":
 		return smtp.Quit
 	default:
-		c.writeResponse(530, smtp.EnhancedCode{5, 7, 0}, "Must issue a STARTTLS command first")
+		return smtp.NewStatus(530, smtp.EnhancedCode{5, 7, 0}, "Must issue a STARTTLS command first")
 	}
-	return nil
 }
 
-func (c *Conn) writeCommandUnknown(cmd string) {
-	c.writeStatus(smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, fmt.Sprintf("%s command unknown, state %d", cmd, c.state)))
+func (c *Conn) commandUnknown(cmd string) *smtp.SMTPStatus {
+	return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, fmt.Sprintf("%s command unknown, state %d", cmd, c.state))
 }
 
 func (c *Conn) Server() *Server {
@@ -308,8 +317,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	}
 
 	if !enhanced {
-		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Hello %s", domain))
-		return nil
+		return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Hello %s", domain))
 	}
 
 	caps := []string{
@@ -367,8 +375,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 
 	args := []string{"Hello " + domain}
 	args = append(args, caps...)
-	c.writeResponse(250, smtp.NoEnhancedCode, args...)
-	return nil
+	return smtp.NewStatus(250, smtp.NoEnhancedCode, args...)
 }
 
 // handleError handles error and closes the connection afterwards.
@@ -531,9 +538,8 @@ func (c *Conn) handleMail(arg string) error {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Mail not accepted", err)
 	}
 
-	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
 	c.state = StateMail
-	return nil
+	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
 }
 
 // MAIL state -> waiting for RCPTs followed by DATA
@@ -593,21 +599,14 @@ func (c *Conn) handleRcpt(arg string) error {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Recipient not accepted", err)
 	}
 	c.recipients++
-	c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
-	return nil
+	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
 }
 
 func (c *Conn) handleVrfy(arg string) error {
 	res := c.session.Verify(c.ctx, arg)
 
 	if res == nil {
-		c.writeStatus(smtp.VRFY)
-		return nil
-	}
-
-	if smtpStatus, ok := res.(*smtp.SMTPStatus); ok {
-		c.writeStatus(smtpStatus)
-		return nil
+		return smtp.VRFY
 	}
 
 	return res
@@ -681,14 +680,12 @@ func (c *Conn) handleAuth(arg string) error {
 		}
 	}
 
-	c.writeResponse(235, smtp.EnhancedCode{2, 0, 0}, "Authentication succeeded")
 	c.didAuth = true
-
 	if c.state == StateEnforceAuthentication {
 		c.state = StateGreeted
 	}
 
-	return nil
+	return smtp.NewStatus(235, smtp.EnhancedCode{2, 0, 0}, "Authentication succeeded")
 }
 
 func (c *Conn) handleStartTLS() error {
@@ -753,11 +750,13 @@ func (c *Conn) handleData(arg string) error {
 		return err
 	}
 
-	c.accepted(uuid)
-	return c.reset()
+	c.reset()
+	return c.accepted(uuid)
 }
 
 func (c *Conn) handleBdat(arg string) error {
+	closed := false
+
 	size, last, err := bdatArg(arg)
 	if err != nil {
 		return err
@@ -770,37 +769,53 @@ func (c *Conn) handleBdat(arg string) error {
 		bytesReceived:   0,
 		input:           c.text.R,
 		nextCommand: func() (string, string, error) {
+			// if bdat is closed (error occured)
+			if closed {
+				return "", "", io.EOF
+			}
 			c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "Continue")
 			return c.nextCommand()
 		},
 	}
 
-	queueid, err := c.session.Data(c.ctx, func() io.Reader { return data })
-
-	if err == smtp.Reset {
-		c.reset()
-		c.writeStatus(smtp.Reset)
-		return nil
-	}
+	queueid, err := c.session.Data(c.ctx, func() io.Reader {
+		return data
+	})
 
 	if err != nil {
+		if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
+			// write down error
+			c.writeStatus(smtpErr)
+			// read anything left to continue after this failure, ignore any read error
+			// https://www.rfc-editor.org/rfc/rfc3030.html
+			// If a 5XX or 4XX code is received by the sender-SMTP in response to a BDAT
+			// chunk, the transaction should be considered failed and the sender-
+			// SMTP MUST NOT send any additional BDAT segments.  If the receiver-
+			// SMTP has declared support for command pipelining [PIPE], the receiver
+			// SMTP MUST be prepared to accept and discard additional BDAT chunks
+			// already in the pipeline after the failed BDAT.
+			closed = true
+			_, _ = io.Copy(io.Discard, data)
+			c.reset()
+			return nil
+		}
+		// an error which isn't a SMTPStatus error will always terminate the connection
 		return err
 	}
 
-	c.accepted(queueid)
-	return c.reset()
+	c.reset()
+	return c.accepted(queueid)
 }
 
-func (c *Conn) accepted(queueid string) {
+func (c *Conn) accepted(queueid string) *smtp.SMTPStatus {
 	if queueid != "" {
 		// limit length if queueid is too long (< 1000)
 		if len(queueid) > 977 {
 			queueid = queueid[:974] + "..."
 		}
-		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued as "+queueid)
-	} else {
-		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")
+		return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued as "+queueid)
 	}
+	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")
 }
 
 func (c *Conn) Reject(ctx context.Context) {
