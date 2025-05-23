@@ -365,14 +365,28 @@ func (c *Client) TLSConnectionState() (state tls.ConnectionState, ok bool) {
 // will not verify addresses for security reasons.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Verify(addr string) error {
+func (c *Client) Verify(addr string, opts *smtp.VrfyOptions) error {
 	if err := validateLine(addr); err != nil {
 		return err
 	}
 	if err := c.hello(); err != nil {
 		return err
 	}
-	_, _, err := c.cmd(250, "VRFY %s", addr)
+
+	var sb strings.Builder
+
+	sb.Grow(2048)
+	fmt.Fprintf(&sb, "VRFY %s", addr)
+
+	if opts != nil && opts.UTF8 {
+		if _, ok := c.ext["SMTPUTF8"]; ok {
+			sb.WriteString(" SMTPUTF8")
+		} else {
+			return errors.New("smtp: server does not support SMTPUTF8")
+		}
+	}
+
+	_, _, err := c.cmd(250, "%s", sb.String())
 	return err
 }
 

@@ -94,13 +94,13 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("MAIL should require authentication")
 	}
 
-	if err := c.Verify("user1@gmail.com"); err == nil {
+	if err := c.Verify("user1@gmail.com", nil); err == nil {
 		t.Fatalf("First VRFY: expected no verification")
 	}
-	if err := c.Verify("user2@gmail.com>\r\nDATA\r\nAnother injected message body\r\n.\r\nQUIT\r\n"); err == nil {
+	if err := c.Verify("user2@gmail.com>\r\nDATA\r\nAnother injected message body\r\n.\r\nQUIT\r\n", nil); err == nil {
 		t.Fatalf("VRFY should have failed due to a message injection attempt")
 	}
-	if err := c.Verify("user2@gmail.com"); err != nil {
+	if err := c.Verify("user2@gmail.com", nil); err != nil {
 		t.Fatalf("Second VRFY: expected verification, got %s", err)
 	}
 
@@ -398,7 +398,7 @@ func TestHello(t *testing.T) {
 				err = nil
 			}
 		case 2:
-			err = c.Verify("test@example.com")
+			err = c.Verify("test@example.com", nil)
 		case 3:
 			c.serverName = "smtp.google.com"
 			err = c.Auth(sasl.NewPlainClient("", "user", "pass"))
@@ -414,7 +414,7 @@ func TestHello(t *testing.T) {
 		case 7:
 			err = c.Quit()
 		case 8:
-			err = c.Verify("test@example.com")
+			err = c.Verify("test@example.com", nil)
 			if err != nil {
 				err = c.Hello("customhost")
 				if err != nil {
