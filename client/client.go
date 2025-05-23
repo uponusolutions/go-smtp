@@ -165,8 +165,8 @@ func (c *Client) Quit() error {
 // will not verify addresses for security reasons.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Verify(addr string) error {
-	return c.c.Verify(addr)
+func (c *Client) Verify(addr string, opts *smtp.VrfyOptions) error {
+	return c.c.Verify(addr, opts)
 }
 
 // Close is a wrapper for Quit.
