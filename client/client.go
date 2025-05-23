@@ -188,6 +188,12 @@ func (c *Client) Reset() error {
 	return c.c.Reset()
 }
 
+// Noop sends the NOOP command to the server. It does nothing but check
+// that the connection to the server is okay.
+func (c *Client) Noop() error {
+	return c.c.Noop()
+}
+
 // Mail issues a MAIL command to the server using the provided email address.
 // If the server supports the 8BITMIME extension, Mail adds the BODY=8BITMIME
 // parameter.
