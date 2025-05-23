@@ -56,7 +56,7 @@ func (s *Session) Mail(ctx context.Context, from string, opts *smtp.MailOptions)
 	return nil
 }
 
-func (s *Session) Verify(ctx context.Context, addr string) error {
+func (s *Session) Verify(ctx context.Context, addr string, opts *smtp.VrfyOptions) error {
 	return nil
 }
 

@@ -97,7 +97,7 @@ func (s *session) STARTTLS(ctx context.Context, tls *tls.Config) (*tls.Config, e
 	return tls, nil
 }
 
-func (s *session) Verify(ctx context.Context, addr string) error {
+func (s *session) Verify(ctx context.Context, addr string, opts *smtp.VrfyOptions) error {
 	return nil
 }
 
@@ -817,7 +817,13 @@ func TestServer_otherCommands(t *testing.T) {
 		t.Fatal("Invalid HELP response:", scanner.Text())
 	}
 
-	io.WriteString(c, "VRFY\r\n")
+	io.WriteString(c, "VRFY test\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "501 ") {
+		t.Fatal("Invalid VRFY response:", scanner.Text())
+	}
+
+	io.WriteString(c, "VRFY test@a.de\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "252 ") {
 		t.Fatal("Invalid VRFY response:", scanner.Text())

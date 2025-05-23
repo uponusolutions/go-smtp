@@ -53,7 +53,7 @@ type Session interface {
 	// If error is nil then smtp code 252 is send
 	// if error is smtp status then the smtp status is send
 	// else internal server error is returned and connection is closed
-	Verify(ctx context.Context, addr string) error
+	Verify(ctx context.Context, addr string, opts *smtp.VrfyOptions) error
 
 	// Set currently processed message contents and send it.
 	// If r is called then the data must be consumed completely before returning.

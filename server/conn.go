@@ -603,7 +603,29 @@ func (c *Conn) handleRcpt(arg string) error {
 }
 
 func (c *Conn) handleVrfy(arg string) error {
-	res := c.session.Verify(c.ctx, arg)
+	p := parse.Parser{S: strings.TrimSpace(arg)}
+	vrfy, err := p.Path()
+	if err != nil {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting <address>")
+	}
+	args, err := parse.Args(p.S)
+	if err != nil {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse VRFY ESMTP parameters")
+	}
+
+	opts := &smtp.VrfyOptions{}
+
+	for key := range args {
+		switch key {
+		case "SMTPUTF8":
+			if !c.server.enableSMTPUTF8 {
+				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
+			}
+			opts.UTF8 = true
+		}
+	}
+
+	res := c.session.Verify(c.ctx, vrfy, opts)
 
 	if res == nil {
 		return smtp.VRFY
