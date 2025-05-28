@@ -828,10 +828,6 @@ func (c *Client) Reset() error {
 		return err
 	}
 
-	// allow custom HELLO again
-	c.didHello = false
-	c.helloError = nil
-
 	c.rcpts = nil
 	return nil
 }
