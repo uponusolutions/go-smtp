@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Based on the modifications from
+// https://github.com/go-textproto/textproto/blob/v0/writer.go
+
 package textsmtp
 
 import (
 	"bufio"
 	"bytes"
 	"io"
-	"unsafe"
 )
 
 var crnl = []byte{'\r', '\n'}
@@ -60,29 +62,46 @@ func (d *dotWriter) Write(b []byte) (n int, err error) {
 				return
 			}
 		}
-		if (pLen >= 2 && *(*[2]byte)(unsafe.Pointer(&p[pLen-2])) == [2]byte{'\r', '\n'}) ||
-			(d.state == wstateCR && pLen == 1 && p[0] == '\n') {
-			d.state = wstateBeginLine
+
+		if b == nil {
+			// no end of line found in p
+			if p[pLen-1] == '\r' {
+				// p ends with \r
+				d.state = wstateCR
+			} else {
+				// just write it down
+				d.state = wstateData
+			}
+
 			if _, err = bw.Write(p); err != nil {
 				return
 			}
-		} else if pLen >= 1 && p[pLen-1] == '\n' {
+		} else if d.state == wstateCR && pLen == 1 {
+			// if b isn't nil and pLen is 1, then it must be a \n
+			// as \r was send before, just write crnl
 			d.state = wstateBeginLine
-			_, _ = bw.Write(p[:pLen-1])
-			if _, err = bw.Write(crnl); err != nil {
-				return
-			}
-		} else if pLen >= 1 && p[pLen-1] == '\r' {
-			d.state = wstateCR
-			if _, err = bw.Write(p[:pLen-1]); err != nil {
+			if err = bw.WriteByte('\n'); err != nil {
 				return
 			}
 		} else {
-			d.state = wstateData
-			if _, err = bw.Write(p); err != nil {
-				return
+			// line is ending
+			d.state = wstateBeginLine
+			if pLen >= 2 && p[pLen-2] == '\r' {
+				// fastpath if line ending is correct \r\n
+				if _, err = bw.Write(p); err != nil {
+					return
+				}
+			} else {
+				// data + crnl
+				if _, err = bw.Write(p[:pLen-1]); err != nil {
+					return
+				}
+				if _, err = bw.Write(crnl); err != nil {
+					return
+				}
 			}
 		}
+
 		n += pLen
 	}
 	return
@@ -95,6 +114,8 @@ func (d *dotWriter) Close() error {
 		bw.WriteByte('\r')
 		fallthrough
 	case wstateCR:
+		// normally \r gets ignored if no \n follows, but at closing we just take it as a line break
+		// same behavior as original textproto
 		bw.WriteByte('\n')
 		fallthrough
 	case wstateBeginLine:

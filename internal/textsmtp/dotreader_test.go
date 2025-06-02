@@ -45,7 +45,7 @@ func BenchmarkDotReader(b *testing.B) {
 	b.Run("Legacy", func(b *testing.B) {
 		b.ResetTimer()
 		b.SetBytes(size)
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			r := legacy.NewReader(bufio.NewReader(bytes.NewReader(data))).DotReader()
 			io.Copy(io.Discard, r)
 		}
@@ -54,7 +54,7 @@ func BenchmarkDotReader(b *testing.B) {
 	b.Run("Optimized", func(b *testing.B) {
 		b.ResetTimer()
 		b.SetBytes(size)
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			r := NewDotReader(bufio.NewReader(bytes.NewReader(data)), 0)
 			io.Copy(io.Discard, r)
 		}
