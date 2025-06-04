@@ -5,6 +5,7 @@
 package server_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -21,7 +22,7 @@ func ExampleDial() {
 		client.WithSecurity(client.Security_Plain),
 	)
 
-	err := c.Connect()
+	err := c.Connect(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}

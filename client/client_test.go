@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"log"
 	"log/slog"
@@ -41,7 +42,7 @@ func TestClient_SendMail(t *testing.T) {
 	c := NewClient(WithServerAddress("127.0.0.1:2525"))
 	require.NotNil(t, c)
 
-	require.NoError(t, c.Connect())
+	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
 		assert.NoError(t, c.Close())
 
@@ -68,14 +69,14 @@ func TestClient_SendMail(t *testing.T) {
 func TestClient_InvalidLocalName(t *testing.T) {
 	c := NewClient(WithServerAddress("127.0.0.1:2525"), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
 	require.NotNil(t, c)
-	require.ErrorContains(t, c.Connect(), "smtp: the local name must not contain CR or LF")
+	require.ErrorContains(t, c.Connect(context.Background()), "smtp: the local name must not contain CR or LF")
 }
 
 func TestClient_Send(t *testing.T) {
 	c := NewClient(WithServerAddress("127.0.0.1:2525"))
 	require.NotNil(t, c)
 
-	require.NoError(t, c.Connect())
+	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
 		assert.NoError(t, c.Close())
 
@@ -114,7 +115,7 @@ func TestClient_SendMicrosoft(t *testing.T) {
 	}), WithSecurity(Security_TLS))
 	require.NotNil(t, c)
 
-	require.NoError(t, c.Connect())
+	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
 		assert.NoError(t, c.Close())
 		assert.NoError(t, c.Quit())

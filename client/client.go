@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -38,16 +39,23 @@ type Client struct {
 	serverName string
 	ext        map[string]string // supported extensions
 	localName  string            // the name to use in HELO/EHLO/LHLO
-	rcpts      []string          // recipients accumulated for the current session
 
 	// Time to wait for tls handshake to succeed.
 	tlsHandshakeTimeout time.Duration
+
+	// Time to wait for dial to succeed.
+	dialTimeout time.Duration
 
 	// Time to wait for command responses (this includes 3xx reply to DATA).
 	commandTimeout time.Duration
 
 	// Time to wait for responses after final dot.
 	submissionTimeout time.Duration
+
+	// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
+	maxLineLength int
+	readerSize    int
+	writerSize    int
 
 	// Logger for all network activity.
 	debug io.Writer
@@ -57,10 +65,6 @@ type Client struct {
 
 	options *smtp.MailOptions
 }
-
-// 30 seconds was chosen as it's the same duration as http.DefaultTransport's
-// timeout.
-var defaultDialer = net.Dialer{Timeout: 30 * time.Second}
 
 // NewClient returns a new SMTP client.
 // When not set via options the address 127.0.0.1:25 is used.
@@ -81,6 +85,13 @@ func NewClient(opts ...ClientOption) *Client {
 		submissionTimeout: 12 * time.Minute,
 		// 30 seconds, very generous
 		tlsHandshakeTimeout: 30 * time.Second,
+
+		// 30 seconds, very generous
+		dialTimeout: 30 * time.Second,
+
+		maxLineLength: 2000,
+		readerSize:    4096,
+		writerSize:    4096,
 	}
 
 	for _, o := range opts {
@@ -132,7 +143,8 @@ func WithSASLClient(cl sasl.Client) ClientOption {
 // When server supports auth and clients SaslClient is set, auth is called.
 // Security is enforced like configured (Plain, TLS, StartTLS or PreferStartTLS)
 // SMTP-UTF8 is enabled, when server supports it.
-func (c *Client) Connect() error {
+// If an error occures, the connection is closed if open.
+func (c *Client) Connect(ctx context.Context) error {
 	// verify if local name is valid
 	if strings.ContainsAny(c.localName, "\n\r") {
 		return errors.New("smtp: the local name must not contain CR or LF")
@@ -147,9 +159,9 @@ func (c *Client) Connect() error {
 	case Security_StartTLS:
 		fallthrough
 	case Security_PreferStartTLS:
-		conn, err = c.dial()
+		conn, err = c.dial(ctx)
 	case Security_TLS:
-		conn, err = c.dialTLS()
+		conn, err = c.dialTLS(ctx)
 	}
 
 	if err != nil {
@@ -170,7 +182,7 @@ func (c *Client) Connect() error {
 	if c.security == Security_StartTLS || c.security == Security_PreferStartTLS {
 		if ok, _ := c.Extension("STARTTLS"); !ok {
 			if c.security == Security_StartTLS {
-				c.Close()
+				c.Quit()
 				return errors.New("smtp: server doesn't support STARTTLS")
 			}
 		} else {
@@ -189,6 +201,7 @@ func (c *Client) authAndUTF8() error {
 	ok, _ := c.Extension("AUTH")
 	if ok && c.SASLClient != nil {
 		if err := c.Auth(c.SASLClient); err != nil {
+			c.Quit()
 			return err
 		}
 	}

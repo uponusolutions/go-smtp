@@ -7,6 +7,7 @@ package client
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -488,7 +489,7 @@ HELO customhost
 
 var helloClient = []string{
 	"",
-	"STARTTLS\n",
+	"STARTTLS\nQUIT\n",
 	"VRFY test@example.com\n",
 	"AUTH PLAIN AHVzZXIAcGFzcw==\n",
 	"MAIL FROM:<test@example.com>\n",
@@ -630,7 +631,7 @@ func TestTLSConnState(t *testing.T) {
 			WithTLSConfig(cfg),
 			WithSecurity(Security_StartTLS),
 		)
-		err := c.Connect()
+		err := c.Connect(context.Background())
 		if err != nil {
 			t.Errorf("Client dial: %v", err)
 			return

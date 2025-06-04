@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
@@ -19,29 +20,25 @@ import (
 
 // dial returns a connection to an SMTP server at addr. The addr must
 // include a port, as in "mail.example.com:smtp".
-func (c *Client) dial() (net.Conn, error) {
-	return net.Dial("tcp", c.ServerAddress)
+func (c *Client) dial(ctx context.Context) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: c.commandTimeout}
+	return dialer.DialContext(ctx, "tcp", c.ServerAddress)
 }
 
 // dialTLS returns a connection to an SMTP server at addr via TLS.
 // The addr must include a port, as in "mail.example.com:smtps".
 //
 // A nil tlsConfig is equivalent to a zero tls.Config.
-func (c *Client) dialTLS() (net.Conn, error) {
+func (c *Client) dialTLS(ctx context.Context) (net.Conn, error) {
 	tlsDialer := tls.Dialer{
-		NetDialer: &defaultDialer,
+		NetDialer: &net.Dialer{Timeout: c.commandTimeout},
 		Config:    c.TLSConfig,
 	}
-	return tlsDialer.Dial("tcp", c.ServerAddress)
+	return tlsDialer.DialContext(ctx, "tcp", c.ServerAddress)
 }
 
 // setConn sets the underlying network connection for the client.
 func (c *Client) setConn(conn net.Conn) {
-	// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
-	maxLineLength := 2000
-	readerSize := 4096
-	writerSize := 4096
-
 	c.conn = conn
 
 	if c.debug != nil {
@@ -53,12 +50,12 @@ func (c *Client) setConn(conn net.Conn) {
 			io.TeeReader(c.conn, c.debug),
 			io.MultiWriter(c.conn, c.debug),
 			c.conn,
-		}, readerSize, writerSize, maxLineLength)
+		}, c.readerSize, c.writerSize, c.maxLineLength)
 	}
 	if c.text != nil {
 		c.text.Replace(conn)
 	} else {
-		c.text = textsmtp.NewConn(conn, readerSize, writerSize, maxLineLength)
+		c.text = textsmtp.NewConn(conn, c.readerSize, c.writerSize, c.maxLineLength)
 	}
 }
 
@@ -73,6 +70,8 @@ func (c *Client) Close() error {
 	return err
 }
 
+// greet reads the greeting of the server
+// if an error occured the connection is closed
 func (c *Client) greet() error {
 	// Initial greeting timeout. RFC 5321 recommends 5 minutes.
 	c.conn.SetDeadline(time.Now().Add(c.commandTimeout))
@@ -86,7 +85,8 @@ func (c *Client) greet() error {
 	return err
 }
 
-// hello runs a hello exchange if needed.
+// hello runs a hello exchange
+// if an error occured the connection is closed
 func (c *Client) hello() error {
 	err := c.ehlo()
 
@@ -167,9 +167,11 @@ func (c *Client) ehlo() error {
 // A nil config is equivalent to a zero tls.Config.
 //
 // If server returns an error, it will be of type *smtp.
+// if an error occured the connection is closed
 func (c *Client) startTLS() error {
 	_, _, err := c.cmd(220, "STARTTLS")
 	if err != nil {
+		c.Quit()
 		return err
 	}
 
@@ -191,6 +193,7 @@ func (c *Client) startTLS() error {
 
 	err = conn.Handshake()
 	if err != nil {
+		c.Close()
 		return err
 	}
 
@@ -419,7 +422,6 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	if _, _, err := c.cmd(25, "%s", sb.String()); err != nil {
 		return err
 	}
-	c.rcpts = append(c.rcpts, to)
 	return nil
 }
 
@@ -515,8 +517,6 @@ func (c *Client) Reset() error {
 	if _, _, err := c.cmd(250, "RSET"); err != nil {
 		return err
 	}
-
-	c.rcpts = nil
 	return nil
 }
 
@@ -535,10 +535,7 @@ func (c *Client) Quit() error {
 	}
 	_, _, err := c.cmd(221, "QUIT")
 	if err != nil {
-		err2 := c.Close()
-		if err2 != nil {
-			return errors.Join(err, err2)
-		}
+		c.Close()
 		return err
 	}
 	return c.Close()
