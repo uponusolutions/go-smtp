@@ -1,0 +1,5 @@
+{
+    "go.toolsManagement.autoUpdate": true,
+    "go.lintTool": "golangci-lint-v2",
+    "go.lintOnSave": "workspace"
+}

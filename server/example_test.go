@@ -19,7 +19,7 @@ func ExampleDial() {
 
 	c := client.NewClient(
 		client.WithServerAddress("mail.example.com:25"),
-		client.WithSecurity(client.Security_Plain),
+		client.WithSecurity(client.SecurityPlain),
 	)
 
 	err := c.Connect(context.Background())

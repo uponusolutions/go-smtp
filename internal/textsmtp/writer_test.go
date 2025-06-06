@@ -12,6 +12,7 @@ import (
 	legacy "net/textproto"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
@@ -23,7 +24,7 @@ func TestDotWriter(t *testing.T) {
 		if n != 21 || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
 		}
-		d.Close()
+		require.NoError(t, d.Close())
 		want := "abc\r\n..def\r\n...ghi\r\n..jkl\r\n..\r\n.\r\n"
 		if s := buf.String(); s != want {
 			t.Fatalf("wrote %q", s)
@@ -37,7 +38,7 @@ func TestDotWriter(t *testing.T) {
 		if n != 25 || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
 		}
-		d.Close()
+		_ = d.Close()
 		want := "abc\r\n..def\r\n...ghi\r\n..jkl\r\n..\r\n.\r\n"
 		if s := buf.String(); s != want {
 			t.Fatalf("wrote %q", s)
@@ -57,7 +58,7 @@ func TestDotWriter(t *testing.T) {
 			t.Fatalf("Write: %d, %s", n, err)
 		}
 
-		d.Close()
+		_ = d.Close()
 		want := "abc\r\n..def\r\n...ghi\r\n..jkl\r\n..\r\n.\r\n"
 		if s := buf.String(); s != want {
 			t.Fatalf("wrote %q", s)
@@ -77,7 +78,7 @@ func TestDotWriter(t *testing.T) {
 			t.Fatalf("Write: %d, %s", n, err)
 		}
 
-		d.Close()
+		require.NoError(t, d.Close())
 		// \r gets interpreted as line break
 		want := "abc\r\n..def\r\n...ghi\r\n..jkl\r\n.\r\n"
 		if s := buf.String(); s != want {
@@ -98,7 +99,7 @@ func TestDotWriter(t *testing.T) {
 			t.Fatalf("Write: %d, %s", n, err)
 		}
 
-		d.Close()
+		require.NoError(t, d.Close())
 		// \r gets interpreted as normal character
 		want := "abc\r\n..def\r..ghi\r\n..jkl\r\n.\r\n"
 		if s := buf.String(); s != want {
@@ -114,7 +115,7 @@ func TestDotWriterCloseEmptyWrite(t *testing.T) {
 	if n != 0 || err != nil {
 		t.Fatalf("Write: %d, %s", n, err)
 	}
-	d.Close()
+	require.NoError(t, d.Close())
 	want := "\r\n.\r\n"
 	if s := buf.String(); s != want {
 		t.Fatalf("wrote %q; want %q", s, want)
@@ -124,7 +125,7 @@ func TestDotWriterCloseEmptyWrite(t *testing.T) {
 func TestDotWriterCloseNoWrite(t *testing.T) {
 	var buf bytes.Buffer
 	d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
-	d.Close()
+	require.NoError(t, d.Close())
 	want := "\r\n.\r\n"
 	if s := buf.String(); s != want {
 		t.Fatalf("wrote %q; want %q", s, want)
@@ -141,7 +142,7 @@ func BenchmarkDotWriter(b *testing.B) {
 		for b.Loop() {
 			r := bytes.NewReader(data)
 			w := legacy.NewWriter(bufio.NewWriter(io.Discard)).DotWriter()
-			io.Copy(w, r)
+			_, _ = io.Copy(w, r)
 		}
 	})
 
@@ -151,7 +152,7 @@ func BenchmarkDotWriter(b *testing.B) {
 		for b.Loop() {
 			r := bytes.NewReader(data)
 			w := textsmtp.NewDotWriter(bufio.NewWriter(io.Discard))
-			io.Copy(w, r)
+			_, _ = io.Copy(w, r)
 		}
 	})
 }

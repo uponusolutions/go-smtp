@@ -15,13 +15,18 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
+// Security describes how the connection is etablished.
 type Security int32
 
 const (
-	Security_PreferStartTLS Security = 0
-	Security_Plain          Security = 1
-	Security_TLS            Security = 2
-	Security_StartTLS       Security = 3
+	// SecurityPreferStartTLS tries to use StartTls but fallbacks to plain.
+	SecurityPreferStartTLS Security = 0
+	// SecurityPlain is always just a plain connection.
+	SecurityPlain Security = 1
+	// SecurityTLS does a implicit tls connection.
+	SecurityTLS Security = 2
+	// SecurityStartTLS always does starttls.
+	SecurityStartTLS Security = 3
 )
 
 // Client is an SMTP client.
@@ -35,7 +40,7 @@ type Client struct {
 	// keep a reference to the connection so it can be used to create a TLS
 	// connection later
 	conn       net.Conn
-	text       *textsmtp.Conn
+	text       *textsmtp.Textproto
 	serverName string
 	ext        map[string]string // supported extensions
 	localName  string            // the name to use in HELO/EHLO/LHLO
@@ -69,11 +74,11 @@ type Client struct {
 // NewClient returns a new SMTP client.
 // When not set via options the address 127.0.0.1:25 is used.
 // When not set via options a default tls.Config is used.
-func NewClient(opts ...ClientOption) *Client {
+func NewClient(opts ...Option) *Client {
 	c := &Client{
 		ServerAddress: "127.0.0.1:25",
 
-		security: Security_PreferStartTLS,
+		security: SecurityPreferStartTLS,
 
 		localName: "localhost",
 		// As recommended by RFC 5321. For DATA command reply (3xx one) RFC
@@ -101,39 +106,39 @@ func NewClient(opts ...ClientOption) *Client {
 	return c
 }
 
-// ClientOption defines a client option.
-type ClientOption func(c *Client)
+// Option defines a client option.
+type Option func(c *Client)
 
 // WithServerAddress Sets the SMTP servers address.
-func WithServerAddress(addr string) ClientOption {
+func WithServerAddress(addr string) Option {
 	return func(c *Client) {
 		c.ServerAddress = addr
 	}
 }
 
 // WithLocalName sets the HELO local name.
-func WithLocalName(localName string) ClientOption {
+func WithLocalName(localName string) Option {
 	return func(c *Client) {
 		c.localName = localName
 	}
 }
 
 // WithTLSConfig sets the TLS config.
-func WithTLSConfig(cfg *tls.Config) ClientOption {
+func WithTLSConfig(cfg *tls.Config) Option {
 	return func(c *Client) {
 		c.TLSConfig = cfg
 	}
 }
 
 // WithSecurity sets the TLS config.
-func WithSecurity(security Security) ClientOption {
+func WithSecurity(security Security) Option {
 	return func(c *Client) {
 		c.security = security
 	}
 }
 
 // WithSASLClient sets the SASL client.
-func WithSASLClient(cl sasl.Client) ClientOption {
+func WithSASLClient(cl sasl.Client) Option {
 	return func(c *Client) {
 		c.SASLClient = cl
 	}
@@ -154,13 +159,13 @@ func (c *Client) Connect(ctx context.Context) error {
 	var conn net.Conn
 
 	switch c.security {
-	case Security_Plain:
+	case SecurityPlain:
 		fallthrough
-	case Security_StartTLS:
+	case SecurityStartTLS:
 		fallthrough
-	case Security_PreferStartTLS:
+	case SecurityPreferStartTLS:
 		conn, err = c.dial(ctx)
-	case Security_TLS:
+	case SecurityTLS:
 		conn, err = c.dialTLS(ctx)
 	}
 
@@ -179,10 +184,10 @@ func (c *Client) Connect(ctx context.Context) error {
 		return err
 	}
 
-	if c.security == Security_StartTLS || c.security == Security_PreferStartTLS {
+	if c.security == SecurityStartTLS || c.security == SecurityPreferStartTLS {
 		if ok, _ := c.Extension("STARTTLS"); !ok {
-			if c.security == Security_StartTLS {
-				c.Quit()
+			if c.security == SecurityStartTLS {
+				_ = c.Quit()
 				return errors.New("smtp: server doesn't support STARTTLS")
 			}
 		} else {
@@ -197,11 +202,10 @@ func (c *Client) Connect(ctx context.Context) error {
 }
 
 func (c *Client) authAndUTF8() error {
-
 	ok, _ := c.Extension("AUTH")
 	if ok && c.SASLClient != nil {
 		if err := c.Auth(c.SASLClient); err != nil {
-			c.Quit()
+			_ = c.Quit()
 			return err
 		}
 	}
@@ -271,6 +275,7 @@ func (c *Client) SendMail(from string, rcpt []string, in io.Reader) (code int, m
 	return w.CloseWithResponse()
 }
 
+// SetXOORG set xoorg support
 func (c *Client) SetXOORG(xoorg *string) {
 	c.options.XOORG = xoorg
 }

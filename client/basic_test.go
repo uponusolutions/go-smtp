@@ -31,12 +31,12 @@ func TestClientAuthTrimSpace(t *testing.T) {
 		"200 some more"
 	wrote := &bytes.Buffer{}
 
-	fake := tester.NewConn(server, wrote)
+	fake := tester.NewFakeConn(server, wrote)
 
 	c := NewClient()
 	c.setConn(fake)
-	c.Auth(toServerNoRespAuth{})
-	c.Close()
+	require.Error(t, c.Auth(toServerNoRespAuth{}))
+	require.NoError(t, c.Close())
 	if got, want := wrote.String(), "AUTH FOOAUTH\r\n*\r\n"; got != want {
 		t.Errorf("wrote %q; want %q", got, want)
 	}
@@ -52,7 +52,7 @@ func (toServerNoRespAuth) Start() (proto string, toServer []byte, err error) {
 	return "FOOAUTH", nil, nil
 }
 
-func (toServerNoRespAuth) Next(fromServer []byte) (toServer []byte, err error) {
+func (toServerNoRespAuth) Next(_ []byte) (toServer []byte, err error) {
 	panic("unexpected call")
 }
 
@@ -61,9 +61,9 @@ func TestBasic(t *testing.T) {
 	client := strings.Join(strings.Split(basicClient, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := tester.NewConn(server, cmdbuf)
+	fake := tester.NewFakeConn(server, cmdbuf)
 
-	c := &Client{text: textsmtp.NewConn(fake, 4096, 4096, 0), conn: fake, localName: "localhost"}
+	c := &Client{text: textsmtp.NewTextproto(fake, 4096, 4096, 0), conn: fake, localName: "localhost"}
 
 	if err := c.helo(); err != nil {
 		t.Fatalf("HELO failed: %s", err)
@@ -165,19 +165,19 @@ func TestBasic_smtp(t *testing.T) {
 	faultyServer = strings.Join(strings.Split(faultyServer, "\n"), "\r\n")
 
 	wrote := &bytes.Buffer{}
-	fake := tester.NewConn(faultyServer, wrote)
+	fake := tester.NewFakeConn(faultyServer, wrote)
 
 	c := NewClient()
 	c.setConn(fake)
 
-	c.greet()
-	c.hello()
+	require.NoError(t, c.greet())
+	require.NoError(t, c.hello())
 
 	err := c.Mail("whatever", nil)
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok := err.(*smtp.SMTPStatus)
+	smtpErr, ok := err.(*smtp.Status)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -195,7 +195,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*smtp.SMTPStatus)
+	smtpErr, ok = err.(*smtp.Status)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -210,7 +210,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*smtp.SMTPStatus)
+	smtpErr, ok = err.(*smtp.Status)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -236,19 +236,20 @@ func TestClient_TooLongLine(t *testing.T) {
 
 	go func() {
 		for _, l := range faultyServer {
-			pw.Write([]byte(l))
+			_, err := pw.Write([]byte(l))
+			require.NoError(t, err)
 		}
-		pw.Close()
+		require.NoError(t, pw.Close())
 	}()
 
 	wrote := &bytes.Buffer{}
-	fake := tester.NewConnStream(pr, wrote)
+	fake := tester.NewFakeConnStream(pr, wrote)
 
 	c := NewClient()
 	c.setConn(fake)
 
-	c.greet()
-	c.hello()
+	require.NoError(t, c.greet())
+	require.NoError(t, c.hello())
 
 	err := c.Mail("whatever", nil)
 	if err != textsmtp.ErrTooLongLine {
@@ -306,14 +307,14 @@ func TestNewClient(t *testing.T) {
 	client := strings.Join(strings.Split(newClientClient, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
 	c := NewClient()
 	c.setConn(fake)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
-	c.greet()
-	c.hello()
+	require.NoError(t, c.greet())
+	require.NoError(t, c.hello())
 
 	if ok, args := c.Extension("aUtH"); !ok || args != "LOGIN PLAIN" {
 		t.Fatalf("Expected AUTH supported")
@@ -348,11 +349,11 @@ func TestNewClient2(t *testing.T) {
 	client := strings.Join(strings.Split(newClient2Client, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
 	c := NewClient()
 	c.setConn(fake)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	err := c.greet()
 	require.NoError(t, err)
@@ -388,79 +389,82 @@ QUIT
 `
 
 func TestHello(t *testing.T) {
-
 	if len(helloServer) != len(helloClient) {
 		t.Fatalf("Hello server and client size mismatch")
 	}
 
 	for i := range helloServer {
-		server := strings.Join(strings.Split(baseHelloServer+helloServer[i], "\n"), "\r\n")
-		client := strings.Join(strings.Split(baseHelloClient+helloClient[i], "\n"), "\r\n")
+		HelloCase(t, i)
+	}
+}
 
-		cmdbuf := &bytes.Buffer{}
-		fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
+func HelloCase(t *testing.T, i int) {
+	server := strings.Join(strings.Split(baseHelloServer+helloServer[i], "\n"), "\r\n")
+	client := strings.Join(strings.Split(baseHelloClient+helloClient[i], "\n"), "\r\n")
 
-		c := NewClient()
-		c.setConn(fake)
-		defer c.Close()
+	cmdbuf := &bytes.Buffer{}
+	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-		c.serverName = "fake.host"
+	c := NewClient()
+	c.setConn(fake)
+	defer func() { _ = c.Close() }()
+
+	c.serverName = "fake.host"
+	c.localName = "customhost"
+
+	require.NoError(t, c.greet())
+	if i > 0 {
+		require.NoError(t, c.hello())
+	}
+
+	var err error
+	switch i {
+	case 0:
 		c.localName = "customhost"
-
-		c.greet()
-		if i > 0 {
-			c.hello()
+		err = c.hello()
+	case 1:
+		err = c.startTLS()
+		if err.Error() == "SMTP error 502: Not implemented" {
+			err = nil
 		}
-
-		var err error
-		switch i {
-		case 0:
+	case 2:
+		err = c.Verify("test@example.com", nil)
+	case 3:
+		c.serverName = "smtp.google.com"
+		err = c.Auth(sasl.NewPlainClient("", "user", "pass"))
+	case 4:
+		err = c.Mail("test@example.com", nil)
+	case 5:
+		ok, _ := c.Extension("feature")
+		if ok {
+			t.Errorf("Expected FEATURE not to be supported")
+		}
+	case 6:
+		err = c.Reset()
+	case 7:
+		err = c.Quit()
+	case 8:
+		err = c.Verify("test@example.com", nil)
+		if err != nil {
 			c.localName = "customhost"
 			err = c.hello()
-		case 1:
-			err = c.startTLS()
-			if err.Error() == "SMTP error 502: Not implemented" {
-				err = nil
-			}
-		case 2:
-			err = c.Verify("test@example.com", nil)
-		case 3:
-			c.serverName = "smtp.google.com"
-			err = c.Auth(sasl.NewPlainClient("", "user", "pass"))
-		case 4:
-			err = c.Mail("test@example.com", nil)
-		case 5:
-			ok, _ := c.Extension("feature")
-			if ok {
-				t.Errorf("Expected FEATURE not to be supported")
-			}
-		case 6:
-			err = c.Reset()
-		case 7:
-			err = c.Quit()
-		case 8:
-			err = c.Verify("test@example.com", nil)
 			if err != nil {
-				c.localName = "customhost"
-				err = c.hello()
-				if err != nil {
-					t.Errorf("Want error, got none")
-				}
+				t.Errorf("Want error, got none")
 			}
-		case 9:
-			err = c.Noop()
-		default:
-			t.Fatalf("Unhandled command")
 		}
+	case 9:
+		err = c.Noop()
+	default:
+		t.Fatalf("Unhandled command")
+	}
 
-		if err != nil {
-			t.Errorf("Command %d failed: %v", i, err)
-		}
+	if err != nil {
+		t.Errorf("Command %d failed: %v", i, err)
+	}
 
-		actualcmds := cmdbuf.String()
-		if client != actualcmds {
-			t.Errorf("Got:\n%s\nExpected:\n%s", actualcmds, client)
-		}
+	actualcmds := cmdbuf.String()
+	if client != actualcmds {
+		t.Errorf("Got:\n%s\nExpected:\n%s", actualcmds, client)
 	}
 }
 
@@ -509,13 +513,13 @@ func TestHello_421Response(t *testing.T) {
 	client := "EHLO customhost\r\n"
 
 	cmdbuf := &bytes.Buffer{}
-	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
 	c := NewClient()
 	c.setConn(fake)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
-	c.greet()
+	require.NoError(t, c.greet())
 
 	c.serverName = "fake.host"
 	c.localName = "customhost"
@@ -525,7 +529,7 @@ func TestHello_421Response(t *testing.T) {
 		t.Errorf("Expected Hello to fail")
 	}
 
-	var smtp *smtp.SMTPStatus
+	var smtp *smtp.Status
 	if !errors.As(err, &smtp) || smtp.Code != 421 || smtp.Message != "Service not available, closing transmission channel" {
 		t.Errorf("Expected error 421, got %v", err)
 	}
@@ -568,14 +572,14 @@ func TestAuthFailed(t *testing.T) {
 	client := strings.Join(strings.Split(authFailedClient, "\n"), "\r\n")
 
 	cmdbuf := &bytes.Buffer{}
-	fake := tester.NewConnStream(strings.NewReader(server), cmdbuf)
+	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
 	c := NewClient()
 	c.setConn(fake)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
-	c.greet()
-	c.hello()
+	require.NoError(t, c.greet())
+	require.NoError(t, c.hello())
 
 	c.serverName = "smtp.google.com"
 	err := c.Auth(sasl.NewPlainClient("", "user", "pass"))
@@ -607,7 +611,7 @@ AUTH PLAIN AHVzZXIAcGFzcw==
 
 func TestTLSConnState(t *testing.T) {
 	ln := newLocalListener(t)
-	defer ln.Close()
+	defer func() { require.NoError(t, ln.Close()) }()
 	clientDone := make(chan bool)
 	serverDone := make(chan bool)
 	go func() {
@@ -617,7 +621,7 @@ func TestTLSConnState(t *testing.T) {
 			t.Errorf("Server accept: %v", err)
 			return
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 		if err := serverHandle(c, t); err != nil {
 			t.Errorf("server error: %v", err)
 		}
@@ -629,14 +633,15 @@ func TestTLSConnState(t *testing.T) {
 		c := NewClient(
 			WithServerAddress(ln.Addr().String()),
 			WithTLSConfig(cfg),
-			WithSecurity(Security_StartTLS),
+			WithSecurity(SecurityStartTLS),
 		)
 		err := c.Connect(context.Background())
 		if err != nil {
 			t.Errorf("Client dial: %v", err)
 			return
 		}
-		defer c.Quit()
+
+		defer func() { require.NoError(t, c.Quit()) }()
 		cs, ok := c.TLSConnectionState()
 		if !ok {
 			t.Errorf("TLSConnectionState returned ok == false; want true")
@@ -665,13 +670,14 @@ type smtpSender struct {
 	w io.Writer
 }
 
-func (s smtpSender) send(f string) {
-	s.w.Write([]byte(f + "\r\n"))
+func (s smtpSender) send(t *testing.T, f string) {
+	_, err := s.w.Write([]byte(f + "\r\n"))
+	require.NoError(t, err)
 }
 
 // smtp server, finely tailored to deal with our own client only!
 func serverHandle(c net.Conn, t *testing.T) error {
-	send := smtpSender{c}.send
+	send := func(d string) { smtpSender{c}.send(t, d) }
 	send("220 127.0.0.1 ESMTP service ready")
 	s := bufio.NewScanner(c)
 	for s.Scan() {
@@ -688,8 +694,9 @@ func serverHandle(c net.Conn, t *testing.T) error {
 			}
 			config := &tls.Config{Certificates: []tls.Certificate{keypair}}
 			c = tls.Server(c, config)
-			defer c.Close()
-			return serverHandleTLS(c, t)
+			err = serverHandleTLS(c, t)
+			_ = c.Close()
+			return err
 		default:
 			t.Fatalf("unrecognized command: %q", s.Text())
 		}
@@ -698,7 +705,7 @@ func serverHandle(c net.Conn, t *testing.T) error {
 }
 
 func serverHandleTLS(c net.Conn, t *testing.T) error {
-	send := smtpSender{c}.send
+	send := func(d string) { smtpSender{c}.send(t, d) }
 	s := bufio.NewScanner(c)
 	for s.Scan() {
 		switch s.Text() {
@@ -781,19 +788,19 @@ func TestClientXtext(t *testing.T) {
 	client := strings.Join(strings.Split(xtextClient, "\n"), "\r\n")
 
 	wrote := &bytes.Buffer{}
-	fake := tester.NewConnStream(strings.NewReader(server), wrote)
+	fake := tester.NewFakeConnStream(strings.NewReader(server), wrote)
 
 	c := NewClient()
 	c.setConn(fake)
 
 	c.ext = map[string]string{"AUTH": "PLAIN", "DSN": ""}
 	email := "e=mc2@example.com"
-	c.Mail(email, &smtp.MailOptions{Auth: &email})
-	c.Rcpt(email, &smtp.RcptOptions{
+	require.Error(t, c.Mail(email, &smtp.MailOptions{Auth: &email}))
+	require.NoError(t, c.Rcpt(email, &smtp.RcptOptions{
 		OriginalRecipientType: smtp.DSNAddressTypeUTF8,
 		OriginalRecipient:     email,
-	})
-	c.Close()
+	}))
+	require.NoError(t, c.Close())
 	if got := wrote.String(); got != client {
 		t.Errorf("wrote %q; want %q", got, client)
 	}
@@ -823,32 +830,32 @@ func TestClientDSN(t *testing.T) {
 	client := strings.Join(strings.Split(dsnClient, "\n"), "\r\n")
 
 	wrote := &bytes.Buffer{}
-	fake := tester.NewConnStream(strings.NewReader(server), wrote)
+	fake := tester.NewFakeConnStream(strings.NewReader(server), wrote)
 
 	c := NewClient()
 	c.setConn(fake)
 
 	c.ext = map[string]string{"DSN": ""}
-	c.Mail(dsnEmailRFC822, &smtp.MailOptions{
+	require.Error(t, c.Mail(dsnEmailRFC822, &smtp.MailOptions{
 		Return:     smtp.DSNReturnHeaders,
 		EnvelopeID: dsnEnvelopeID,
-	})
-	c.Rcpt(dsnEmailRFC822, &smtp.RcptOptions{
+	}))
+	require.NoError(t, c.Rcpt(dsnEmailRFC822, &smtp.RcptOptions{
 		OriginalRecipientType: smtp.DSNAddressTypeRFC822,
 		OriginalRecipient:     dsnEmailRFC822,
 		Notify:                []smtp.DSNNotify{smtp.DSNNotifyNever},
-	})
-	c.Rcpt(dsnEmailRFC822, &smtp.RcptOptions{
+	}))
+	require.NoError(t, c.Rcpt(dsnEmailRFC822, &smtp.RcptOptions{
 		OriginalRecipientType: smtp.DSNAddressTypeUTF8,
 		OriginalRecipient:     dsnEmailUTF8,
 		Notify:                []smtp.DSNNotify{smtp.DSNNotifyFailure, smtp.DSNNotifyDelayed},
-	})
+	}))
 	c.ext["SMTPUTF8"] = ""
-	c.Rcpt(dsnEmailUTF8, &smtp.RcptOptions{
+	require.NoError(t, c.Rcpt(dsnEmailUTF8, &smtp.RcptOptions{
 		OriginalRecipientType: smtp.DSNAddressTypeUTF8,
 		OriginalRecipient:     dsnEmailUTF8,
-	})
-	c.Close()
+	}))
+	require.NoError(t, c.Close())
 	if actualcmds := wrote.String(); client != actualcmds {
 		t.Errorf("wrote %q; want %q", actualcmds, client)
 	}

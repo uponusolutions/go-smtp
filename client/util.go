@@ -2,7 +2,6 @@ package client
 
 import (
 	"errors"
-	"fmt"
 	"net/textproto"
 	"strconv"
 	"strings"
@@ -13,7 +12,7 @@ import (
 func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
 	parts := strings.Split(s, ".")
 	if len(parts) != 3 {
-		return smtp.EnhancedCode{}, fmt.Errorf("wrong amount of enhanced code parts")
+		return smtp.EnhancedCode{}, errors.New("wrong amount of enhanced code parts")
 	}
 
 	code := smtp.EnhancedCode{}
@@ -29,8 +28,8 @@ func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
 
 // toSMTPErr converts textproto.Error into smtp, parsing
 // enhanced status code if it is present.
-func toSMTPErr(protoErr *textproto.Error) *smtp.SMTPStatus {
-	smtpErr := &smtp.SMTPStatus{
+func toSMTPErr(protoErr *textproto.Error) *smtp.Status {
+	smtpErr := &smtp.Status{
 		Code:    protoErr.Code,
 		Message: protoErr.Msg,
 	}

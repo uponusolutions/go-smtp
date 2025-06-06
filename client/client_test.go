@@ -10,22 +10,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davrux/go-smtptester"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uponusolutions/go-smtp/tester"
 )
 
-var s = smtptester.Standard()
+var s = tester.Standard()
 
 func TestMain(m *testing.M) {
 	go func() {
-		if err := s.ListenAndServe(); err != nil {
+		if err := s.ListenAndServe(context.Background()); err != nil {
 			log.Printf("smtp server response %s", err)
 		}
 	}()
 
 	defer func() {
-		if err := s.Close(); err != nil {
+		if err := s.Close(context.Background()); err != nil {
 			slog.Error("error closing server", "err", err)
 		}
 	}()
@@ -60,7 +60,7 @@ func TestClient_SendMail(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := smtptester.GetBackend(s).Load(from, recipients)
+	m, found := tester.GetBackend(s).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -92,18 +92,20 @@ func TestClient_Send(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := smtptester.GetBackend(s).Load(from, recipients)
+	m, found := tester.GetBackend(s).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
-var server = "" // ends with .mail.protection.outlook.com:25
-var priv = ``
-var certs = ``
-var eml = ``
-var from = ""
-var recipients = []string{}
+var (
+	server     = "" // ends with .mail.protection.outlook.com:25
+	priv       = ``
+	certs      = ``
+	eml        = ``
+	from       = ""
+	recipients = []string{}
+)
 
 func TestClient_SendMicrosoft(t *testing.T) {
 	t.Skip()
@@ -112,7 +114,7 @@ func TestClient_SendMicrosoft(t *testing.T) {
 
 	c := NewClient(WithServerAddress(server), WithTLSConfig(&tls.Config{
 		Certificates: []tls.Certificate{cert},
-	}), WithSecurity(Security_TLS))
+	}), WithSecurity(SecurityTLS))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))

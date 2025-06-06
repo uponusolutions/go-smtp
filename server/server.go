@@ -37,8 +37,8 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 				} else {
 					tempDelay *= 2
 				}
-				if max := 1 * time.Second; tempDelay > max {
-					tempDelay = max
+				if maxDelay := 1 * time.Second; tempDelay > maxDelay {
+					tempDelay = maxDelay
 				}
 				s.logger.ErrorContext(
 					ctx,
@@ -64,7 +64,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		ctx:    ctx,
 		server: s,
 		conn:   conn,
-		text:   textsmtp.NewConn(conn, s.readerSize, s.writerSize, s.maxLineLength),
+		text:   textsmtp.NewTextproto(conn, s.readerSize, s.writerSize, s.maxLineLength),
 	}
 
 	s.locker.Lock()
@@ -110,10 +110,10 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	// explicit tls handshake call
 	if tlsConn, ok := c.conn.(*tls.Conn); ok {
 		if d := s.readTimeout; d != 0 {
-			c.conn.SetReadDeadline(time.Now().Add(d))
+			_ = c.conn.SetReadDeadline(time.Now().Add(d))
 		}
 		if d := s.writeTimeout; d != 0 {
-			c.conn.SetWriteDeadline(time.Now().Add(d))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(d))
 		}
 		if err := tlsConn.Handshake(); err != nil {
 			c.handleError(err)
@@ -129,7 +129,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 // to handle requests on incoming connections.
 //
 // If s.Addr is blank and LMTP is disabled, ":smtp" is used.
-func (s *Server) Listen(ctx context.Context) (net.Listener, error) {
+func (s *Server) Listen(_ context.Context) (net.Listener, error) {
 	network := s.network
 	if network == "" {
 		network = "tcp"
@@ -191,7 +191,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 //
 // Close returns any error returned from closing the server's underlying
 // listener(s).
-func (s *Server) Close(ctx context.Context) error {
+func (s *Server) Close(_ context.Context) error {
 	select {
 	case <-s.done:
 		return ErrServerClosed

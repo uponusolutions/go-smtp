@@ -19,23 +19,26 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
+type state int32
+
 const (
-	StateInit = iota
-	StateUpgrade
-	StateEnforceAuthentication
-	StateEnforceSecureConnection
-	StateGreeted
-	StateMail
+	stateInit                    state = 0
+	stateUpgrade                 state = 1
+	stateEnforceAuthentication   state = 2
+	stateEnforceSecureConnection state = 3
+	stateGreeted                 state = 4
+	stateMail                    state = 5
 )
 
+// Conn is a connection inside a smtp server.
 type Conn struct {
 	ctx context.Context
 
 	conn net.Conn
 
-	state int
+	state state
 
-	text   *textsmtp.Conn
+	text   *textsmtp.Textproto
 	server *Server
 
 	session    Session
@@ -60,8 +63,7 @@ func (c *Conn) run() error {
 		err = c.handle(cmd, arg)
 		if err != nil {
 			// if error is a smtp status it isn't necessary to close the connection
-			if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
-
+			if smtpErr, ok := err.(*smtp.Status); ok {
 				// Service closing transmission channel, after quit
 				if smtpErr.Code == 221 {
 					return smtpErr
@@ -78,7 +80,7 @@ func (c *Conn) run() error {
 	}
 }
 
-func (c *Conn) nextCommand() (string, string, error) {
+func (c *Conn) nextCommand() (cmd string, arg string, err error) {
 	line, err := c.readLine()
 	if err != nil {
 		return "", "", err
@@ -94,17 +96,17 @@ func (c *Conn) handle(cmd string, arg string) error {
 	cmd = strings.ToUpper(cmd)
 
 	switch c.state {
-	case StateInit:
+	case stateInit:
 		fallthrough
-	case StateUpgrade:
+	case stateUpgrade:
 		return c.handleStateInit(cmd, arg)
-	case StateEnforceSecureConnection:
+	case stateEnforceSecureConnection:
 		return c.handleStateEnforceSecureConnection(cmd, arg)
-	case StateEnforceAuthentication:
+	case stateEnforceAuthentication:
 		return c.handleStateEnforceAuthentication(cmd, arg)
-	case StateGreeted:
+	case stateGreeted:
 		return c.handleStateGreeted(cmd, arg)
-	case StateMail:
+	case stateMail:
 		return c.handleStateMail(cmd, arg)
 	}
 
@@ -221,14 +223,16 @@ func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error 
 	}
 }
 
-func (c *Conn) commandUnknown(cmd string) *smtp.SMTPStatus {
+func (c *Conn) commandUnknown(cmd string) *smtp.Status {
 	return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, fmt.Sprintf("%s command unknown, state %d", cmd, c.state))
 }
 
+// Server returns the server this connection comes from.
 func (c *Conn) Server() *Server {
 	return c.server
 }
 
+// Close closes the connection.
 func (c *Conn) Close(err error) {
 	c.logger().InfoContext(c.ctx, "connection is closing")
 
@@ -253,10 +257,10 @@ func (c *Conn) Close(err error) {
 
 // TLSConnectionState returns the connection's TLS connection state.
 // Zero values are returned if the connection doesn't use TLS.
-func (c *Conn) TLSConnectionState() (state tls.ConnectionState, ok bool) {
+func (c *Conn) TLSConnectionState() (tls.ConnectionState, bool) {
 	tc, ok := c.conn.(*tls.Conn)
 	if !ok {
-		return
+		return tls.ConnectionState{}, ok
 	}
 	return tc.ConnectionState(), true
 }
@@ -267,14 +271,17 @@ func (c *Conn) IsTLS() bool {
 	return ok
 }
 
+// Hostname returns the name of the connected client.
 func (c *Conn) Hostname() string {
 	return c.helo
 }
 
+// Mechanisms returns the allowed auth mechanism for this connection.
 func (c *Conn) Mechanisms() []string {
 	return c.mechanisms
 }
 
+// Conn returns the connection.
 func (c *Conn) Conn() net.Conn {
 	return c.conn
 }
@@ -301,7 +308,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	// RFC 5321: "An EHLO command MAY be issued by a client later in the session"
 	// RFC 5321: "... the SMTP server MUST clear all buffers
 	// and reset the state exactly as if a RSET command has been issued."
-	if c.state != StateInit && c.state != StateEnforceSecureConnection && c.state != StateEnforceAuthentication {
+	if c.state != stateInit && c.state != stateEnforceSecureConnection && c.state != stateEnforceAuthentication {
 		err := c.reset()
 		if err != nil {
 			return err
@@ -309,11 +316,11 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 	}
 
 	if c.server.enforceSecureConnection && !c.IsTLS() {
-		c.state = StateEnforceSecureConnection
+		c.state = stateEnforceSecureConnection
 	} else if c.server.enforceAuthentication {
-		c.state = StateEnforceAuthentication
+		c.state = stateEnforceAuthentication
 	} else {
-		c.state = StateGreeted
+		c.state = stateGreeted
 	}
 
 	if !enhanced {
@@ -391,7 +398,7 @@ func (c *Conn) handleError(err error) {
 		return
 	}
 
-	if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
+	if smtpErr, ok := err.(*smtp.Status); ok {
 		c.writeResponse(smtpErr.Code, smtpErr.EnhancedCode, smtpErr.Message)
 
 		if smtpErr.Code != 221 {
@@ -426,6 +433,7 @@ func (c *Conn) logger() *slog.Logger {
 }
 
 // READY state -> waiting for MAIL
+// nolint: revive
 func (c *Conn) handleMail(arg string) error {
 	arg, ok := parse.CutPrefixFold(arg, "FROM:")
 	if !ok {
@@ -538,7 +546,7 @@ func (c *Conn) handleMail(arg string) error {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Mail not accepted", err)
 	}
 
-	c.state = StateMail
+	c.state = stateMail
 	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
 }
 
@@ -616,8 +624,7 @@ func (c *Conn) handleVrfy(arg string) error {
 	opts := &smtp.VrfyOptions{}
 
 	for key := range args {
-		switch key {
-		case "SMTPUTF8":
+		if key == "SMTPUTF8" {
 			if !c.server.enableSMTPUTF8 {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
 			}
@@ -703,8 +710,8 @@ func (c *Conn) handleAuth(arg string) error {
 	}
 
 	c.didAuth = true
-	if c.state == StateEnforceAuthentication {
-		c.state = StateGreeted
+	if c.state == stateEnforceAuthentication {
+		c.state = stateGreeted
 	}
 
 	return smtp.NewStatus(235, smtp.EnhancedCode{2, 0, 0}, "Authentication succeeded")
@@ -740,7 +747,7 @@ func (c *Conn) handleStartTLS() error {
 
 	c.conn = tlsConn
 	c.text.Replace(tlsConn)
-	c.state = StateUpgrade // same as StateInit but calls logout/reset on ehlo/helo
+	c.state = stateUpgrade // same as StateInit but calls logout/reset on ehlo/helo
 
 	return nil
 }
@@ -772,7 +779,9 @@ func (c *Conn) handleData(arg string) error {
 		return err
 	}
 
-	c.reset()
+	if err = c.reset(); err != nil {
+		return err
+	}
 	return c.accepted(uuid)
 }
 
@@ -803,9 +812,8 @@ func (c *Conn) handleBdat(arg string) error {
 	queueid, err := c.session.Data(c.ctx, func() io.Reader {
 		return data
 	})
-
 	if err != nil {
-		if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
+		if smtpErr, ok := err.(*smtp.Status); ok {
 			// write down error
 			c.writeStatus(smtpErr)
 			// read anything left to continue after this failure, ignore any read error
@@ -818,18 +826,19 @@ func (c *Conn) handleBdat(arg string) error {
 			// already in the pipeline after the failed BDAT.
 			closed = true
 			_, _ = io.Copy(io.Discard, data)
-			c.reset()
-			return nil
+			return c.reset()
 		}
 		// an error which isn't a SMTPStatus error will always terminate the connection
 		return err
 	}
 
-	c.reset()
+	if err = c.reset(); err != nil {
+		return err
+	}
 	return c.accepted(queueid)
 }
 
-func (c *Conn) accepted(queueid string) *smtp.SMTPStatus {
+func (*Conn) accepted(queueid string) *smtp.Status {
 	if queueid != "" {
 		// limit length if queueid is too long (< 1000)
 		if len(queueid) > 977 {
@@ -840,17 +849,12 @@ func (c *Conn) accepted(queueid string) *smtp.SMTPStatus {
 	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")
 }
 
-func (c *Conn) Reject(ctx context.Context) {
-	c.writeResponse(421, smtp.EnhancedCode{4, 4, 5}, "Too busy. Try again later.")
-	c.Close(errors.New("rejected"))
-}
-
 func (c *Conn) greet() {
 	protocol := "ESMTP"
 	c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.hostname, protocol))
 }
 
-func (c *Conn) writeStatus(status *smtp.SMTPStatus) {
+func (c *Conn) writeStatus(status *smtp.Status) {
 	c.writeResponse(status.Code, status.EnhancedCode, status.Message)
 }
 
@@ -859,7 +863,7 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string
 
 	// TODO: error handling
 	if c.server.writeTimeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
+		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
 	}
 
 	// All responses must include an enhanced code, if it is missing - use
@@ -879,30 +883,27 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string
 
 	lastLineIndex := len(text) - 1
 	for i := range lastLineIndex {
-		c.text.PrintfLine("%d-%v", code, text[i])
+		_ = c.text.PrintfLine("%d-%v", code, text[i])
 	}
 	if enhCode == smtp.NoEnhancedCode {
-		c.text.PrintfLine("%d %v", code, text[lastLineIndex])
+		_ = c.text.PrintfLine("%d %v", code, text[lastLineIndex])
 	} else {
-		c.text.PrintfLine("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[lastLineIndex])
+		_ = c.text.PrintfLine("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[lastLineIndex])
 	}
 }
 
-func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, err error) *smtp.SMTPStatus {
-	if smtpErr, ok := err.(*smtp.SMTPStatus); ok {
+func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, err error) *smtp.Status {
+	if smtpErr, ok := err.(*smtp.Status); ok {
 		return smtpErr
-	} else {
-		c.logger().ErrorContext(c.ctx, msg, slog.Any("err", err))
-		return smtp.NewStatus(code, enhCode, msg)
 	}
+	c.logger().ErrorContext(c.ctx, msg, slog.Any("err", err))
+	return smtp.NewStatus(code, enhCode, msg)
 }
 
 // Reads a line of input
 func (c *Conn) readLine() (string, error) {
 	if c.server.readTimeout != 0 {
-		if err := c.conn.SetReadDeadline(time.Now().Add(c.server.readTimeout)); err != nil {
-			return "", err
-		}
+		_ = c.conn.SetReadDeadline(time.Now().Add(c.server.readTimeout))
 	}
 	line, err := c.text.ReadLine()
 	if err == nil {
@@ -913,13 +914,13 @@ func (c *Conn) readLine() (string, error) {
 
 func (c *Conn) reset() error {
 	// Reset state to Greeted
-	if c.state == StateMail {
-		c.state = StateGreeted
+	if c.state == stateMail {
+		c.state = stateGreeted
 	}
 
 	c.recipients = 0
 
-	upgrade := c.state == StateUpgrade
+	upgrade := c.state == stateUpgrade
 
 	// Authentication is only revoked if starttls is used.
 	if upgrade {

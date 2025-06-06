@@ -15,6 +15,7 @@ type dotReader struct {
 	n       int64 // Maximum bytes remaining
 }
 
+// NewDotReader creates a new dot reader.
 func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader {
 	dr := &dotReader{
 		r: reader,
@@ -28,6 +29,7 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader {
 	return dr
 }
 
+// Read reads in some more bytes.
 func (r *dotReader) Read(b []byte) (n int, err error) {
 	if r.limited {
 		if r.n <= 0 {
@@ -104,5 +106,5 @@ func (r *dotReader) Read(b []byte) (n int, err error) {
 	if r.limited {
 		r.n -= int64(n)
 	}
-	return
+	return n, err
 }

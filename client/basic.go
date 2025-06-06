@@ -11,7 +11,6 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
@@ -42,7 +41,7 @@ func (c *Client) setConn(conn net.Conn) {
 	c.conn = conn
 
 	if c.debug != nil {
-		c.text = textsmtp.NewConn(struct {
+		c.text = textsmtp.NewTextproto(struct {
 			io.Reader
 			io.Writer
 			io.Closer
@@ -55,7 +54,7 @@ func (c *Client) setConn(conn net.Conn) {
 	if c.text != nil {
 		c.text.Replace(conn)
 	} else {
-		c.text = textsmtp.NewConn(conn, c.readerSize, c.writerSize, c.maxLineLength)
+		c.text = textsmtp.NewTextproto(conn, c.readerSize, c.writerSize, c.maxLineLength)
 	}
 }
 
@@ -74,12 +73,12 @@ func (c *Client) Close() error {
 // if an error occured the connection is closed
 func (c *Client) greet() error {
 	// Initial greeting timeout. RFC 5321 recommends 5 minutes.
-	c.conn.SetDeadline(time.Now().Add(c.commandTimeout))
-	defer c.conn.SetDeadline(time.Time{})
+	timeout := smtp.Timeout(c.conn, c.commandTimeout)
+	defer timeout()
 
 	_, _, err := c.readResponse(220)
 	if err != nil {
-		c.Close()
+		_ = c.Close()
 	}
 
 	return err
@@ -90,14 +89,14 @@ func (c *Client) greet() error {
 func (c *Client) hello() error {
 	err := c.ehlo()
 
-	var smtp *smtp.SMTPStatus
+	var smtp *smtp.Status
 	if err != nil && errors.As(err, &smtp) && (smtp.Code == 500 || smtp.Code == 502) {
 		// The server doesn't support EHLO, fallback to HELO
 		err = c.helo()
 	}
 
 	if err != nil {
-		c.Close()
+		_ = c.Close()
 	}
 
 	return err
@@ -114,8 +113,8 @@ func (c *Client) readResponse(expectCode int) (int, string, error) {
 // cmd is a convenience function that sends a command and returns the response
 // textproto.Error returned by c.text.ReadResponse is converted into smtp.
 func (c *Client) cmd(expectCode int, format string, args ...any) (int, string, error) {
-	c.conn.SetDeadline(time.Now().Add(c.commandTimeout))
-	defer c.conn.SetDeadline(time.Time{})
+	timeout := smtp.Timeout(c.conn, c.commandTimeout)
+	defer timeout()
 
 	id, err := c.text.Cmd(format, args...)
 	if err != nil {
@@ -171,7 +170,7 @@ func (c *Client) ehlo() error {
 func (c *Client) startTLS() error {
 	_, _, err := c.cmd(220, "STARTTLS")
 	if err != nil {
-		c.Quit()
+		_ = c.Quit()
 		return err
 	}
 
@@ -188,12 +187,12 @@ func (c *Client) startTLS() error {
 
 	conn := tls.Client(c.conn, config)
 
-	conn.SetDeadline(time.Now().Add(c.tlsHandshakeTimeout))
-	defer conn.SetDeadline(time.Time{})
+	timeout := smtp.Timeout(conn, c.tlsHandshakeTimeout)
+	defer timeout()
 
 	err = conn.Handshake()
 	if err != nil {
-		c.Close()
+		_ = c.Close()
 		return err
 	}
 
@@ -210,10 +209,10 @@ func (c *Client) startTLS() error {
 // TLSConnectionState returns the client's TLS connection state.
 // The return values are their zero values if STARTTLS did
 // not succeed.
-func (c *Client) TLSConnectionState() (state tls.ConnectionState, ok bool) {
+func (c *Client) TLSConnectionState() (tls.ConnectionState, bool) {
 	tc, ok := c.conn.(*tls.Conn)
 	if !ok {
-		return
+		return tls.ConnectionState{}, ok
 	}
 	return tc.ConnectionState(), true
 }
@@ -235,11 +234,10 @@ func (c *Client) Verify(addr string, opts *smtp.VrfyOptions) error {
 	fmt.Fprintf(&sb, "VRFY %s", addr)
 
 	if opts != nil && opts.UTF8 {
-		if _, ok := c.ext["SMTPUTF8"]; ok {
-			sb.WriteString(" SMTPUTF8")
-		} else {
+		if _, ok := c.ext["SMTPUTF8"]; !ok {
 			return errors.New("smtp: server does not support SMTPUTF8")
 		}
+		sb.WriteString(" SMTPUTF8")
 	}
 
 	_, _, err := c.cmd(250, "%s", sb.String())
@@ -284,7 +282,7 @@ func (c *Client) Auth(a sasl.Client) error {
 		}
 		if err != nil {
 			// abort the AUTH
-			c.cmd(501, "*")
+			_, _, _ = c.cmd(501, "*")
 			break
 		}
 		if resp == nil {
@@ -322,18 +320,16 @@ func (c *Client) Mail(from string, opts *smtp.MailOptions) error {
 		fmt.Fprintf(&sb, " SIZE=%v", opts.Size)
 	}
 	if opts != nil && opts.RequireTLS {
-		if _, ok := c.ext["REQUIRETLS"]; ok {
-			sb.WriteString(" REQUIRETLS")
-		} else {
+		if _, ok := c.ext["REQUIRETLS"]; !ok {
 			return errors.New("smtp: server does not support REQUIRETLS")
 		}
+		sb.WriteString(" REQUIRETLS")
 	}
 	if opts != nil && opts.UTF8 {
-		if _, ok := c.ext["SMTPUTF8"]; ok {
-			sb.WriteString(" SMTPUTF8")
-		} else {
+		if _, ok := c.ext["SMTPUTF8"]; !ok {
 			return errors.New("smtp: server does not support SMTPUTF8")
 		}
+		sb.WriteString(" SMTPUTF8")
 	}
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
 		switch opts.Return {
@@ -387,7 +383,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	sb.Grow(2048)
 	fmt.Fprintf(&sb, "RCPT TO:<%s>", to)
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
-		if opts.Notify != nil && len(opts.Notify) != 0 {
+		if len(opts.Notify) != 0 {
 			sb.WriteString(" NOTIFY=")
 			if err := textsmtp.CheckNotifySet(opts.Notify); err != nil {
 				return errors.New("smtp: Malformed NOTIFY parameter value")
@@ -430,21 +426,21 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 type DataCloser struct {
 	c *Client
 	io.WriteCloser
-	statusCb func(rcpt string, status *smtp.SMTPStatus)
-	closed   bool
+	closed bool
 }
 
+// CloseWithResponse closes the data closer and returns code, msg
 func (d *DataCloser) CloseWithResponse() (code int, msg string, err error) {
 	if d.closed {
-		return 0, "", fmt.Errorf("smtp: data writer closed twice")
+		return 0, "", errors.New("smtp: data writer closed twice")
 	}
 
 	if err := d.WriteCloser.Close(); err != nil {
 		return 0, "", err
 	}
 
-	d.c.conn.SetDeadline(time.Now().Add(d.c.submissionTimeout))
-	defer d.c.conn.SetDeadline(time.Time{})
+	timeout := smtp.Timeout(d.c.conn, d.c.submissionTimeout)
+	defer timeout()
 
 	code, msg, err = d.c.readResponse(250)
 
@@ -452,6 +448,7 @@ func (d *DataCloser) CloseWithResponse() (code int, msg string, err error) {
 	return code, msg, err
 }
 
+// Close closes the data closer.
 func (d *DataCloser) Close() error {
 	_, _, err := d.CloseWithResponse()
 	return err
@@ -535,7 +532,7 @@ func (c *Client) Quit() error {
 	}
 	_, _, err := c.cmd(221, "QUIT")
 	if err != nil {
-		c.Close()
+		_ = c.Close()
 		return err
 	}
 	return c.Close()

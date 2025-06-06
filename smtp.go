@@ -17,18 +17,25 @@
 // Additional extensions may be handled by other packages.
 package smtp
 
+// BodyType describes the type of the body.
 type BodyType string
 
 const (
-	Body7Bit       BodyType = "7BIT"
-	Body8BitMIME   BodyType = "8BITMIME"
+	// Body7Bit means the body type is 7BIT
+	Body7Bit BodyType = "7BIT"
+	// Body8BitMIME means the body type is 8BITMIME
+	Body8BitMIME BodyType = "8BITMIME"
+	// BodyBinaryMIME means the body type is BINARYMIME
 	BodyBinaryMIME BodyType = "BINARYMIME"
 )
 
+// DSNReturn describes the DSN return.
 type DSNReturn string
 
 const (
-	DSNReturnFull    DSNReturn = "FULL"
+	// DSNReturnFull means DNS return is full.
+	DSNReturnFull DSNReturn = "FULL"
+	// DSNReturnHeaders means DNS return is hdrs.
 	DSNReturnHeaders DSNReturn = "HDRS"
 )
 
@@ -76,20 +83,28 @@ type VrfyOptions struct {
 	UTF8 bool
 }
 
+// DSNNotify describes the DSN notify.
 type DSNNotify string
 
 const (
-	DSNNotifyNever   DSNNotify = "NEVER"
+	// DSNNotifyNever sets the DSN notify to never.
+	DSNNotifyNever DSNNotify = "NEVER"
+	// DSNNotifyDelayed sets the DSN notify to delay.
 	DSNNotifyDelayed DSNNotify = "DELAY"
+	// DSNNotifyFailure sets the DSN notify to failure.
 	DSNNotifyFailure DSNNotify = "FAILURE"
+	// DSNNotifySuccess sets the DSN notify to succes.
 	DSNNotifySuccess DSNNotify = "SUCCESS"
 )
 
+// DSNAddressType describes the DSN address type.
 type DSNAddressType string
 
 const (
+	// DSNAddressTypeRFC822 means that the DSN address type is RFC822.
 	DSNAddressTypeRFC822 DSNAddressType = "RFC822"
-	DSNAddressTypeUTF8   DSNAddressType = "UTF-8"
+	// DSNAddressTypeUTF8 means that the DSN address type is UTF-8.
+	DSNAddressTypeUTF8 DSNAddressType = "UTF-8"
 )
 
 // RcptOptions contains parameters for the RCPT command.

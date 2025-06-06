@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package textsmtp
+package textsmtp_test
 
 import (
 	"bytes"
@@ -10,11 +10,12 @@ import (
 	"net/textproto"
 	"testing"
 
+	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
-func reader(in string, out *bytes.Buffer) *Conn {
-	return NewConn(tester.NewConn(in, out), 4096, 4096, 0)
+func reader(in string, out *bytes.Buffer) *textsmtp.Textproto {
+	return textsmtp.NewTextproto(tester.NewFakeConn(in, out), 4096, 4096, 0)
 }
 
 func TestPrintfLine(t *testing.T) {
@@ -73,27 +74,31 @@ type readResponseTest struct {
 }
 
 var readResponseTests = []readResponseTest{
-	{"230-Anonymous access granted, restrictions apply\n" +
-		"Read the file README.txt,\n" +
-		"230  please",
+	{
+		"230-Anonymous access granted, restrictions apply\n" +
+			"Read the file README.txt,\n" +
+			"230  please",
 		23,
 		230,
 		"Anonymous access granted, restrictions apply\nRead the file README.txt,\n please",
 	},
 
-	{"230 Anonymous access granted, restrictions apply\n",
+	{
+		"230 Anonymous access granted, restrictions apply\n",
 		23,
 		230,
 		"Anonymous access granted, restrictions apply",
 	},
 
-	{"400-A\n400-B\n400 C",
+	{
+		"400-A\n400-B\n400 C",
 		4,
 		400,
 		"A\nB\nC",
 	},
 
-	{"400-A\r\n400-B\r\n400 C\r\n",
+	{
+		"400-A\r\n400-B\r\n400 C\r\n",
 		4,
 		400,
 		"A\nB\nC",

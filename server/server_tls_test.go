@@ -19,7 +19,7 @@ func TestServerEnforceSecureConnection(t *testing.T) {
 		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
 	}
 
-	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+	_, _ = io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "530 ") {
 		t.Fatal("Should enforce STARTTLS:", scanner.Text())
@@ -47,7 +47,7 @@ func TestServerEnforceSecureConnectionImplicitTls(t *testing.T) {
 		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
 	}
 
-	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+	_, _ = io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "235 ") {
 		t.Fatal("Should succeed:", scanner.Text())
@@ -71,7 +71,7 @@ func TestServerEnforceSecureConnectionStartTls(t *testing.T) {
 		t.Fatal("AUTH PLAIN capability is missing when auth is enabled")
 	}
 
-	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+	_, _ = io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "530 ") {
 		t.Fatal("STARTTLS first expected:", scanner.Text())
@@ -91,10 +91,10 @@ func TestServerEnforceSecureConnectionStartTlsStarttls(t *testing.T) {
 		}),
 	)
 
-	io.WriteString(c, "STARTTLS\r\n")
+	_, _ = io.WriteString(c, "STARTTLS\r\n")
 
 	buf := make([]byte, 30)
-	c.Read(buf)
+	_, _ = c.Read(buf)
 
 	if string(buf) != "220 2.0.0 Ready to start TLS\r\n" {
 		t.Fatal("Ready to start expected:", string(buf))
@@ -105,13 +105,13 @@ func TestServerEnforceSecureConnectionStartTlsStarttls(t *testing.T) {
 
 	scanner := bufio.NewScanner(c)
 
-	io.WriteString(c, "HELO localhost\r\n")
+	_, _ = io.WriteString(c, "HELO localhost\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "250 ") {
 		t.Fatal("hello expected expected:", scanner.Text())
 	}
 
-	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+	_, _ = io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "235 ") {
 		t.Fatal("Should succeed:", scanner.Text())
@@ -132,10 +132,10 @@ func TestServerNoEnforceSecureConnectionStartTlsStarttls(t *testing.T) {
 		}),
 	)
 
-	io.WriteString(c, "STARTTLS\r\n")
+	_, _ = io.WriteString(c, "STARTTLS\r\n")
 
 	buf := make([]byte, 30)
-	c.Read(buf)
+	_, _ = c.Read(buf)
 
 	if string(buf) != "220 2.0.0 Ready to start TLS\r\n" {
 		t.Fatal("Ready to start expected:", string(buf))
@@ -146,13 +146,13 @@ func TestServerNoEnforceSecureConnectionStartTlsStarttls(t *testing.T) {
 
 	scanner := bufio.NewScanner(c)
 
-	io.WriteString(c, "HELO localhost\r\n")
+	_, _ = io.WriteString(c, "HELO localhost\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "250 ") {
 		t.Fatal("hello expected expected:", scanner.Text())
 	}
 
-	io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
+	_, _ = io.WriteString(c, "AUTH PLAIN AHVzZXJuYW1lAHBhc3N3b3Jk\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "235 ") {
 		t.Fatal("Should succeed:", scanner.Text())
