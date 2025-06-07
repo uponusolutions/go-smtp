@@ -3,14 +3,15 @@
 
 name: Go
 
-permissions:
-  contents: read
-
 on:
   push:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
 
@@ -31,7 +32,9 @@ jobs:
       uses: vladopajic/go-test-coverage@v2
       with:
         config: ./.testcoverage.yml
-
+        git-branch: badges
+        git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
+    
     - name: find pull request ID
       run: |
             PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
