@@ -1,6 +1,8 @@
 # go-smtp
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/uponusolutions/go-smtp.svg)](https://pkg.go.dev/github.com/uponusolutions/go-smtp)
+![coverage](https://raw.githubusercontent.com/uponusolutions/go-smtp/badges/.badges/main/coverage.svg)
+[![reference](https://pkg.go.dev/badge/github.com/uponusolutions/go-smtp.svg)](https://pkg.go.dev/github.com/uponusolutions/go-smtp)
+[![report](https://goreportcard.com/badge/github.com/uponusolutions/go-smtp)](https://goreportcard.com/report/github.com/uponusolutions/go-smtp)
 
 An ESMTP client and server library written in Go.
 
@@ -9,7 +11,6 @@ An ESMTP client and server library written in Go.
 * ESMTP client & server implementing [RFC 5321]
 * Support for additional SMTP extensions such as [AUTH] and [PIPELINING]
 * UTF-8 support for subject and message
-* [LMTP] support
 
 ## Relationship with net/smtp
 
