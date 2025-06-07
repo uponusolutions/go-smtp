@@ -14,8 +14,7 @@ permissions:
   pull-requests: write
 
 jobs:
-
-  build:
+  coverage:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -28,13 +27,36 @@ jobs:
     - name: generate test coverage
       run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
+    - name: download artifact (main.breakdown)
+      id: download-main-breakdown
+      uses: dawidd6/action-download-artifact@v10
+      with:
+        branch: main
+        workflow_conclusion: success
+        name: main.breakdown
+        if_no_artifact_found: fail
+
     - name: check test coverage
       uses: vladopajic/go-test-coverage@v2
       with:
         config: ./.testcoverage.yml
         git-branch: badges
         git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
+        # Save current coverage breakdown if current branch is main. It will be  
+        # uploaded as artifact in step below.
+        breakdown-file-name: ${{ github.ref_name == 'main' && 'main.breakdown' || '' }}
+        # If this is not main brach we want to show report including
+        # file coverage difference from main branch.
+        diff-base-breakdown-file-name: ${{ steps.download-main-breakdown.outputs.found_artifact == 'true' && 'main.breakdown' || '' }}
     
+    - name: upload artifact (main.breakdown)
+      uses: actions/upload-artifact@v4
+      if: github.ref_name == 'main'
+      with:
+        name: main.breakdown
+        path: main.breakdown # as specified via `breakdown-file-name`
+        if-no-files-found: error
+
     - name: find pull request ID
       run: |
           PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
