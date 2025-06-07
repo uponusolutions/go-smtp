@@ -20,7 +20,7 @@ var s = tester.Standard()
 var addr string
 
 func TestMain(m *testing.M) {
-	listen, err := s.Listen(context.Background())
+	listen, err := s.Listen()
 	if err != nil {
 		slog.Error("error listen server", slog.Any("error", err))
 	}
@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 	}()
 
 	defer func() {
-		if err := s.Close(context.Background()); err != nil {
+		if err := s.Close(); err != nil {
 			slog.Error("error closing server", "err", err)
 		}
 	}()

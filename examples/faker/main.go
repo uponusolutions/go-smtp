@@ -17,7 +17,7 @@ func main() {
 
 	s := tester.Standard()
 
-	listen, err := s.Listen(ctx)
+	listen, err := s.Listen()
 	if err != nil {
 		slog.Error("error listen server", slog.Any("error", err))
 	}
@@ -31,7 +31,7 @@ func main() {
 	}()
 
 	defer func() {
-		if err := s.Close(ctx); err != nil {
+		if err := s.Close(); err != nil {
 			slog.Error("error closing server", slog.Any("error", err))
 		}
 	}()

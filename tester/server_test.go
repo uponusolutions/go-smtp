@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	listen, err := srv.Listen(ctx)
+	listen, err := srv.Listen()
 	if err != nil {
 		slog.Error("error listen server", slog.Any("error", err))
 	}
@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 
 	exitVal := m.Run()
 
-	if err := srv.Close(ctx); err != nil {
+	if err := srv.Close(); err != nil {
 		slog.Error("error closing server", slog.Any("error", err))
 	}
 

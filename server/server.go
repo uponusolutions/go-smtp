@@ -129,7 +129,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 // to handle requests on incoming connections.
 //
 // If s.Addr is blank and LMTP is disabled, ":smtp" is used.
-func (s *Server) Listen(_ context.Context) (net.Listener, error) {
+func (s *Server) Listen() (net.Listener, error) {
 	network := s.network
 	if network == "" {
 		network = "tcp"
@@ -191,7 +191,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 //
 // Close returns any error returned from closing the server's underlying
 // listener(s).
-func (s *Server) Close(_ context.Context) error {
+func (s *Server) Close() error {
 	select {
 	case <-s.done:
 		return ErrServerClosed
