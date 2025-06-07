@@ -3,9 +3,7 @@
 
 name: Go
 
-on:
-  push:
-    branches: [ "master" ]
+on: [push]
 
 permissions:
   contents: write
