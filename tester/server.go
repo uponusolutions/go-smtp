@@ -21,10 +21,10 @@ import (
 	"github.com/uponusolutions/go-smtp/server"
 )
 
-// Standard returns a standard SMTP server listening on :2525
+// Standard returns a standard SMTP server listening on a random Port.
 func Standard() *server.Server {
 	return server.New(
-		server.WithAddr(":2525"),
+		server.WithAddr(":0"),
 		server.WithReadTimeout(10*time.Second),
 		server.WithWriteTimeout(10*time.Second),
 		server.WithMaxMessageBytes(1024*1024),

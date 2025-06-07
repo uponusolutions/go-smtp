@@ -7,7 +7,6 @@ import (
 	"net/smtp"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/uponusolutions/go-smtp/tester"
 )
@@ -18,8 +17,15 @@ func main() {
 
 	s := tester.Standard()
 
+	listen, err := s.Listen(ctx)
+	if err != nil {
+		slog.Error("error listen server", slog.Any("error", err))
+	}
+
+	addr := listen.Addr().String()
+
 	go func() {
-		if err := s.ListenAndServe(ctx); err != nil {
+		if err := s.Serve(ctx, listen); err != nil {
 			slog.Error("smtp server response %s", slog.Any("error", err))
 		}
 	}()
@@ -30,14 +36,11 @@ func main() {
 		}
 	}()
 
-	// Wait a second to let the server come up.
-	time.Sleep(time.Second)
-
 	// Send email.
 	from := "alice@i.com"
 	to := []string{"bob@e.com", "mal@b.com"}
 	msg := []byte("Test\r\n")
-	if err := smtp.SendMail(s.Address(), nil, from, to, msg); err != nil {
+	if err := smtp.SendMail(addr, nil, from, to, msg); err != nil {
 		panic(err)
 	}
 

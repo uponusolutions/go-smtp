@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"testing"
-	"time"
 
 	s "net/smtp"
 
@@ -16,18 +15,24 @@ import (
 
 var srv = Standard()
 
+var addr string
+
 func TestMain(m *testing.M) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	listen, err := srv.Listen(ctx)
+	if err != nil {
+		slog.Error("error listen server", slog.Any("error", err))
+	}
+
+	addr = listen.Addr().String()
+
 	go func() {
-		if err := srv.ListenAndServe(ctx); err != nil {
+		if err := srv.Serve(ctx, listen); err != nil {
 			slog.Error("smtp server response %s", slog.Any("error", err))
 		}
 	}()
-
-	// Wait sec to let server come up.
-	time.Sleep(time.Second)
 
 	exitVal := m.Run()
 
@@ -59,7 +64,7 @@ func TestSendMail(t *testing.T) {
 	data := []byte("Test mail\r\n")
 
 	// Send without TLS.
-	require.Nil(t, s.SendMail(srv.Address(), nil, from, recipients, data))
+	require.Nil(t, s.SendMail(addr, nil, from, recipients, data))
 
 	m, found := GetBackend(srv).Load(from, recipients)
 	assert.True(t, found)

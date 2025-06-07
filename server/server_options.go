@@ -80,11 +80,6 @@ type Server struct {
 	conns     map[*Conn]struct{}
 }
 
-// Address returns the servers address.
-func (s *Server) Address() string {
-	return s.addr
-}
-
 // Backend returns the servers Backend.
 func (s *Server) Backend() Backend {
 	return s.backend

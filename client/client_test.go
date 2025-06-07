@@ -17,9 +17,18 @@ import (
 
 var s = tester.Standard()
 
+var addr string
+
 func TestMain(m *testing.M) {
+	listen, err := s.Listen(context.Background())
+	if err != nil {
+		slog.Error("error listen server", slog.Any("error", err))
+	}
+
+	addr = listen.Addr().String()
+
 	go func() {
-		if err := s.ListenAndServe(context.Background()); err != nil {
+		if err := s.Serve(context.Background(), listen); err != nil {
 			log.Printf("smtp server response %s", err)
 		}
 	}()
@@ -39,7 +48,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestClient_SendMail(t *testing.T) {
-	c := NewClient(WithServerAddress("127.0.0.1:2525"))
+	c := NewClient(WithServerAddress(addr))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -67,13 +76,13 @@ func TestClient_SendMail(t *testing.T) {
 }
 
 func TestClient_InvalidLocalName(t *testing.T) {
-	c := NewClient(WithServerAddress("127.0.0.1:2525"), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
+	c := NewClient(WithServerAddress(addr), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
 	require.NotNil(t, c)
 	require.ErrorContains(t, c.Connect(context.Background()), "smtp: the local name must not contain CR or LF")
 }
 
 func TestClient_Send(t *testing.T) {
-	c := NewClient(WithServerAddress("127.0.0.1:2525"))
+	c := NewClient(WithServerAddress(addr))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
