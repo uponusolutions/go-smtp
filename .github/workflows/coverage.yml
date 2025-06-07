@@ -72,10 +72,8 @@ jobs:
           comment-tag: coverage-report
           pr-number: ${{ env.pull_request_id }}
           message: |
-            go-test-coverage report:
-            ``` 
-            ${{ fromJSON(steps.coverage.outputs.report) }}```
-      
+            go-test-coverage report: ```${{ fromJSON(steps.coverage.outputs.report) }}```
+
     - name: "finally check coverage"
       if: steps.coverage.outcome == 'failure'
       shell: bash
