@@ -208,7 +208,8 @@ func (s *Server) Close() error {
 	}
 
 	for conn := range s.conns {
-		conn.Close(errors.New("close called"))
+		// directly close underlying connection
+		_ = conn.conn.Close()
 	}
 	s.locker.Unlock()
 
