@@ -5,11 +5,12 @@ import (
 	"strings"
 )
 
+// EnhancedCode is the SMTP enhanced code
 type EnhancedCode [3]int
 
-// SMTPStatus specifies the error code, enhanced error code (if any) and
+// Status specifies the error code, enhanced error code (if any) and
 // message returned by the server.
-type SMTPStatus struct {
+type Status struct {
 	Code         int
 	EnhancedCode EnhancedCode
 	Message      string
@@ -28,15 +29,17 @@ var NoEnhancedCode = EnhancedCode{-1, -1, -1}
 // be used (X is derived from error code).
 var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
 
-func NewStatus(code int, enhCode EnhancedCode, msg ...string) *SMTPStatus {
-	return &SMTPStatus{
+// NewStatus creates a new status.
+func NewStatus(code int, enhCode EnhancedCode, msg ...string) *Status {
+	return &Status{
 		Code:         code,
 		EnhancedCode: enhCode,
 		Message:      strings.Join(msg, "\n"),
 	}
 }
 
-func (err *SMTPStatus) Error() string {
+// Error returns a error string.
+func (err *Status) Error() string {
 	s := fmt.Sprintf("SMTP error %03d", err.Code)
 	if err.Message != "" {
 		s += ": " + err.Message
@@ -44,69 +47,80 @@ func (err *SMTPStatus) Error() string {
 	return s
 }
 
-func (err *SMTPStatus) Positive() bool {
+// Positive returns true if the status code is 2xx.
+func (err *Status) Positive() bool {
 	return err.Code/100 == 2
 }
 
-func (err *SMTPStatus) Temporary() bool {
+// Temporary returns true if the status code is 4xx.
+func (err *Status) Temporary() bool {
 	return err.Code/100 == 4
 }
 
-func (err *SMTPStatus) Permanent() bool {
+// Permanent returns true if the status code is 5xx.
+func (err *Status) Permanent() bool {
 	return err.Code/100 == 5
 }
 
 var (
-	// ErrDataReset is returned by Reader pased to Data function if client does not
+	// Reset is returned by Reader pased to Data function if client does not
 	// send another BDAT command and instead issues RSET command.
-	Reset = &SMTPStatus{
+	Reset = &Status{
 		Code:         250,
 		EnhancedCode: EnhancedCode{2, 0, 0},
 		Message:      "Session reset",
 	}
-	VRFY = &SMTPStatus{
+	// VRFY default return.
+	VRFY = &Status{
 		Code:         252,
 		EnhancedCode: EnhancedCode{2, 5, 0},
 		Message:      "Cannot VRFY user, but will accept message",
 	}
-	Noop = &SMTPStatus{
+	// Noop default return.
+	Noop = &Status{
 		Code:         250,
 		EnhancedCode: EnhancedCode{2, 0, 0},
 		Message:      "I have successfully done nothing",
 	}
-	// ErrDataReset is returned by Reader pased to Data function if client does not
+	// Quit is returned by Reader pased to Data function if client does not
 	// send another BDAT command and instead issues QUIT command.
-	Quit = &SMTPStatus{
+	Quit = &Status{
 		Code:         221,
 		EnhancedCode: EnhancedCode{2, 0, 0},
 		Message:      "Bye",
 	}
-	ErrConnection = &SMTPStatus{
+	// ErrConnection is returned if a connection error occurs.
+	ErrConnection = &Status{
 		Code:         421,
 		EnhancedCode: EnhancedCode{4, 4, 0},
 		Message:      "Connection error, sorry",
 	}
-	ErrDataTooLarge = &SMTPStatus{
+	// ErrDataTooLarge is returned if the maximum message size is exceeded.
+	ErrDataTooLarge = &Status{
 		Code:         552,
 		EnhancedCode: EnhancedCode{5, 3, 4},
 		Message:      "Maximum message size exceeded",
 	}
-	ErrAuthFailed = &SMTPStatus{
+	// ErrAuthFailed is returned if the authentication failed.
+	ErrAuthFailed = &Status{
 		Code:         535,
 		EnhancedCode: EnhancedCode{5, 7, 8},
 		Message:      "Authentication failed",
 	}
-	ErrAuthRequired = &SMTPStatus{
+	// ErrAuthRequired is returned if the authentication is required.
+	ErrAuthRequired = &Status{
 		Code:         502,
 		EnhancedCode: EnhancedCode{5, 7, 0},
 		Message:      "Please authenticate first",
 	}
-	ErrAuthUnsupported = &SMTPStatus{
+	// ErrAuthUnsupported is returned if the authentication is not supported.
+	ErrAuthUnsupported = &Status{
 		Code:         502,
 		EnhancedCode: EnhancedCode{5, 7, 0},
 		Message:      "Authentication not supported",
 	}
-	ErrAuthUnknownMechanism = &SMTPStatus{
+	// ErrAuthUnknownMechanism is returned if the authentication unsupported..
+	ErrAuthUnknownMechanism = &Status{
 		Code:         504,
 		EnhancedCode: EnhancedCode{5, 7, 4},
 		Message:      "Unsupported authentication mechanism",

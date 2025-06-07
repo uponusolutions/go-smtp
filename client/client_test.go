@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"log"
 	"log/slog"
@@ -9,16 +10,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davrux/go-smtptester"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uponusolutions/go-smtp/tester"
 )
 
-var s = smtptester.Standard()
+var s = tester.Standard()
+
+var addr string
 
 func TestMain(m *testing.M) {
+	listen, err := s.Listen()
+	if err != nil {
+		slog.Error("error listen server", slog.Any("error", err))
+	}
+
+	addr = listen.Addr().String()
+
 	go func() {
-		if err := s.ListenAndServe(); err != nil {
+		if err := s.Serve(context.Background(), listen); err != nil {
 			log.Printf("smtp server response %s", err)
 		}
 	}()
@@ -38,10 +48,10 @@ func TestMain(m *testing.M) {
 }
 
 func TestClient_SendMail(t *testing.T) {
-	c := NewClient(WithServerAddress("127.0.0.1:2525"), WithUseTLS(false), WithTLSConfig(nil))
+	c := NewClient(WithServerAddress(addr))
 	require.NotNil(t, c)
 
-	require.NoError(t, c.Connect())
+	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
 		assert.NoError(t, c.Close())
 
@@ -55,21 +65,27 @@ func TestClient_SendMail(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	err := c.SendMail(in, from, recipients)
+	_, _, err := c.SendMail(from, recipients, in)
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := smtptester.GetBackend(s).Load(from, recipients)
+	m, found := tester.GetBackend(s).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
+func TestClient_InvalidLocalName(t *testing.T) {
+	c := NewClient(WithServerAddress(addr), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
+	require.NotNil(t, c)
+	require.ErrorContains(t, c.Connect(context.Background()), "smtp: the local name must not contain CR or LF")
+}
+
 func TestClient_Send(t *testing.T) {
-	c := NewClient(WithServerAddress("127.0.0.1:2525"), WithTLSConfig(nil))
+	c := NewClient(WithServerAddress(addr))
 	require.NotNil(t, c)
 
-	require.NoError(t, c.Connect())
+	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
 		assert.NoError(t, c.Close())
 
@@ -85,18 +101,20 @@ func TestClient_Send(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := smtptester.GetBackend(s).Load(from, recipients)
+	m, found := tester.GetBackend(s).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
-var server = "" // ends with .mail.protection.outlook.com:25
-var priv = ``
-var certs = ``
-var eml = ``
-var from = ""
-var recipients = []string{}
+var (
+	server     = "" // ends with .mail.protection.outlook.com:25
+	priv       = ``
+	certs      = ``
+	eml        = ``
+	from       = ""
+	recipients = []string{}
+)
 
 func TestClient_SendMicrosoft(t *testing.T) {
 	t.Skip()
@@ -105,10 +123,10 @@ func TestClient_SendMicrosoft(t *testing.T) {
 
 	c := NewClient(WithServerAddress(server), WithTLSConfig(&tls.Config{
 		Certificates: []tls.Certificate{cert},
-	}), WithUseTLS(true))
+	}), WithSecurity(SecurityTLS))
 	require.NotNil(t, c)
 
-	require.NoError(t, c.Connect())
+	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
 		assert.NoError(t, c.Close())
 		assert.NoError(t, c.Quit())

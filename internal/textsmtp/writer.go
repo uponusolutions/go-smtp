@@ -13,10 +13,12 @@ import (
 	"io"
 )
 
-var crnl = []byte{'\r', '\n'}
-var dotcrnl = []byte{'.', '\r', '\n'}
+var (
+	crnl    = []byte{'\r', '\n'}
+	dotcrnl = []byte{'.', '\r', '\n'}
+)
 
-// DotWriter returns a writer that can be used to write a dot-encoding to w.
+// NewDotWriter returns a writer that can be used to write a dot-encoding to w.
 // It takes care of inserting leading dots when necessary,
 // translating line-ending \n into \r\n, and adding the final .\r\n line
 // when the DotWriter is closed. The caller should close the
@@ -59,7 +61,7 @@ func (d *dotWriter) Write(b []byte) (n int, err error) {
 		if d.state == wstateBeginLine && p[0] == '.' {
 			err = bw.WriteByte('.')
 			if err != nil {
-				return
+				return n, err
 			}
 		}
 
@@ -74,14 +76,14 @@ func (d *dotWriter) Write(b []byte) (n int, err error) {
 			}
 
 			if _, err = bw.Write(p); err != nil {
-				return
+				return n, err
 			}
 		} else if d.state == wstateCR && pLen == 1 {
 			// if b isn't nil and pLen is 1, then it must be a \n
 			// as \r was send before, just write crnl
 			d.state = wstateBeginLine
 			if err = bw.WriteByte('\n'); err != nil {
-				return
+				return n, err
 			}
 		} else {
 			// line is ending
@@ -89,37 +91,43 @@ func (d *dotWriter) Write(b []byte) (n int, err error) {
 			if pLen >= 2 && p[pLen-2] == '\r' {
 				// fastpath if line ending is correct \r\n
 				if _, err = bw.Write(p); err != nil {
-					return
+					return n, err
 				}
 			} else {
 				// data + crnl
 				if _, err = bw.Write(p[:pLen-1]); err != nil {
-					return
+					return n, err
 				}
 				if _, err = bw.Write(crnl); err != nil {
-					return
+					return n, err
 				}
 			}
 		}
 
 		n += pLen
 	}
-	return
+	return n, err
 }
 
 func (d *dotWriter) Close() error {
 	bw := d.W
 	switch d.state {
 	default:
-		bw.WriteByte('\r')
+		if err := bw.WriteByte('\r'); err != nil {
+			return err
+		}
 		fallthrough
 	case wstateCR:
 		// normally \r gets ignored if no \n follows, but at closing we just take it as a line break
 		// same behavior as original textproto
-		bw.WriteByte('\n')
+		if err := bw.WriteByte('\n'); err != nil {
+			return err
+		}
 		fallthrough
 	case wstateBeginLine:
-		bw.Write(dotcrnl)
+		if _, err := bw.Write(dotcrnl); err != nil {
+			return err
+		}
 	}
 	return bw.Flush()
 }

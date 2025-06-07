@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -13,6 +14,7 @@ func CutPrefixFold(s, prefix string) (string, bool) {
 	return s[len(prefix):], true
 }
 
+// Cmd parses a line and returns the command, argument or an error.
 func Cmd(line string) (cmd string, arg string, err error) {
 	line = strings.TrimRight(line, "\r\n")
 
@@ -40,7 +42,7 @@ func Cmd(line string) (cmd string, arg string, err error) {
 	return strings.ToUpper(line[0:4]), strings.TrimSpace(line[5:]), nil
 }
 
-// Takes the arguments proceeding a command and files them
+// Args takes the arguments proceeding a command and files them
 // into a map[string]string after uppercasing each key.  Sample arg
 // string:
 //
@@ -63,13 +65,14 @@ func Args(s string) (map[string]string, error) {
 	return argMap, nil
 }
 
+// HelloArgument parses helo argument
 func HelloArgument(arg string) (string, error) {
 	domain := arg
 	if idx := strings.IndexRune(arg, ' '); idx >= 0 {
 		domain = arg[:idx]
 	}
 	if domain == "" {
-		return "", fmt.Errorf("invalid domain")
+		return "", errors.New("invalid domain")
 	}
 	return domain, nil
 }
@@ -107,13 +110,13 @@ func (p *Parser) expectByte(ch byte) error {
 	if !p.acceptByte(ch) {
 		if len(p.S) == 0 {
 			return fmt.Errorf("expected '%v', got EOF", string(ch))
-		} else {
-			return fmt.Errorf("expected '%v', got '%v'", string(ch), string(p.S[0]))
 		}
+		return fmt.Errorf("expected '%v', got '%v'", string(ch), string(p.S[0]))
 	}
 	return nil
 }
 
+// ReversePath parses a recipient.
 func (p *Parser) ReversePath() (string, error) {
 	if strings.HasPrefix(p.S, "<>") {
 		p.S = strings.TrimPrefix(p.S, "<>")
@@ -122,12 +125,13 @@ func (p *Parser) ReversePath() (string, error) {
 	return p.Path()
 }
 
+// Path parses a recipient.
 func (p *Parser) Path() (string, error) {
 	hasBracket := p.acceptByte('<')
 	if p.acceptByte('@') {
 		i := strings.IndexByte(p.S, ':')
 		if i < 0 {
-			return "", fmt.Errorf("malformed a-d-l")
+			return "", errors.New("malformed a-d-l")
 		}
 		p.S = p.S[i+1:]
 	}
@@ -143,12 +147,13 @@ func (p *Parser) Path() (string, error) {
 	return mbox, nil
 }
 
+// Mailbox parses a mailbox.
 func (p *Parser) Mailbox() (string, error) {
 	localPart, err := p.localPart()
 	if err != nil {
 		return "", fmt.Errorf("in local-part: %v", err)
 	} else if localPart == "" {
-		return "", fmt.Errorf("local-part is empty")
+		return "", errors.New("local-part is empty")
 	}
 
 	if err := p.expectByte('@'); err != nil {
@@ -172,7 +177,7 @@ func (p *Parser) Mailbox() (string, error) {
 	}
 
 	if strings.HasSuffix(sb.String(), "@") {
-		return "", fmt.Errorf("domain is empty")
+		return "", errors.New("domain is empty")
 	}
 
 	return sb.String(), nil
@@ -191,7 +196,7 @@ func (p *Parser) localPart() (string, error) {
 				return sb.String(), nil
 			}
 			if !ok {
-				return "", fmt.Errorf("malformed quoted-string")
+				return "", errors.New("malformed quoted-string")
 			}
 			sb.WriteByte(ch)
 		}
@@ -205,7 +210,7 @@ func (p *Parser) localPart() (string, error) {
 			case '@':
 				return sb.String(), nil
 			case '(', ')', '<', '>', '[', ']', ':', ';', '\\', ',', '"', ' ', '\t':
-				return "", fmt.Errorf("malformed dot-string")
+				return "", errors.New("malformed dot-string")
 			}
 			p.readByte()
 			sb.WriteByte(ch)

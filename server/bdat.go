@@ -46,7 +46,6 @@ func bdatArg(arg string) (int64, bool, error) {
 
 func (d *bdat) Read(b []byte) (int, error) {
 	if d.size == 0 {
-
 		if d.last {
 			return 0, io.EOF
 		}

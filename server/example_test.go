@@ -5,17 +5,24 @@
 package server_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/uponusolutions/go-sasl"
-	"github.com/uponusolutions/go-smtp/internal/client"
+	"github.com/uponusolutions/go-smtp/client"
 )
 
 func ExampleDial() {
 	// Connect to the remote SMTP server.
-	c, err := client.Dial("mail.example.com:25")
+
+	c := client.NewClient(
+		client.WithServerAddress("mail.example.com:25"),
+		client.WithSecurity(client.SecurityPlain),
+	)
+
+	err := c.Connect(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,18 +64,23 @@ var (
 	recipients = []string{"foo@example.com"}
 )
 
-func ExampleSendMail_plainAuth() {
+func Example_plainAuth() {
 	// hostname is used by PlainAuth to validate the TLS certificate.
 	hostname := "mail.example.com"
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
-	err := client.SendMail(hostname+":25", auth, from, recipients, msg)
+	c := client.NewClient(
+		client.WithServerAddress(hostname+":25"),
+		client.WithSASLClient(auth),
+	)
+
+	_, _, err := c.SendMail(from, recipients, msg)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func ExampleSendMail() {
+func Example() {
 	// Set up authentication information.
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
@@ -79,7 +91,13 @@ func ExampleSendMail() {
 		"Subject: discount Gophers!\r\n" +
 		"\r\n" +
 		"This is the email body.\r\n")
-	err := client.SendMail("mail.example.com:25", auth, "sender@example.org", to, msg)
+
+	c := client.NewClient(
+		client.WithServerAddress("mail.example.com:25"),
+		client.WithSASLClient(auth),
+	)
+
+	_, _, err := c.SendMail("sender@example.org", to, msg)
 	if err != nil {
 		log.Fatal(err)
 	}

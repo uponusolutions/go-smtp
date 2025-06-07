@@ -9,9 +9,10 @@ import (
 	"time"
 )
 
+// ErrServerClosed occurs if a server is already closed.
 var ErrServerClosed = errors.New("smtp: server already closed")
 
-// A SMTP server.
+// Server implements a SMTP server.
 type Server struct {
 	// The type of network, "tcp" or "unix".
 	network string
@@ -79,11 +80,6 @@ type Server struct {
 	conns     map[*Conn]struct{}
 }
 
-// Address returns the servers address.
-func (s *Server) Address() string {
-	return s.addr
-}
-
 // Backend returns the servers Backend.
 func (s *Server) Backend() Backend {
 	return s.backend
@@ -93,7 +89,7 @@ func (s *Server) Backend() Backend {
 type Option func(*Server)
 
 // New creates a new SMTP server.
-func NewServer(opts ...Option) *Server {
+func New(opts ...Option) *Server {
 	s := &Server{
 		done:  make(chan struct{}, 1),
 		conns: make(map[*Conn]struct{}),

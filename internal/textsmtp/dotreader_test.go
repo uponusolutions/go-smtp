@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package textsmtp
+package textsmtp_test
 
 import (
 	"bufio"
@@ -13,12 +13,14 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
 func TestDotReader(t *testing.T) {
 	t.Run("Decode", func(t *testing.T) {
 		buf := bufio.NewReader(strings.NewReader("dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n"))
-		r := NewDotReader(buf, 0)
+		r := textsmtp.NewDotReader(buf, 0)
 		b, err := io.ReadAll(r)
 		want := []byte("dotlines\r\nfoo\r\n.bar\n...baz\nquux\r\n\r\n")
 
@@ -26,7 +28,7 @@ func TestDotReader(t *testing.T) {
 			t.Fatalf("ReadDotBytes: %q, %v", b, err)
 		}
 
-		r = NewDotReader(buf, 0)
+		r = textsmtp.NewDotReader(buf, 0)
 		b, err = io.ReadAll(r)
 		want = []byte("anot.her\n")
 		if !reflect.DeepEqual(b, want) || err != io.ErrUnexpectedEOF {
@@ -39,7 +41,7 @@ func BenchmarkDotReader(b *testing.B) {
 	const size = 4 * 1024 * 1024
 	var buf bytes.Buffer
 	w := legacy.NewWriter(bufio.NewWriter(&buf)).DotWriter()
-	io.Copy(w, io.LimitReader(rand.Reader, size))
+	_, _ = io.Copy(w, io.LimitReader(rand.Reader, size))
 	data := buf.Bytes()
 
 	b.Run("Legacy", func(b *testing.B) {
@@ -47,7 +49,7 @@ func BenchmarkDotReader(b *testing.B) {
 		b.SetBytes(size)
 		for b.Loop() {
 			r := legacy.NewReader(bufio.NewReader(bytes.NewReader(data))).DotReader()
-			io.Copy(io.Discard, r)
+			_, _ = io.Copy(io.Discard, r)
 		}
 	})
 
@@ -55,8 +57,8 @@ func BenchmarkDotReader(b *testing.B) {
 		b.ResetTimer()
 		b.SetBytes(size)
 		for b.Loop() {
-			r := NewDotReader(bufio.NewReader(bytes.NewReader(data)), 0)
-			io.Copy(io.Discard, r)
+			r := textsmtp.NewDotReader(bufio.NewReader(bytes.NewReader(data)), 0)
+			_, _ = io.Copy(io.Discard, r)
 		}
 	})
 }

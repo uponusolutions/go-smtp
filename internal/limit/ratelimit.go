@@ -8,18 +8,21 @@ import (
 // ErrRatelimit is returned if limit reached and strict mode is enabled.
 var ErrRatelimit = errors.New("rate limit occured")
 
+// RatelimitConfig configures a rate limit.
 type RatelimitConfig struct {
 	Rate     int
 	Duration time.Duration
 	Strict   bool
 }
 
+// Ratelimit is used e.g. to limit the calls to a function.
 type Ratelimit struct {
 	start  time.Time
 	count  int
 	config *RatelimitConfig
 }
 
+// New creates a new rate limit.
 func New(config *RatelimitConfig) *Ratelimit {
 	return &Ratelimit{
 		config: config,
@@ -28,6 +31,7 @@ func New(config *RatelimitConfig) *Ratelimit {
 	}
 }
 
+// Take returns when it is allowed to do something again.
 func (c *Ratelimit) Take() error {
 	c.count++
 	if c.count <= c.config.Rate {

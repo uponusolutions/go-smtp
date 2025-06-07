@@ -10,7 +10,7 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-// A SMTP server backend.
+// Backend is a SMTP server backend.
 type Backend interface {
 	NewSession(ctx context.Context, c *Conn) (context.Context, Session, error)
 }
