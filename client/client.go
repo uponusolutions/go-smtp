@@ -33,9 +33,9 @@ const (
 // It sends one or more mails to a SMTP server over a single connection.
 // TODO: Add context support.
 type Client struct {
-	ServerAddress string // Format address:port.
-	TLSConfig     *tls.Config
-	SASLClient    sasl.Client
+	serverAddress string // Format address:port.
+	tlsConfig     *tls.Config
+	saslClient    sasl.Client
 
 	// keep a reference to the connection so it can be used to create a TLS
 	// connection later
@@ -57,10 +57,14 @@ type Client struct {
 	// Time to wait for responses after final dot.
 	submissionTimeout time.Duration
 
-	// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
+	// Max line length, defaults to 2000
 	maxLineLength int
-	readerSize    int
-	writerSize    int
+
+	// Reader size
+	readerSize int
+
+	// Writer size
+	writerSize int
 
 	// Logger for all network activity.
 	debug io.Writer
@@ -68,7 +72,7 @@ type Client struct {
 	// Defines the connection is secured
 	security Security
 
-	options *smtp.MailOptions
+	mailOptions smtp.MailOptions
 }
 
 // NewClient returns a new SMTP client.
@@ -76,7 +80,7 @@ type Client struct {
 // When not set via options a default tls.Config is used.
 func NewClient(opts ...Option) *Client {
 	c := &Client{
-		ServerAddress: "127.0.0.1:25",
+		serverAddress: "127.0.0.1:25",
 
 		security: SecurityPreferStartTLS,
 
@@ -94,9 +98,18 @@ func NewClient(opts ...Option) *Client {
 		// 30 seconds, very generous
 		dialTimeout: 30 * time.Second,
 
+		// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
 		maxLineLength: 2000,
-		readerSize:    4096,
-		writerSize:    4096,
+
+		// Reader buffer of textproto
+		readerSize: 4096,
+		// Writer buffer of textproto
+		writerSize: 4096,
+
+		// UTF8 is enabled by default but gets disabled if the server doesn't support it
+		mailOptions: smtp.MailOptions{
+			UTF8: true,
+		},
 	}
 
 	for _, o := range opts {
@@ -112,7 +125,42 @@ type Option func(c *Client)
 // WithServerAddress Sets the SMTP servers address.
 func WithServerAddress(addr string) Option {
 	return func(c *Client) {
-		c.ServerAddress = addr
+		c.serverAddress = addr
+	}
+}
+
+// WithMailOptions sets the mail options.
+func WithMailOptions(mailOptions smtp.MailOptions) Option {
+	return func(c *Client) {
+		c.mailOptions = mailOptions
+	}
+}
+
+// WithSubmissionTimeout sets the submission timeout.
+func WithSubmissionTimeout(submissionTimeout time.Duration) Option {
+	return func(c *Client) {
+		c.submissionTimeout = submissionTimeout
+	}
+}
+
+// WithCommandTimeout sets the command timeout.
+func WithCommandTimeout(commandTimeout time.Duration) Option {
+	return func(c *Client) {
+		c.commandTimeout = commandTimeout
+	}
+}
+
+// WithDialTimeout sets the dial timeout.
+func WithDialTimeout(dialTimeout time.Duration) Option {
+	return func(c *Client) {
+		c.dialTimeout = dialTimeout
+	}
+}
+
+// WithTlsHandshakeTimeout sets tls handshake timeout.
+func WithTlsHandshakeTimeout(tlsHandshakeTimeout time.Duration) Option {
+	return func(c *Client) {
+		c.tlsHandshakeTimeout = tlsHandshakeTimeout
 	}
 }
 
@@ -126,7 +174,7 @@ func WithLocalName(localName string) Option {
 // WithTLSConfig sets the TLS config.
 func WithTLSConfig(cfg *tls.Config) Option {
 	return func(c *Client) {
-		c.TLSConfig = cfg
+		c.tlsConfig = cfg
 	}
 }
 
@@ -140,7 +188,28 @@ func WithSecurity(security Security) Option {
 // WithSASLClient sets the SASL client.
 func WithSASLClient(cl sasl.Client) Option {
 	return func(c *Client) {
-		c.SASLClient = cl
+		c.saslClient = cl
+	}
+}
+
+// WithMaxLineLength sets the max line length.
+func WithMaxLineLength(maxLineLength int) Option {
+	return func(c *Client) {
+		c.maxLineLength = maxLineLength
+	}
+}
+
+// WithReaderSize sets the reader size.
+func WithReaderSize(readerSize int) Option {
+	return func(c *Client) {
+		c.readerSize = readerSize
+	}
+}
+
+// WithWriterSize sets the reader size.
+func WithWriterSize(writerSize int) Option {
+	return func(c *Client) {
+		c.writerSize = writerSize
 	}
 }
 
@@ -174,7 +243,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 
 	c.setConn(conn)
-	c.serverName, _, _ = net.SplitHostPort(c.ServerAddress)
+	c.serverName, _, _ = net.SplitHostPort(c.serverAddress)
 
 	if err = c.greet(); err != nil {
 		return err
@@ -202,17 +271,19 @@ func (c *Client) Connect(ctx context.Context) error {
 }
 
 func (c *Client) authAndUTF8() error {
-	ok, _ := c.Extension("AUTH")
-	if ok && c.SASLClient != nil {
-		if err := c.Auth(c.SASLClient); err != nil {
+	// Authenticate if authentication is possible and sasl client available.
+	if ok, _ := c.Extension("AUTH"); ok && c.saslClient != nil {
+		if err := c.Auth(c.saslClient); err != nil {
 			_ = c.Quit()
 			return err
 		}
 	}
 
-	c.options = &smtp.MailOptions{}
-	if ok, _ := c.Extension("SMTPUTF8"); ok {
-		c.options.UTF8 = true
+	// Disable UTF8 if not supported by the server.
+	if c.mailOptions.UTF8 {
+		if ok, _ := c.Extension("SMTPUTF8"); !ok {
+			c.mailOptions.UTF8 = false
+		}
 	}
 
 	return nil
@@ -228,7 +299,7 @@ func (c *Client) prepare(from string, rcpt []string) (*DataCloser, error) {
 	}
 
 	// MAIL FROM:
-	if err := c.Mail(from, c.options); err != nil {
+	if err := c.Mail(from, &c.mailOptions); err != nil {
 		return nil, err
 	}
 
@@ -277,7 +348,7 @@ func (c *Client) SendMail(from string, rcpt []string, in io.Reader) (code int, m
 
 // SetXOORG set xoorg support
 func (c *Client) SetXOORG(xoorg *string) {
-	c.options.XOORG = xoorg
+	c.mailOptions.XOORG = xoorg
 }
 
 // Send implements enmime.Sender interface.
