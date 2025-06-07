@@ -17,7 +17,7 @@ import (
 func ExampleDial() {
 	// Connect to the remote SMTP server.
 
-	c := client.NewClient(
+	c := client.New(
 		client.WithServerAddress("mail.example.com:25"),
 		client.WithSecurity(client.SecurityPlain),
 	)
@@ -69,7 +69,7 @@ func Example_plainAuth() {
 	hostname := "mail.example.com"
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
-	c := client.NewClient(
+	c := client.New(
 		client.WithServerAddress(hostname+":25"),
 		client.WithSASLClient(auth),
 	)
@@ -92,7 +92,7 @@ func Example() {
 		"\r\n" +
 		"This is the email body.\r\n")
 
-	c := client.NewClient(
+	c := client.New(
 		client.WithServerAddress("mail.example.com:25"),
 		client.WithSASLClient(auth),
 	)

@@ -48,7 +48,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestClient_SendMail(t *testing.T) {
-	c := NewClient(WithServerAddress(addr))
+	c := New(WithServerAddress(addr))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -76,13 +76,19 @@ func TestClient_SendMail(t *testing.T) {
 }
 
 func TestClient_InvalidLocalName(t *testing.T) {
-	c := NewClient(WithServerAddress(addr), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
+	c := New(WithServerAddress(addr), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
 	require.NotNil(t, c)
 	require.ErrorContains(t, c.Connect(context.Background()), "smtp: the local name must not contain CR or LF")
 }
 
+func TestClient_ServerAddress(t *testing.T) {
+	c := New(WithServerAddress("test"))
+	require.NotNil(t, c)
+	require.Equal(t, "test", c.ServerAddress())
+}
+
 func TestClient_Send(t *testing.T) {
-	c := NewClient(WithServerAddress(addr))
+	c := New(WithServerAddress(addr))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -121,7 +127,7 @@ func TestClient_SendMicrosoft(t *testing.T) {
 	cert, err := tls.X509KeyPair([]byte(certs), []byte(priv))
 	require.NoError(t, err)
 
-	c := NewClient(WithServerAddress(server), WithTLSConfig(&tls.Config{
+	c := New(WithServerAddress(server), WithTLSConfig(&tls.Config{
 		Certificates: []tls.Certificate{cert},
 	}), WithSecurity(SecurityTLS))
 	require.NotNil(t, c)

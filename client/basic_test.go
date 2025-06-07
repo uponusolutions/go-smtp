@@ -33,7 +33,7 @@ func TestClientAuthTrimSpace(t *testing.T) {
 
 	fake := tester.NewFakeConn(server, wrote)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 	require.Error(t, c.Auth(toServerNoRespAuth{}))
 	require.NoError(t, c.Close())
@@ -167,7 +167,7 @@ func TestBasic_smtp(t *testing.T) {
 	wrote := &bytes.Buffer{}
 	fake := tester.NewFakeConn(faultyServer, wrote)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 
 	require.NoError(t, c.greet())
@@ -245,7 +245,7 @@ func TestClient_TooLongLine(t *testing.T) {
 	wrote := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(pr, wrote)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 
 	require.NoError(t, c.greet())
@@ -309,7 +309,7 @@ func TestNewClient(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
@@ -351,7 +351,7 @@ func TestNewClient2(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
@@ -405,7 +405,7 @@ func HelloCase(t *testing.T, i int) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
@@ -515,7 +515,7 @@ func TestHello_421Response(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
@@ -574,7 +574,7 @@ func TestAuthFailed(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
@@ -630,7 +630,7 @@ func TestTLSConnState(t *testing.T) {
 		defer close(clientDone)
 		cfg := &tls.Config{ServerName: "example.com", RootCAs: testRootCAs}
 
-		c := NewClient(
+		c := New(
 			WithServerAddress(ln.Addr().String()),
 			WithTLSConfig(cfg),
 			WithSecurity(SecurityStartTLS),
@@ -790,7 +790,7 @@ func TestClientXtext(t *testing.T) {
 	wrote := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), wrote)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 
 	c.ext = map[string]string{"AUTH": "PLAIN", "DSN": ""}
@@ -832,7 +832,7 @@ func TestClientDSN(t *testing.T) {
 	wrote := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), wrote)
 
-	c := NewClient()
+	c := New()
 	c.setConn(fake)
 
 	c.ext = map[string]string{"DSN": ""}

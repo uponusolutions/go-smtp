@@ -75,10 +75,10 @@ type Client struct {
 	mailOptions smtp.MailOptions
 }
 
-// NewClient returns a new SMTP client.
+// New returns a new SMTP client.
 // When not set via options the address 127.0.0.1:25 is used.
 // When not set via options a default tls.Config is used.
-func NewClient(opts ...Option) *Client {
+func New(opts ...Option) *Client {
 	c := &Client{
 		serverAddress: "127.0.0.1:25",
 
@@ -211,6 +211,11 @@ func WithWriterSize(writerSize int) Option {
 	return func(c *Client) {
 		c.writerSize = writerSize
 	}
+}
+
+// ServerAddress returns the server address.
+func (c *Client) ServerAddress() string {
+	return c.serverAddress
 }
 
 // Connect connects to the SMTP server.
