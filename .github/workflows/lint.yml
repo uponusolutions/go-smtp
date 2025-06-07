@@ -6,7 +6,7 @@ name: Go
 on: [push]
 
 jobs:
-  coverage:
+  lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -16,5 +16,5 @@ jobs:
       with:
         go-version-file: go.mod
 
-    - name: generate test coverage
+    - name: execute linter
       run: go tool -modfile=go.tool.mod golangci-lint run
