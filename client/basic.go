@@ -20,8 +20,8 @@ import (
 // dial returns a connection to an SMTP server at addr. The addr must
 // include a port, as in "mail.example.com:smtp".
 func (c *Client) dial(ctx context.Context) (net.Conn, error) {
-	dialer := net.Dialer{Timeout: c.commandTimeout}
-	return dialer.DialContext(ctx, "tcp", c.ServerAddress)
+	dialer := net.Dialer{Timeout: c.dialTimeout}
+	return dialer.DialContext(ctx, "tcp", c.serverAddress)
 }
 
 // dialTLS returns a connection to an SMTP server at addr via TLS.
@@ -30,10 +30,10 @@ func (c *Client) dial(ctx context.Context) (net.Conn, error) {
 // A nil tlsConfig is equivalent to a zero tls.Config.
 func (c *Client) dialTLS(ctx context.Context) (net.Conn, error) {
 	tlsDialer := tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: c.commandTimeout},
-		Config:    c.TLSConfig,
+		NetDialer: &net.Dialer{Timeout: c.dialTimeout},
+		Config:    c.tlsConfig,
 	}
-	return tlsDialer.DialContext(ctx, "tcp", c.ServerAddress)
+	return tlsDialer.DialContext(ctx, "tcp", c.serverAddress)
 }
 
 // setConn sets the underlying network connection for the client.
@@ -174,12 +174,12 @@ func (c *Client) startTLS() error {
 		return err
 	}
 
-	config := c.TLSConfig
-
+	config := c.tlsConfig
 	if config == nil {
-		config = &tls.Config{}
-	}
-	if config.ServerName == "" && c.serverName != "" {
+		config = &tls.Config{
+			ServerName: c.serverName,
+		}
+	} else if config.ServerName == "" && c.serverName != "" {
 		// Make a copy to avoid polluting argument
 		config = config.Clone()
 		config.ServerName = c.serverName
