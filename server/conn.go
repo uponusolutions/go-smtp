@@ -543,6 +543,13 @@ func (c *Conn) handleMail(arg string) error {
 	}
 
 	if err := c.session.Mail(c.ctx, from, opts); err != nil {
+		if smtpErr, ok := err.(*smtp.Status); ok {
+			// a positive response also counts as a success
+			if smtpErr.Positive() {
+				c.state = stateMail
+			}
+			return smtpErr
+		}
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Mail not accepted", err)
 	}
 
@@ -604,8 +611,16 @@ func (c *Conn) handleRcpt(arg string) error {
 	}
 
 	if err := c.session.Rcpt(c.ctx, recipient, opts); err != nil {
+		if smtpErr, ok := err.(*smtp.Status); ok {
+			// a positive response also counts as a success
+			if smtpErr.Positive() {
+				c.recipients++
+			}
+			return smtpErr
+		}
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Recipient not accepted", err)
 	}
+
 	c.recipients++
 	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
 }
