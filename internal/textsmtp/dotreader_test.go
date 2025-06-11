@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/rand"
+	"embed"
 	"io"
 	legacy "net/textproto"
 	"reflect"
@@ -15,9 +16,25 @@ import (
 	"testing"
 
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/tester"
 )
 
+//go:embed testdatareader/*
+var embedFSReader embed.FS
+
 func TestDotReader(t *testing.T) {
+	t.Run("CompareTest", func(t *testing.T) {
+		tester.ReaderCompareTest(t, &embedFSReader, "testdatareader", func(b io.Reader) ([]byte, error) {
+			reader := legacy.NewReader(bufio.NewReader(b)).DotReader()
+			buf, err := io.ReadAll(reader)
+			buf = bytes.ReplaceAll(buf, []byte("\n"), []byte("\r\n"))
+			return buf, err
+		}, func(b io.Reader) ([]byte, error) {
+			reader := textsmtp.NewDotReader(bufio.NewReader(b), 0) // textsmtp.NewDotReader(bufio.NewReader(b), 999999)
+			return io.ReadAll(reader)
+		})
+	})
+
 	t.Run("Decode", func(t *testing.T) {
 		buf := bufio.NewReader(strings.NewReader("dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n"))
 		r := textsmtp.NewDotReader(buf, 0)
