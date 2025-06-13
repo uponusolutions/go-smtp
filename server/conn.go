@@ -769,6 +769,11 @@ func (c *Conn) handleStartTLS() error {
 
 // DATA
 func (c *Conn) handleData(arg string) error {
+	// at least a single recipient needs to be set
+	if c.recipients == 0 {
+		return smtp.ErrNoRecipients
+	}
+
 	if arg != "" {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "DATA command should not have any arguments")
 	}
@@ -801,6 +806,11 @@ func (c *Conn) handleData(arg string) error {
 }
 
 func (c *Conn) handleBdat(arg string) error {
+	// at least a single recipient needs to be set
+	if c.recipients == 0 {
+		return smtp.ErrNoRecipients
+	}
+
 	closed := false
 
 	size, last, err := bdatArg(arg)

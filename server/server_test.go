@@ -992,6 +992,39 @@ func TestServer_anonymousUserOK(t *testing.T) {
 	}
 }
 
+func TestServer_recipientNecessary(t *testing.T) {
+	be, s, c, scanner, _ := testServerEhlo(t, nil)
+	defer func() { _ = s.Close() }()
+	defer func() { _ = c.Close() }()
+
+	_, _ = io.WriteString(c, "MAIL FROM: root@nsa.gov\r\n")
+	scanner.Scan()
+
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanner.Scan()
+
+	// 502 5.5.1 Missing RCPT TO command.
+	if !strings.HasPrefix(scanner.Text(), "502 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanner.Scan()
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanner.Scan()
+	_, _ = io.WriteString(c, "Hey <3\r\n")
+	_, _ = io.WriteString(c, ".\r\n")
+	scanner.Scan()
+
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	if len(be.messages) != 0 || len(be.anonmsgs) != 1 {
+		t.Fatal("Invalid number of sent messages:", be.messages, be.anonmsgs)
+	}
+}
+
 func TestServer_authParam_invalidHexchar(t *testing.T) {
 	_, s, c, scanner, _ := testServerEhlo(t, nil)
 	defer func() { _ = s.Close() }()

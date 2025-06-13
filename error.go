@@ -119,10 +119,16 @@ var (
 		EnhancedCode: EnhancedCode{5, 7, 0},
 		Message:      "Authentication not supported",
 	}
-	// ErrAuthUnknownMechanism is returned if the authentication unsupported..
+	// ErrAuthUnknownMechanism is returned if the authentication unsupported.
 	ErrAuthUnknownMechanism = &Status{
 		Code:         504,
 		EnhancedCode: EnhancedCode{5, 7, 4},
 		Message:      "Unsupported authentication mechanism",
+	}
+	// ErrNoRecipients is returned if no recipients are set.
+	ErrNoRecipients = &Status{
+		Code:         502,
+		EnhancedCode: EnhancedCode{5, 5, 1},
+		Message:      "Missing RCPT TO command.",
 	}
 )
