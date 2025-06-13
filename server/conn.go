@@ -796,7 +796,17 @@ func (c *Conn) handleData(arg string) error {
 
 	uuid, err := c.session.Data(c.ctx, rstart)
 	if err != nil {
+		// an error which isn't a SMTPStatus error will always terminate the connection
+		// if it is an SMTPStatus then wi need to make sure the stream ist read to the end
+		if _, ok := err.(*smtp.Status); ok && r != nil {
+			_, _ = io.Copy(io.Discard, r)
+		}
 		return err
+	}
+
+	// Make sure all the data has been consumed
+	if r != nil {
+		_, _ = io.Copy(io.Discard, r)
 	}
 
 	if err = c.reset(); err != nil {
@@ -856,6 +866,9 @@ func (c *Conn) handleBdat(arg string) error {
 		// an error which isn't a SMTPStatus error will always terminate the connection
 		return err
 	}
+
+	// Make sure all the data has been consumed
+	_, _ = io.Copy(io.Discard, data)
 
 	if err = c.reset(); err != nil {
 		return err
