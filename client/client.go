@@ -29,6 +29,52 @@ const (
 	SecurityStartTLS Security = 3
 )
 
+// UTF8 describes how SMTPUTF8 is used.
+type UTF8 int32
+
+const (
+	// UTF8Prefer uses SMTPUTF8 if possible.
+	UTF8Prefer UTF8 = 0
+	// UTF8Force always uses SMTPUTF8.
+	UTF8Force UTF8 = 1
+	// UTF8Disabled never uses SMTPUTF8.
+	UTF8Disabled UTF8 = 2
+)
+
+// MailOptions contains parameters for the MAIL command.
+type MailOptions struct {
+	// Size of the body. Can be 0 if not specified by client.
+	Size int64
+
+	// TLS is required for the message transmission.
+	//
+	// The message should be rejected if it can't be transmitted
+	// with TLS.
+	RequireTLS bool
+
+	// The message envelope or message header contains UTF-8-encoded strings.
+	// This flag is set by SMTPUTF8-aware (RFC 6531) client.
+	UTF8 UTF8
+
+	// Value of RET= argument, FULL or HDRS.
+	Return smtp.DSNReturn
+
+	// Envelope identifier set by the client.
+	EnvelopeID string
+
+	// Accepted Domain from Exchange Online, e.g. from OutgoingConnector
+	XOORG *string
+
+	// The authorization identity asserted by the message sender in decoded
+	// form with angle brackets stripped.
+	//
+	// nil value indicates missing AUTH, non-nil empty string indicates
+	// AUTH=<>.
+	//
+	// Defined in RFC 4954.
+	Auth *string
+}
+
 // Client is an SMTP client.
 // It sends one or more mails to a SMTP server over a single connection.
 // TODO: Add context support.
@@ -72,7 +118,7 @@ type Client struct {
 	// Defines the connection is secured
 	security Security
 
-	mailOptions smtp.MailOptions
+	mailOptions MailOptions
 }
 
 // New returns a new SMTP client.
@@ -105,11 +151,6 @@ func New(opts ...Option) *Client {
 		readerSize: 4096,
 		// Writer buffer of textproto
 		writerSize: 4096,
-
-		// UTF8 is enabled by default but gets disabled if the server doesn't support it
-		mailOptions: smtp.MailOptions{
-			UTF8: true,
-		},
 	}
 
 	for _, o := range opts {
@@ -130,7 +171,7 @@ func WithServerAddress(addr string) Option {
 }
 
 // WithMailOptions sets the mail options.
-func WithMailOptions(mailOptions smtp.MailOptions) Option {
+func WithMailOptions(mailOptions MailOptions) Option {
 	return func(c *Client) {
 		c.mailOptions = mailOptions
 	}
@@ -283,14 +324,6 @@ func (c *Client) authAndUTF8() error {
 			return err
 		}
 	}
-
-	// Disable UTF8 if not supported by the server.
-	if c.mailOptions.UTF8 {
-		if ok, _ := c.Extension("SMTPUTF8"); !ok {
-			c.mailOptions.UTF8 = false
-		}
-	}
-
 	return nil
 }
 

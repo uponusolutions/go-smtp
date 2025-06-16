@@ -795,7 +795,7 @@ func TestClientXtext(t *testing.T) {
 
 	c.ext = map[string]string{"AUTH": "PLAIN", "DSN": ""}
 	email := "e=mc2@example.com"
-	require.Error(t, c.Mail(email, &smtp.MailOptions{Auth: &email}))
+	require.Error(t, c.Mail(email, &MailOptions{Auth: &email}))
 	require.NoError(t, c.Rcpt(email, &smtp.RcptOptions{
 		OriginalRecipientType: smtp.DSNAddressTypeUTF8,
 		OriginalRecipient:     email,
@@ -836,7 +836,7 @@ func TestClientDSN(t *testing.T) {
 	c.setConn(fake)
 
 	c.ext = map[string]string{"DSN": ""}
-	require.Error(t, c.Mail(dsnEmailRFC822, &smtp.MailOptions{
+	require.Error(t, c.Mail(dsnEmailRFC822, &MailOptions{
 		Return:     smtp.DSNReturnHeaders,
 		EnvelopeID: dsnEnvelopeID,
 	}))

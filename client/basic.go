@@ -304,7 +304,7 @@ func (c *Client) Auth(a sasl.Client) error {
 // to the command. Handling of unsupported options depends on the extension.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Mail(from string, opts *smtp.MailOptions) error {
+func (c *Client) Mail(from string, opts *MailOptions) error {
 	if err := validateLine(from); err != nil {
 		return err
 	}
@@ -325,11 +325,13 @@ func (c *Client) Mail(from string, opts *smtp.MailOptions) error {
 		}
 		sb.WriteString(" REQUIRETLS")
 	}
-	if opts != nil && opts.UTF8 {
-		if _, ok := c.ext["SMTPUTF8"]; !ok {
+	// By default utf8 is preferred
+	if opts == nil || opts.UTF8 != UTF8Disabled {
+		if _, ok := c.ext["SMTPUTF8"]; ok {
+			sb.WriteString(" SMTPUTF8")
+		} else if opts != nil && opts.UTF8 == UTF8Force {
 			return errors.New("smtp: server does not support SMTPUTF8")
 		}
-		sb.WriteString(" SMTPUTF8")
 	}
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
 		switch opts.Return {
