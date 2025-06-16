@@ -103,6 +103,28 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 	require.ErrorContains(t, err, "504: SMTPUTF8 is not implemented")
 }
 
+func TestClient_VerifyUTF8Force(t *testing.T) {
+	c := New(WithServerAddress(addr))
+	require.NotNil(t, c)
+
+	require.NoError(t, c.Connect(context.Background()))
+	defer func() {
+		assert.NoError(t, c.Close())
+
+		// Calling again must be ok.
+		assert.NoError(t, c.Quit())
+	}()
+
+	err := c.Verify("Bob@external.com", &VrfyOptions{UTF8: UTF8Force})
+	require.ErrorContains(t, err, "server does not support SMTPUTF8")
+
+	// simulate from a client perspective that the server does support smtputf8
+	c.ext["SMTPUTF8"] = ""
+
+	err = c.Verify("Bob@external.com", &VrfyOptions{UTF8: UTF8Force})
+	require.ErrorContains(t, err, "504: SMTPUTF8 is not implemented")
+}
+
 func TestClient_InvalidLocalName(t *testing.T) {
 	c := New(WithServerAddress(addr), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
 	require.NotNil(t, c)

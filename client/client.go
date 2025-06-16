@@ -75,6 +75,13 @@ type MailOptions struct {
 	Auth *string
 }
 
+// VrfyOptions contains parameters for the VRFY command.
+type VrfyOptions struct {
+	// The message envelope or message header contains UTF-8-encoded strings.
+	// This flag is set by SMTPUTF8-aware (RFC 6531) client.
+	UTF8 UTF8
+}
+
 // Client is an SMTP client.
 // It sends one or more mails to a SMTP server over a single connection.
 // TODO: Add context support.

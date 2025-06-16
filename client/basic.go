@@ -223,7 +223,7 @@ func (c *Client) TLSConnectionState() (tls.ConnectionState, bool) {
 // will not verify addresses for security reasons.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Verify(addr string, opts *smtp.VrfyOptions) error {
+func (c *Client) Verify(addr string, opts *VrfyOptions) error {
 	if err := validateLine(addr); err != nil {
 		return err
 	}
@@ -233,11 +233,13 @@ func (c *Client) Verify(addr string, opts *smtp.VrfyOptions) error {
 	sb.Grow(2048)
 	fmt.Fprintf(&sb, "VRFY %s", addr)
 
-	if opts != nil && opts.UTF8 {
-		if _, ok := c.ext["SMTPUTF8"]; !ok {
+	// By default utf8 is preferred
+	if opts == nil || opts.UTF8 != UTF8Disabled {
+		if _, ok := c.ext["SMTPUTF8"]; ok {
+			sb.WriteString(" SMTPUTF8")
+		} else if opts != nil && opts.UTF8 == UTF8Force {
 			return errors.New("smtp: server does not support SMTPUTF8")
 		}
-		sb.WriteString(" SMTPUTF8")
 	}
 
 	_, _, err := c.cmd(250, "%s", sb.String())
