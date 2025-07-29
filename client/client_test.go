@@ -83,7 +83,7 @@ func TestClient_SendMail_MultipleAddresses(t *testing.T) {
 	require.NoError(t, c.Connect(context.Background()))
 	require.Equal(t, addr, c.ServerAddress())
 	require.NoError(t, c.Close())
-	require.Equal(t, "", c.ServerAddress())
+	require.Equal(t, addr, c.ServerAddress())
 
 	c = New(WithServerAddresses("0.0.0.0", addr)) // second is invalid
 	require.NotNil(t, c)
@@ -92,7 +92,7 @@ func TestClient_SendMail_MultipleAddresses(t *testing.T) {
 	require.NoError(t, c.Connect(context.Background()))
 	require.Equal(t, addr, c.ServerAddress())
 	require.NoError(t, c.Close())
-	require.Equal(t, "", c.ServerAddress())
+	require.Equal(t, addr, c.ServerAddress())
 }
 
 func TestClient_SendMailUTF8Force(t *testing.T) {

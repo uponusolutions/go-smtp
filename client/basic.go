@@ -66,7 +66,6 @@ func (c *Client) Close() error {
 
 	err := c.text.Close()
 	c.conn = nil
-	c.connAddress = ""
 	return err
 }
 
