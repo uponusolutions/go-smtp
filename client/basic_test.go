@@ -104,7 +104,6 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("Second VRFY: expected verification, got %s", err)
 	}
 
-	c.serverName = "smtp.google.com"
 	if err := c.Auth(sasl.NewPlainClient("", "user", "pass")); err != nil {
 		t.Fatalf("AUTH failed: %s", err)
 	}
@@ -409,7 +408,6 @@ func HelloCase(t *testing.T, i int) {
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
-	c.serverName = "fake.host"
 	c.localName = "customhost"
 
 	require.NoError(t, c.greet())
@@ -423,14 +421,13 @@ func HelloCase(t *testing.T, i int) {
 		c.localName = "customhost"
 		err = c.hello()
 	case 1:
-		err = c.startTLS()
+		err = c.startTLS("fake.host")
 		if err.Error() == "SMTP error 502: Not implemented" {
 			err = nil
 		}
 	case 2:
 		err = c.Verify("test@example.com", nil)
 	case 3:
-		c.serverName = "smtp.google.com"
 		err = c.Auth(sasl.NewPlainClient("", "user", "pass"))
 	case 4:
 		err = c.Mail("test@example.com", nil)
@@ -521,7 +518,6 @@ func TestHello_421Response(t *testing.T) {
 
 	require.NoError(t, c.greet())
 
-	c.serverName = "fake.host"
 	c.localName = "customhost"
 
 	err := c.hello()
@@ -581,7 +577,6 @@ func TestAuthFailed(t *testing.T) {
 	require.NoError(t, c.greet())
 	require.NoError(t, c.hello())
 
-	c.serverName = "smtp.google.com"
 	err := c.Auth(sasl.NewPlainClient("", "user", "pass"))
 
 	if err == nil {
@@ -631,7 +626,7 @@ func TestTLSConnState(t *testing.T) {
 		cfg := &tls.Config{ServerName: "example.com", RootCAs: testRootCAs}
 
 		c := New(
-			WithServerAddress(ln.Addr().String()),
+			WithServerAddresses(ln.Addr().String()),
 			WithTLSConfig(cfg),
 			WithSecurity(SecurityStartTLS),
 		)

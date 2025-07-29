@@ -19,21 +19,21 @@ import (
 
 // dial returns a connection to an SMTP server at addr. The addr must
 // include a port, as in "mail.example.com:smtp".
-func (c *Client) dial(ctx context.Context) (net.Conn, error) {
+func (c *Client) dial(ctx context.Context, addr string) (net.Conn, error) {
 	dialer := net.Dialer{Timeout: c.dialTimeout}
-	return dialer.DialContext(ctx, "tcp", c.serverAddress)
+	return dialer.DialContext(ctx, "tcp", addr)
 }
 
 // dialTLS returns a connection to an SMTP server at addr via TLS.
 // The addr must include a port, as in "mail.example.com:smtps".
 //
 // A nil tlsConfig is equivalent to a zero tls.Config.
-func (c *Client) dialTLS(ctx context.Context) (net.Conn, error) {
+func (c *Client) dialTLS(ctx context.Context, addr string) (net.Conn, error) {
 	tlsDialer := tls.Dialer{
 		NetDialer: &net.Dialer{Timeout: c.dialTimeout},
 		Config:    c.tlsConfig,
 	}
-	return tlsDialer.DialContext(ctx, "tcp", c.serverAddress)
+	return tlsDialer.DialContext(ctx, "tcp", addr)
 }
 
 // setConn sets the underlying network connection for the client.
@@ -66,6 +66,7 @@ func (c *Client) Close() error {
 
 	err := c.text.Close()
 	c.conn = nil
+	c.connAddress = ""
 	return err
 }
 
@@ -167,7 +168,7 @@ func (c *Client) ehlo() error {
 //
 // If server returns an error, it will be of type *smtp.
 // if an error occured the connection is closed
-func (c *Client) startTLS() error {
+func (c *Client) startTLS(serverName string) error {
 	_, _, err := c.cmd(220, "STARTTLS")
 	if err != nil {
 		_ = c.Quit()
@@ -177,12 +178,12 @@ func (c *Client) startTLS() error {
 	config := c.tlsConfig
 	if config == nil {
 		config = &tls.Config{
-			ServerName: c.serverName,
+			ServerName: serverName,
 		}
-	} else if config.ServerName == "" && c.serverName != "" {
+	} else if config.ServerName == "" && serverName != "" {
 		// Make a copy to avoid polluting argument
 		config = config.Clone()
-		config.ServerName = c.serverName
+		config.ServerName = serverName
 	}
 
 	conn := tls.Client(c.conn, config)

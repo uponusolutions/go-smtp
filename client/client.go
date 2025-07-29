@@ -86,17 +86,19 @@ type VrfyOptions struct {
 // It sends one or more mails to a SMTP server over a single connection.
 // TODO: Add context support.
 type Client struct {
-	serverAddress string // Format address:port.
-	tlsConfig     *tls.Config
-	saslClient    sasl.Client
+	serverAddresses    [][]string // Format address:port.
+	serverAddressIndex int        // first server address to try
+	tlsConfig          *tls.Config
+	saslClient         sasl.Client
 
 	// keep a reference to the connection so it can be used to create a TLS
 	// connection later
-	conn       net.Conn
-	text       *textsmtp.Textproto
-	serverName string
-	ext        map[string]string // supported extensions
-	localName  string            // the name to use in HELO/EHLO/LHLO
+	conn        net.Conn
+	connAddress string // Format address:port.
+
+	text      *textsmtp.Textproto
+	ext       map[string]string // supported extensions
+	localName string            // the name to use in HELO/EHLO/LHLO
 
 	// Time to wait for tls handshake to succeed.
 	tlsHandshakeTimeout time.Duration
@@ -133,7 +135,7 @@ type Client struct {
 // When not set via options a default tls.Config is used.
 func New(opts ...Option) *Client {
 	c := &Client{
-		serverAddress: "127.0.0.1:25",
+		serverAddresses: [][]string{{"127.0.0.1:25"}},
 
 		security: SecurityPreferStartTLS,
 
@@ -170,10 +172,24 @@ func New(opts ...Option) *Client {
 // Option defines a client option.
 type Option func(c *Client)
 
-// WithServerAddress Sets the SMTP servers address.
-func WithServerAddress(addr string) Option {
+// WithServerAddresses sets the SMTP servers address.
+func WithServerAddresses(addrs ...string) Option {
 	return func(c *Client) {
-		c.serverAddress = addr
+		c.serverAddresses = [][]string{addrs}
+	}
+}
+
+// WithServerAddressesPrio sets the SMTP servers address.
+func WithServerAddressesPrio(addrs ...[]string) Option {
+	return func(c *Client) {
+		c.serverAddresses = addrs
+	}
+}
+
+// WithServerAddressIndex sets the SMTP server index.
+func WithServerAddressIndex(index int) Option {
+	return func(c *Client) {
+		c.serverAddressIndex = index
 	}
 }
 
@@ -261,15 +277,19 @@ func WithWriterSize(writerSize int) Option {
 	}
 }
 
-// ServerAddress returns the server address.
-func (c *Client) ServerAddress() string {
-	return c.serverAddress
+// ServerAddresses returns the server address.
+func (c *Client) ServerAddresses() [][]string {
+	return c.serverAddresses
 }
 
-// Connect connects to the SMTP server.
+// ServerAddress returns the current server address.
+func (c *Client) ServerAddress() string {
+	return c.connAddress
+}
+
+// Connect connects to one of the available SMTP server.
 // When server supports auth and clients SaslClient is set, auth is called.
 // Security is enforced like configured (Plain, TLS, StartTLS or PreferStartTLS)
-// SMTP-UTF8 is enabled, when server supports it.
 // If an error occures, the connection is closed if open.
 func (c *Client) Connect(ctx context.Context) error {
 	// verify if local name is valid
@@ -277,6 +297,28 @@ func (c *Client) Connect(ctx context.Context) error {
 		return errors.New("smtp: the local name must not contain CR or LF")
 	}
 
+	var err error
+
+	for i := 0; i < len(c.serverAddresses); i++ {
+		for p := 0; p < len(c.serverAddresses[i]); p++ {
+			// use c.serverAddressIndex
+			address := c.serverAddresses[i][(p+c.serverAddressIndex)%len(c.serverAddresses[i])]
+			err := c.connectAddress(ctx, address)
+			if err == nil {
+				c.connAddress = address
+				return nil
+			}
+		}
+	}
+
+	return err
+}
+
+// Connect connects to the SMTP server (addr).
+// When server supports auth and clients SaslClient is set, auth is called.
+// Security is enforced like configured (Plain, TLS, StartTLS or PreferStartTLS)
+// If an error occures, the connection is closed if open.
+func (c *Client) connectAddress(ctx context.Context, addr string) error {
 	var err error
 	var conn net.Conn
 
@@ -286,9 +328,9 @@ func (c *Client) Connect(ctx context.Context) error {
 	case SecurityStartTLS:
 		fallthrough
 	case SecurityPreferStartTLS:
-		conn, err = c.dial(ctx)
+		conn, err = c.dial(ctx, addr)
 	case SecurityTLS:
-		conn, err = c.dialTLS(ctx)
+		conn, err = c.dialTLS(ctx, addr)
 	}
 
 	if err != nil {
@@ -296,7 +338,6 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 
 	c.setConn(conn)
-	c.serverName, _, _ = net.SplitHostPort(c.serverAddress)
 
 	if err = c.greet(); err != nil {
 		return err
@@ -313,17 +354,19 @@ func (c *Client) Connect(ctx context.Context) error {
 				return errors.New("smtp: server doesn't support STARTTLS")
 			}
 		} else {
-			err = c.startTLS()
+			serverName, _, _ := net.SplitHostPort(addr)
+
+			err = c.startTLS(serverName)
 			if err != nil {
 				return err
 			}
 		}
 	}
 
-	return c.authAndUTF8()
+	return c.auth()
 }
 
-func (c *Client) authAndUTF8() error {
+func (c *Client) auth() error {
 	// Authenticate if authentication is possible and sasl client available.
 	if ok, _ := c.Extension("AUTH"); ok && c.saslClient != nil {
 		if err := c.Auth(c.saslClient); err != nil {

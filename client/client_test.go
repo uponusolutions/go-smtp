@@ -48,7 +48,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestClient_SendMail(t *testing.T) {
-	c := New(WithServerAddress(addr))
+	c := New(WithServerAddresses(addr))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -75,8 +75,28 @@ func TestClient_SendMail(t *testing.T) {
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
+func TestClient_SendMail_MultipleAddresses(t *testing.T) {
+	c := New(WithServerAddresses(addr, "0.0.0.0")) // second is invalid
+	require.NotNil(t, c)
+
+	require.Equal(t, "", c.ServerAddress())
+	require.NoError(t, c.Connect(context.Background()))
+	require.Equal(t, addr, c.ServerAddress())
+	require.NoError(t, c.Close())
+	require.Equal(t, "", c.ServerAddress())
+
+	c = New(WithServerAddresses("0.0.0.0", addr)) // second is invalid
+	require.NotNil(t, c)
+
+	require.Equal(t, "", c.ServerAddress())
+	require.NoError(t, c.Connect(context.Background()))
+	require.Equal(t, addr, c.ServerAddress())
+	require.NoError(t, c.Close())
+	require.Equal(t, "", c.ServerAddress())
+}
+
 func TestClient_SendMailUTF8Force(t *testing.T) {
-	c := New(WithServerAddress(addr), WithMailOptions(MailOptions{UTF8: UTF8Force}))
+	c := New(WithServerAddresses(addr), WithMailOptions(MailOptions{UTF8: UTF8Force}))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -104,7 +124,7 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 }
 
 func TestClient_VerifyUTF8Force(t *testing.T) {
-	c := New(WithServerAddress(addr))
+	c := New(WithServerAddresses(addr))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -126,19 +146,19 @@ func TestClient_VerifyUTF8Force(t *testing.T) {
 }
 
 func TestClient_InvalidLocalName(t *testing.T) {
-	c := New(WithServerAddress(addr), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
+	c := New(WithServerAddresses(addr), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
 	require.NotNil(t, c)
 	require.ErrorContains(t, c.Connect(context.Background()), "smtp: the local name must not contain CR or LF")
 }
 
 func TestClient_ServerAddress(t *testing.T) {
-	c := New(WithServerAddress("test"))
+	c := New(WithServerAddresses("test"))
 	require.NotNil(t, c)
-	require.Equal(t, "test", c.ServerAddress())
+	require.Equal(t, [][]string{{"test"}}, c.ServerAddresses())
 }
 
 func TestClient_Send(t *testing.T) {
-	c := New(WithServerAddress(addr))
+	c := New(WithServerAddresses(addr))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -177,7 +197,7 @@ func TestClient_SendMicrosoft(t *testing.T) {
 	cert, err := tls.X509KeyPair([]byte(certs), []byte(priv))
 	require.NoError(t, err)
 
-	c := New(WithServerAddress(server), WithTLSConfig(&tls.Config{
+	c := New(WithServerAddresses(server), WithTLSConfig(&tls.Config{
 		Certificates: []tls.Certificate{cert},
 	}), WithSecurity(SecurityTLS))
 	require.NotNil(t, c)
