@@ -76,10 +76,16 @@ func (c *Client) greet() error {
 	timeout := smtp.Timeout(c.conn, c.commandTimeout)
 	defer timeout()
 
-	_, _, err := c.readResponse(220)
+	_, msg, err := c.readResponse(220)
 	if err != nil {
 		_ = c.Close()
 	}
+
+	if idx := strings.IndexRune(msg, ' '); idx >= 0 {
+		msg = msg[:idx]
+	}
+
+	c.connName = msg
 
 	return err
 }

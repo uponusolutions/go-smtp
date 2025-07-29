@@ -95,6 +95,7 @@ type Client struct {
 	// connection later
 	conn        net.Conn
 	connAddress string // Format address:port.
+	connName    string // server greet name
 
 	text      *textsmtp.Textproto
 	ext       map[string]string // supported extensions
@@ -285,6 +286,11 @@ func (c *Client) ServerAddresses() [][]string {
 // ServerAddress returns the current server address.
 func (c *Client) ServerAddress() string {
 	return c.connAddress
+}
+
+// ServerName returns the current server name.
+func (c *Client) ServerName() string {
+	return c.connName
 }
 
 // Connect connects to one of the available SMTP server.
