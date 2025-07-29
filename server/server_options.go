@@ -91,8 +91,9 @@ type Option func(*Server)
 // New creates a new SMTP server.
 func New(opts ...Option) *Server {
 	s := &Server{
-		done:  make(chan struct{}, 1),
-		conns: make(map[*Conn]struct{}),
+		done:     make(chan struct{}, 1),
+		conns:    make(map[*Conn]struct{}),
+		hostname: "localhost",
 	}
 
 	for _, o := range opts {
