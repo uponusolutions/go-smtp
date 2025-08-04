@@ -309,7 +309,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		for p := 0; p < len(c.serverAddresses[i]); p++ {
 			// use c.serverAddressIndex
 			address := c.serverAddresses[i][(p+c.serverAddressIndex)%len(c.serverAddresses[i])]
-			err := c.connectAddress(ctx, address)
+			err = c.connectAddress(ctx, address)
 			if err == nil {
 				c.connAddress = address
 				return nil
