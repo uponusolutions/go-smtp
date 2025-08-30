@@ -22,8 +22,10 @@ const (
 	regexpSRS  = "^([^+]+)\\+SRS=[^=]+=[^=]+=[^=]+=[^@]+@([^@]+)$"
 )
 
-var compiledRegexpBATV = regexp.MustCompile(regexpBATV)
-var compiledRegexpSRS = regexp.MustCompile(regexpSRS)
+var (
+	compiledRegexpBATV = regexp.MustCompile(regexpBATV)
+	compiledRegexpSRS  = regexp.MustCompile(regexpSRS)
+)
 
 // ParseBATV parses src to extract a BATV address.
 // When BATV extration is not possible/needed src is returned.
