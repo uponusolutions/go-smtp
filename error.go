@@ -62,7 +62,7 @@ func (err *Status) Permanent() bool {
 }
 
 var (
-	// Reset is returned by Reader pased to Data function if client does not
+	// Reset is returned by Reader passed to Data function if client does not
 	// send another BDAT command and instead issues RSET command.
 	Reset = &Status{
 		Code:         250,
@@ -81,7 +81,7 @@ var (
 		EnhancedCode: EnhancedCode{2, 0, 0},
 		Message:      "I have successfully done nothing",
 	}
-	// Quit is returned by Reader pased to Data function if client does not
+	// Quit is returned by Reader passed to Data function if client does not
 	// send another BDAT command and instead issues QUIT command.
 	Quit = &Status{
 		Code:         221,

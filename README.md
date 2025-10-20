@@ -6,6 +6,10 @@
 
 An ESMTP client and server library written in Go.
 
+## Pages
+
+[Benchmark](https://uponusolutions.github.io/go-smtp/dev/bench/)
+
 ## Features
 
 * ESMTP client & server implementing [RFC 5321]

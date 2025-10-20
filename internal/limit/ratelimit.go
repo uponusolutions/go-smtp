@@ -6,7 +6,7 @@ import (
 )
 
 // ErrRatelimit is returned if limit reached and strict mode is enabled.
-var ErrRatelimit = errors.New("rate limit occured")
+var ErrRatelimit = errors.New("rate limit occurred")
 
 // RatelimitConfig configures a rate limit.
 type RatelimitConfig struct {

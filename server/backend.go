@@ -35,7 +35,7 @@ type Session interface {
 	Reset(ctx context.Context, upgrade bool) (context.Context, error)
 
 	// Free all resources associated with session.
-	// Error is set if an error occured during session or connection.
+	// Error is set if an error occurred during session or connection.
 	// Close is always called after the session is done.
 	Close(ctx context.Context, err error)
 

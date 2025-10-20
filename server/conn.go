@@ -834,7 +834,7 @@ func (c *Conn) handleBdat(arg string) error {
 		bytesReceived:   0,
 		input:           c.text.R,
 		nextCommand: func() (string, string, error) {
-			// if bdat is closed (error occured)
+			// if bdat is closed (error occurred)
 			if closed {
 				return "", "", io.EOF
 			}

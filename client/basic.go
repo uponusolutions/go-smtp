@@ -70,7 +70,7 @@ func (c *Client) Close() error {
 }
 
 // greet reads the greeting of the server
-// if an error occured the connection is closed
+// if an error occurred the connection is closed
 func (c *Client) greet() error {
 	// Initial greeting timeout. RFC 5321 recommends 5 minutes.
 	timeout := smtp.Timeout(c.conn, c.commandTimeout)
@@ -91,7 +91,7 @@ func (c *Client) greet() error {
 }
 
 // hello runs a hello exchange
-// if an error occured the connection is closed
+// if an error occurred the connection is closed
 func (c *Client) hello() error {
 	err := c.ehlo()
 
@@ -172,7 +172,7 @@ func (c *Client) ehlo() error {
 // A nil config is equivalent to a zero tls.Config.
 //
 // If server returns an error, it will be of type *smtp.
-// if an error occured the connection is closed
+// if an error occurred the connection is closed
 func (c *Client) startTLS(serverName string) error {
 	_, _, err := c.cmd(220, "STARTTLS")
 	if err != nil {
