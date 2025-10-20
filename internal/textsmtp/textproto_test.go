@@ -21,7 +21,7 @@ func reader(in string, out *bytes.Buffer) *textsmtp.Textproto {
 func TestPrintfLine(t *testing.T) {
 	buf := &bytes.Buffer{}
 	w := reader("", buf)
-	err := w.PrintfLine("foo %d", 123)
+	err := w.PrintfLineAndFlush("foo %d", 123)
 	if s := buf.String(); s != "foo 123\r\n" || err != nil {
 		t.Fatalf("s=%q; err=%s", s, err)
 	}

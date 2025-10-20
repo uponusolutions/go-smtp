@@ -74,7 +74,7 @@ var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
 func (t *Textproto) Cmd(format string, args ...any) (id uint, err error) {
 	id = t.Next()
 	t.StartRequest(id)
-	err = t.PrintfLine(format, args...)
+	err = t.PrintfLineAndFlush(format, args...)
 	t.EndRequest(id)
 	if err != nil {
 		return 0, err
@@ -88,10 +88,17 @@ func (t *Textproto) PrintfLine(format string, args ...any) error {
 		return err
 	}
 
-	if _, err := t.W.Write(crnl); err != nil {
-		return err
+	_, err := t.W.Write(crnl)
+	return err
+}
+
+// PrintfLineAndFlush writes the formatted output followed by \r\n anf flushes.
+func (t *Textproto) PrintfLineAndFlush(format string, args ...any) error {
+	err := t.PrintfLine(format, args...)
+	if err == nil {
+		err = t.W.Flush()
 	}
-	return t.W.Flush()
+	return err
 }
 
 // ReadResponse reads a multi-line response of the form:

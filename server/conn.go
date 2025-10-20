@@ -327,62 +327,61 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Hello %s", domain))
 	}
 
-	caps := []string{
-		"PIPELINING",
-		"8BITMIME",
-		"ENHANCEDSTATUSCODES",
-	}
+	caps := strings.Builder{}
+	caps.Grow(512)
+
+	caps.WriteString("Hello ")
+	caps.WriteString(domain)
+
+	caps.WriteString("\nPIPELINING\n8BITMIME\nENHANCEDSTATUSCODES")
 
 	if c.server.enableCHUNKING {
-		caps = append(caps, "CHUNKING")
+		caps.WriteString("\nCHUNKING")
 	}
 
 	isTLS := c.IsTLS()
 
 	if !isTLS && c.server.tlsConfig != nil {
-		caps = append(caps, "STARTTLS")
+		caps.WriteString("\nSTARTTLS")
 	}
 
 	c.mechanisms = c.session.AuthMechanisms(c.ctx)
 	if len(c.mechanisms) > 0 {
-		authCap := "AUTH"
+		caps.WriteString("\nAUTH")
 		for _, name := range c.mechanisms {
-			authCap += " " + name
+			caps.WriteByte(' ')
+			caps.WriteString(name)
 		}
-
-		caps = append(caps, authCap)
 	} else if c.server.enforceAuthentication {
 		// without any auth mechanism, no authentication can happen => deadlock
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "No auth mechanism available but authentication enforced", err)
 	}
 
 	if c.server.enableSMTPUTF8 {
-		caps = append(caps, "SMTPUTF8")
+		caps.WriteString("\nSMTPUTF8")
 	}
 	if isTLS && c.server.enableREQUIRETLS {
-		caps = append(caps, "REQUIRETLS")
+		caps.WriteString("\nREQUIRETLS")
 	}
 	if c.server.enableBINARYMIME {
-		caps = append(caps, "BINARYMIME")
+		caps.WriteString("\nBINARYMIME")
 	}
 	if c.server.enableDSN {
-		caps = append(caps, "DSN")
+		caps.WriteString("\nDSN")
 	}
 	if c.server.enableXOORG {
-		caps = append(caps, "XOORG")
+		caps.WriteString("\nXOORG")
 	}
 	if c.server.maxMessageBytes > 0 {
-		caps = append(caps, fmt.Sprintf("SIZE %v", c.server.maxMessageBytes))
+		caps.WriteString(fmt.Sprintf("\nSIZE %v", c.server.maxMessageBytes))
 	} else {
-		caps = append(caps, "SIZE")
+		caps.WriteString("\nSIZE")
 	}
 	if c.server.maxRecipients > 0 {
-		caps = append(caps, fmt.Sprintf("LIMITS RCPTMAX=%v", c.server.maxRecipients))
+		caps.WriteString(fmt.Sprintf("\nLIMITS RCPTMAX=%v", c.server.maxRecipients))
 	}
 
-	args := []string{"Hello " + domain}
-	args = append(args, caps...)
-	return smtp.NewStatus(250, smtp.NoEnhancedCode, args...)
+	return smtp.NewStatus(250, smtp.NoEnhancedCode, caps.String())
 }
 
 // handleError handles error and closes the connection afterwards.
@@ -896,7 +895,7 @@ func (c *Conn) writeStatus(status *smtp.Status) {
 	c.writeResponse(status.Code, status.EnhancedCode, status.Message)
 }
 
-func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string) {
+func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	c.logger().DebugContext(c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", text))
 
 	// TODO: error handling
@@ -916,17 +915,21 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text ...string
 		}
 	}
 
-	// transform each single line with \n, into separate lines
-	text = strings.Split(strings.Join(text, "\n"), "\n")
+	p := 0
+	for {
+		i := strings.IndexByte(text[p:], '\n')
+		if i < 0 {
+			break
+		}
 
-	lastLineIndex := len(text) - 1
-	for i := range lastLineIndex {
-		_ = c.text.PrintfLine("%d-%v", code, text[i])
+		_ = c.text.PrintfLine("%d-%v", code, text[p:p+i])
+		p += i + 1
 	}
+
 	if enhCode == smtp.NoEnhancedCode {
-		_ = c.text.PrintfLine("%d %v", code, text[lastLineIndex])
+		_ = c.text.PrintfLineAndFlush("%d  text[p:p+i]%v", code, text[p:])
 	} else {
-		_ = c.text.PrintfLine("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[lastLineIndex])
+		_ = c.text.PrintfLineAndFlush("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[p:])
 	}
 }
 

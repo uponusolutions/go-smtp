@@ -2,7 +2,6 @@ package smtp
 
 import (
 	"fmt"
-	"strings"
 )
 
 // EnhancedCode is the SMTP enhanced code
@@ -30,11 +29,11 @@ var NoEnhancedCode = EnhancedCode{-1, -1, -1}
 var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
 
 // NewStatus creates a new status.
-func NewStatus(code int, enhCode EnhancedCode, msg ...string) *Status {
+func NewStatus(code int, enhCode EnhancedCode, msg string) *Status {
 	return &Status{
 		Code:         code,
 		EnhancedCode: enhCode,
-		Message:      strings.Join(msg, "\n"),
+		Message:      msg,
 	}
 }
 
