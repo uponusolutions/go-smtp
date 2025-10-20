@@ -42,7 +42,7 @@ func (*session) Logger(_ context.Context) *slog.Logger {
 }
 
 func (*session) AuthMechanisms(_ context.Context) []string {
-	return nil
+	return []string{"PLAIN"}
 }
 
 func (*session) Auth(_ context.Context, _ string) (sasl.Server, error) {
@@ -136,7 +136,11 @@ func sendMailCon(c *client.Client, data []byte) error {
 }
 
 func sendMail(addr string, data []byte) error {
-	c := client.New(client.WithServerAddresses(addr), client.WithSecurity(client.SecurityPlain))
+	c := client.New(
+		client.WithServerAddresses(addr),
+		client.WithSecurity(client.SecurityPlain),
+		client.WithMailOptions(client.MailOptions{Size: int64(len(data))}),
+	)
 
 	err := c.Connect(context.Background())
 	if err != nil {

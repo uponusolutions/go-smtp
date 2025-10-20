@@ -32,7 +32,11 @@ func Benchmark(b *testing.B) {
 
 	b.Run("SmallWithChunkingSameConnection", func(b *testing.B) {
 		b.SetBytes(int64(len(eml)))
-		c := client.New(client.WithServerAddresses(addr1), client.WithSecurity(client.SecurityPlain))
+		c := client.New(
+			client.WithServerAddresses(addr1),
+			client.WithSecurity(client.SecurityPlain),
+			client.WithMailOptions(client.MailOptions{Size: int64(len(eml))}),
+		)
 		require.NotNil(b, c)
 		require.NoError(b, c.Connect(context.Background()))
 
@@ -60,7 +64,11 @@ func Benchmark(b *testing.B) {
 	b.Run("SmallWithoutChunkingSameConnection", func(b *testing.B) {
 		b.SetBytes(int64(len(eml)))
 
-		c := client.New(client.WithServerAddresses(addr2), client.WithSecurity(client.SecurityPlain))
+		c := client.New(
+			client.WithServerAddresses(addr2),
+			client.WithSecurity(client.SecurityPlain),
+			client.WithMailOptions(client.MailOptions{Size: int64(len(eml))}),
+		)
 		require.NotNil(b, c)
 
 		require.NoError(b, c.Connect(context.Background()))
