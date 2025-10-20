@@ -25,8 +25,7 @@ type message struct {
 	Opts     *smtp.MailOptions
 }
 
-type backend struct {
-}
+type backend struct{}
 
 func (be *backend) NewSession(ctx context.Context, _ *server.Conn) (context.Context, server.Session, error) {
 	return ctx, &session{backend: be}, nil
@@ -42,11 +41,11 @@ func (*session) Logger(_ context.Context) *slog.Logger {
 	return nil
 }
 
-func (s *session) AuthMechanisms(_ context.Context) []string {
+func (*session) AuthMechanisms(_ context.Context) []string {
 	return nil
 }
 
-func (s *session) Auth(_ context.Context, _ string) (sasl.Server, error) {
+func (*session) Auth(_ context.Context, _ string) (sasl.Server, error) {
 	return nil, nil
 }
 
@@ -86,7 +85,7 @@ func (s *session) Data(_ context.Context, r func() io.Reader) (string, error) {
 	}
 	s.msg.Data = b
 
-	//s.backend.messages = append(s.backend.messages, s.msg)
+	// s.backend.messages = append(s.backend.messages, s.msg)
 
 	return "", nil
 }

@@ -74,5 +74,5 @@ func Benchmark(b *testing.B) {
 	})
 	require.NoError(b, s2.Close())
 
-	//require.EqualValues(b, be1.messages, be2.messages)
+	// require.EqualValues(b, be1.messages, be2.messages)
 }

@@ -281,8 +281,8 @@ func testServerEhlo(t *testing.T, bei *backend, opts ...server.Option) (be *back
 	for scanner.Scan() {
 		s := scanner.Text()
 
-		if strings.HasPrefix(s, "250 ") {
-			caps[strings.TrimPrefix(s, "250 ")] = true
+		if after, ok := strings.CutPrefix(s, "250 "); ok {
+			caps[after] = true
 			break
 		}
 		if !strings.HasPrefix(s, "250-") {
