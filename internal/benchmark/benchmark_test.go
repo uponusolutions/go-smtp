@@ -24,14 +24,18 @@ func Benchmark(b *testing.B) {
 	require.NoError(b, err)
 
 	b.Run("SmallWithChunking", func(b *testing.B) {
-		b.SetBytes(int64(len(eml)))
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(eml)))
+		}
 		for b.Loop() {
 			_ = sendMail(addr1, eml)
 		}
 	})
 
 	b.Run("SmallWithChunkingSameConnection", func(b *testing.B) {
-		b.SetBytes(int64(len(eml)))
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(eml)))
+		}
 		c := client.New(
 			client.WithServerAddresses(addr1),
 			client.WithSecurity(client.SecurityPlain),
@@ -54,16 +58,18 @@ func Benchmark(b *testing.B) {
 	require.NoError(b, err)
 
 	b.Run("SmallWithoutChunking", func(b *testing.B) {
-		b.SetBytes(int64(len(eml)))
-
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(eml)))
+		}
 		for b.Loop() {
 			_ = sendMail(addr2, eml)
 		}
 	})
 
 	b.Run("SmallWithoutChunkingSameConnection", func(b *testing.B) {
-		b.SetBytes(int64(len(eml)))
-
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(eml)))
+		}
 		c := client.New(
 			client.WithServerAddresses(addr2),
 			client.WithSecurity(client.SecurityPlain),

@@ -18,7 +18,7 @@ jobs:
         with:
           go-version: "stable"
       - name: Run benchmark
-        run: cd internal/benchmark && go test -bench 'Benchmark' | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt
+        run: export SETBYTES=NO && cd internal/benchmark && go test -bench 'Benchmark' | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
