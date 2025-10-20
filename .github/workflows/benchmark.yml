@@ -18,7 +18,7 @@ jobs:
         with:
           go-version: "stable"
       - name: Run benchmark
-        run: cd internal/benchmark && go test -bench 'Benchmark' | tee output.txt
+        run: cd internal/benchmark && go test -bench 'Benchmark' | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt
       - name: Download previous benchmark data
         uses: actions/cache@v4
         with:
