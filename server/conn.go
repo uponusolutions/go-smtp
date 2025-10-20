@@ -927,7 +927,7 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	}
 
 	if enhCode == smtp.NoEnhancedCode {
-		_ = c.text.PrintfLineAndFlush("%d  text[p:p+i]%v", code, text[p:])
+		_ = c.text.PrintfLineAndFlush("%d %v", code, text[p:])
 	} else {
 		_ = c.text.PrintfLineAndFlush("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[p:])
 	}
