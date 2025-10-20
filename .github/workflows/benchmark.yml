@@ -19,17 +19,11 @@ jobs:
           go-version: "stable"
       - name: Run benchmark
         run: cd internal/benchmark && go test -bench 'Benchmark' | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt
-      - name: Download previous benchmark data
-        uses: actions/cache@v4
-        with:
-          path: ./cache
-          key: ${{ runner.os }}-benchmark
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
           tool: "go"
           output-file-path: internal/benchmark/output.txt
-          external-data-json-path: ./cache/benchmark-data.json
           fail-on-alert: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
