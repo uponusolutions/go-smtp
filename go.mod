@@ -1,7 +1,7 @@
 module github.com/uponusolutions/go-smtp
 
 require (
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/uponusolutions/go-sasl v0.0.1
 )
 
