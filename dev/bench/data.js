@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1760989619620,
+  "lastUpdate": 1760989907258,
   "repoUrl": "https://github.com/uponusolutions/go-smtp",
   "entries": {
     "Benchmark": [
@@ -48,6 +48,54 @@ window.BENCHMARK_DATA = {
             "value": 132871,
             "unit": "ns/op",
             "extra": "8907 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "committer": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "distinct": true,
+          "id": "74311b207da15ad3d9334c274abb9f9231d86759",
+          "message": "feat: set minimum coverage",
+          "timestamp": "2025-10-20T21:51:18+02:00",
+          "tree_id": "512e41066913b4b6bc41fb1fd9f87404acc92aa6",
+          "url": "https://github.com/uponusolutions/go-smtp/commit/74311b207da15ad3d9334c274abb9f9231d86759"
+        },
+        "date": 1760989906185,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkSmallWithChunking",
+            "value": 258104,
+            "unit": "ns/op",
+            "extra": "4446 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSameConnection",
+            "value": 83088,
+            "unit": "ns/op",
+            "extra": "14460 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunking",
+            "value": 260168,
+            "unit": "ns/op",
+            "extra": "4568 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSameConnection",
+            "value": 83591,
+            "unit": "ns/op",
+            "extra": "14332 times\n4 procs"
           }
         ]
       }
