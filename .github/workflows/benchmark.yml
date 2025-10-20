@@ -31,3 +31,7 @@ jobs:
           output-file-path: internal/benchmark/output.txt
           external-data-json-path: ./cache/benchmark-data.json
           fail-on-alert: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          comment-on-alert: true
+          alert-comment-cc-users: "@ml1nk"
