@@ -18,7 +18,7 @@ jobs:
         with:
           go-version: "stable"
       - name: Run benchmark
-        run: go test ./internal/benchmark -bench Benchmark | tee output.txt
+        run: cd internal/benchmark && go test -bench 'Benchmark' | tee output.txt
       - name: Download previous benchmark data
         uses: actions/cache@v4
         with:
@@ -28,6 +28,6 @@ jobs:
         uses: benchmark-action/github-action-benchmark@v1
         with:
           tool: "go"
-          output-file-path: output.txt
+          output-file-path: internal/benchmark/output.txt
           external-data-json-path: ./cache/benchmark-data.json
           fail-on-alert: true
