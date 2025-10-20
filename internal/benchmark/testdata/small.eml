@@ -1,0 +1,72 @@
+X-This: is a header, as email passes through servers, it gets prepended
+Received: from email.server [IP.AD.DRE.SS]
+	by other.server with POP3 (fetchmail-6.3.20)
+	for <user@localhost> (single-drop); Wed, 09 Aug 2017 18:07:16 +0100 (BST)
+DKIM-Signature: s=ecurity; i=nformation
+From: "John Drinkwater’s name" <johns@email.address>
+To: "You, the reader" <you@tutori.al>
+Date: Wed, 9 Aug 2017 17:03:44 +0000
+Message-ID: <typically.a.sexy.hash@your.isp.mailer>
+X-Mailer: Typical Header Junk Here 1.0.30
+X-Extended-Header: To allow for expansion, X- prefixes exist
+Content-Type: multipart/alternative; boundary="_----------=_MCPart_343795799"
+MIME-Version: 1.0
+Subject: =?utf-8?Q?Email=20is=20legacy,=20text=20needs=20escaping?=
+
+(The above line is intentionally blank & delimits contents from headers)
+This is a multi-part message in MIME format
+(The majority of email clients in 2017 will never show this, as this is
+for clients that don’t support MIME format… which is pretty old itself!)
+
+--_----------=_MCPart_343795799
+Content-Type: text/plain; charset="utf-8"; format="fixed"
+Content-Transfer-Encoding: quoted-printable
+Now we are onto the juicy bit! This is an email, but in plain text. It
+wont have hyperlinks, or *bold* emphasis unless your client renders
+that. Lines stick to a certain line length because, again, ~legacy~!
+Terminals used to be a certain size, so should email! And this faulty
+assumption made some email server software have issues with lines longer
+than the expected terminal width (with buffers) so they made the
+standard encourage wrapping.
+The above headers for this /part/ mention quoted-printable, a method of
+escaping characters that cannot be shown in the original limited set of
+characters that email accepted.
+That means that even things like =C2=A3 need to be converted to this
+format. (That is a £ for the sake of this demo. This line is technically
+corrupt!)
+What does multi-part mean? Email you typically send contains 3 unique
+messages, one mentioned above for the oldest clients to say your message
+is using the new system, another that is plain text, and the common one,
+a Web styled version built with HTML. Users with some clients have an
+option to view either, to reduce phishing, to make email more readable,
+or to reduce storage size.
+If someone chooses to view this version, they see
+http://i.imgur.com/5lVioPt.png
+--_----------=_MCPart_343795799
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE html><head>
+    <title>Now we’re onto the modern age of publishing!</title>
+    <meta charset=3D"UTF-8">
+    <style type=3D"text/css">
+        p, .awesome_css_here {
+            font-family: 'Comic Sans MS'=2C sans-serif;
+        }
+    </style>
+</head>
+<body style=3D"margin:0px; padding:0px;" bgcolor=3D"#f3f3f3">
+<p>Isn’t this awesome? Kinda HTML inside an email client! But wait, every=
+client has different behaviour, rendering engines, download behaviour for=
+images etc.</p>
+<p>What are those =3D (=, again, corruption) at the line ends? More      =
+legacy reasons, sorry! Some users prefer email to display lines unwrapped=
+at whatever line their client can show. Bugginess in unwrapping caused   =
+them to think over their initial design and make new formatting          =
+behaviours, lines ending in an equals tells the client to append it to   =
+the one above.</p>
+<p>If someone chooses to view this version, they see                     =
+http://i.imgur.com/v1n3Lz5.png</p>
+</body>
+</html>
+--_----------=_MCPart_343795799--
