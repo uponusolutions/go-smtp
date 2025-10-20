@@ -154,11 +154,11 @@ func (c *Client) ehlo() error {
 	if len(extList) > 1 {
 		extList = extList[1:]
 		for _, line := range extList {
-			args := strings.SplitN(line, " ", 2)
-			if len(args) > 1 {
-				ext[args[0]] = args[1]
+			i := strings.IndexByte(line, ' ')
+			if i < 0 {
+				ext[line] = ""
 			} else {
-				ext[args[0]] = ""
+				ext[line[:i]] = line[i+1:]
 			}
 		}
 	}
