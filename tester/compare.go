@@ -80,7 +80,7 @@ func checkExpectedBufferAgainsActual(t *testing.T, b []byte, expected func(io.Wr
 }
 
 // WriterCompareTest reads all files out of fs[path] and compares the expected func against the actual func.
-// To simulate differences of Write calls of differnt sizes it slices the files in increasing sizes up to 4048.
+// To simulate differences of Write calls of different sizes it slices the files in increasing sizes up to 4048.
 func WriterCompareTest(t *testing.T, fs *embed.FS, path string, expected func(io.Writer) io.WriteCloser, actual func(io.Writer) io.WriteCloser) {
 	files, err := getAllFilenames(fs, path)
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Rea
 }
 
 // ReaderCompareTest reads all files out of fs[path] and compares the result of the expected func against the actual func.
-// To simulate differences of Read calls with differnt sizes it slices the files in increasing sizes up to 4048.
+// To simulate differences of Read calls with different sizes it slices the files in increasing sizes up to 4048.
 func ReaderCompareTest(t *testing.T, fs *embed.FS, path string, expected func(io.Reader) ([]byte, error), actual func(io.Reader) ([]byte, error)) {
 	files, err := getAllFilenames(fs, path)
 	require.NoError(t, err)
