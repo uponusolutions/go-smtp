@@ -55,9 +55,9 @@ func (r *dotReader) Read(b []byte) (int, error) {
 	var skipped int // how many
 
 	// IMPORTANT: We cannot wait on read, because no EOL returns
-	if r.r.Buffered() == 0 {
-		_, _ = r.r.Peek(1)
-	}
+	//if r.r.Buffered() == 0 {
+	//	_, _ = r.r.Peek(1)
+	//}
 
 	// min 5, max buffer size, default len(b)
 	c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
