@@ -19,3 +19,6 @@ go.work*
 
 # Go Debug
 __debug_bin*
+
+# test benchmark
+output.txt

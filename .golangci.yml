@@ -11,8 +11,8 @@ linters:
     godot:
       scope: toplevel
       exclude:
-        - '^todo:'
-        - '^fixme:'
+        - "^todo:"
+        - "^fixme:"
         - //
     gosec:
       excludes:
