@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1761751618816,
+  "lastUpdate": 1761753606515,
   "repoUrl": "https://github.com/uponusolutions/go-smtp",
   "entries": {
     "Benchmark": [
@@ -480,6 +480,150 @@ window.BENCHMARK_DATA = {
             "value": 47846286,
             "unit": "ns/op",
             "extra": "246 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "committer": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "distinct": true,
+          "id": "24ae77d3e7f4494047fe99d48c458f6642bfbaf4",
+          "message": "fix: benchmark",
+          "timestamp": "2025-10-29T16:57:16+01:00",
+          "tree_id": "810e5ae515c711b0bd16cf56310549845da1b453",
+          "url": "https://github.com/uponusolutions/go-smtp/commit/24ae77d3e7f4494047fe99d48c458f6642bfbaf4"
+        },
+        "date": 1761753603628,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkSmallWithChunking",
+            "value": 362244,
+            "unit": "ns/op",
+            "extra": "32704 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSameConnection",
+            "value": 111241,
+            "unit": "ns/op",
+            "extra": "107961 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunking",
+            "value": 361859,
+            "unit": "ns/op",
+            "extra": "32954 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSameConnection",
+            "value": 110736,
+            "unit": "ns/op",
+            "extra": "108154 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunking",
+            "value": 36640748,
+            "unit": "ns/op",
+            "extra": "339 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSameConnection",
+            "value": 37928826,
+            "unit": "ns/op",
+            "extra": "308 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunking",
+            "value": 37995633,
+            "unit": "ns/op",
+            "extra": "308 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSameConnection",
+            "value": 38757239,
+            "unit": "ns/op",
+            "extra": "312 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderLegacy",
+            "value": 21317151,
+            "unit": "ns/op\t 196.76 MB/s",
+            "extra": "591 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderLegacy - ns/op",
+            "value": 21317151,
+            "unit": "ns/op",
+            "extra": "591 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderLegacy - MB/s",
+            "value": 196.76,
+            "unit": "MB/s",
+            "extra": "591 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderOptimized",
+            "value": 1157994,
+            "unit": "ns/op\t3622.04 MB/s",
+            "extra": "10000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderOptimized - ns/op",
+            "value": 1157994,
+            "unit": "ns/op",
+            "extra": "10000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderOptimized - MB/s",
+            "value": 3622.04,
+            "unit": "MB/s",
+            "extra": "10000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterLegacy",
+            "value": 1273391649,
+            "unit": "ns/op\t 210.80 MB/s",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterLegacy - ns/op",
+            "value": 1273391649,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterLegacy - MB/s",
+            "value": 210.8,
+            "unit": "MB/s",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterOptimized",
+            "value": 47459523,
+            "unit": "ns/op\t5656.09 MB/s",
+            "extra": "252 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterOptimized - ns/op",
+            "value": 47459523,
+            "unit": "ns/op",
+            "extra": "252 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterOptimized - MB/s",
+            "value": 5656.09,
+            "unit": "MB/s",
+            "extra": "252 times\n4 procs"
           }
         ]
       }
