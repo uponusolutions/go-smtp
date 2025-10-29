@@ -74,8 +74,6 @@ func TestDotReader(t *testing.T) {
 		i = 0
 
 		for {
-			print(i)
-
 			nOld, errOld := dotReaderOld.Read(bufOld)
 			n, err := dotReader.Read(buf)
 
