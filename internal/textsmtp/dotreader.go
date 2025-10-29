@@ -2,10 +2,13 @@ package textsmtp
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 
 	"github.com/uponusolutions/go-smtp"
 )
+
+var crlfdot = []byte{'\r', '\n', '.'}
 
 type dotReader struct {
 	r     *bufio.Reader
@@ -30,7 +33,15 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader {
 }
 
 // Read reads in some more bytes.
-func (r *dotReader) Read(b []byte) (n int, err error) {
+func (r *dotReader) Read(b []byte) (int, error) {
+	// Run data through a simple state machine to
+	// elide leading dots and detect End-of-Data (<CR><LF>.<CR><LF>) line.
+	const (
+		stateBeginLine = iota // beginning of line; initial state; must be zero
+		stateCR               // wrote \r
+		stateEOF              // reached .\r\n end marker line
+	)
+
 	if r.limited {
 		if r.n <= 0 {
 			return 0, smtp.ErrDataTooLarge
@@ -40,66 +51,86 @@ func (r *dotReader) Read(b []byte) (n int, err error) {
 		}
 	}
 
-	// Code below is taken from net/textproto with only one modification to
-	// not rewrite CRLF -> LF.
+	var n int       // data written to b
+	var skipped int // how many
 
-	// Run data through a simple state machine to
-	// elide leading dots and detect End-of-Data (<CR><LF>.<CR><LF>) line.
-	const (
-		stateBeginLine = iota // beginning of line; initial state; must be zero
-		stateDot              // read . at beginning of line
-		stateDotCR            // read .\r at beginning of line
-		stateCR               // read \r (possibly at end of line)
-		stateData             // reading data in middle of line
-		stateEOF              // reached .\r\n end marker line
-	)
-	for n < len(b) && r.state != stateEOF {
-		var c byte
-		c, err = r.r.ReadByte()
-		if err != nil {
-			if err == io.EOF {
-				err = io.ErrUnexpectedEOF
+	// IMPORTANT: We cannot wait on read, because no EOL returns
+	if r.r.Buffered() == 0 {
+		_, _ = r.r.Peek(1)
+	}
+
+	// min 5, max buffer size, default len(b)
+	c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+
+	// write \n
+	if r.state == stateCR {
+		b[0] = '\n'
+		n++
+		skipped += 2
+		r.state = stateBeginLine
+		if c[3] == '\r' && c[4] == '\n' {
+			r.state = stateEOF
+			skipped += 2 // skip .\n\r
+		} else {
+			b = b[1:]
+			c = c[3:]
+		}
+	}
+
+	for r.state != stateEOF {
+		i := bytes.Index(c, crlfdot)
+
+		// no full \r\n. found
+		if i == -1 {
+			if err != io.EOF && len(c) > 1 && c[len(c)-2] == '\r' && c[len(c)-1] == '\n' {
+				// ends with \r\n, write everything before
+				n += copy(b, c[:len(c)-2])
+			} else if err != io.EOF && len(c) > 0 && c[len(c)-1] == '\r' {
+				// ends with \r, write everything before
+				n += copy(b, c[:len(c)-1])
+			} else {
+				n += copy(b, c)
+			}
+			break
+		} else if len(c) < i+4 {
+			// not enough bytes to check for \r\n.\r\n, write everything before
+			if i > 0 {
+				n += copy(b, c[:i])
 			}
 			break
 		}
-		switch r.state {
-		case stateBeginLine:
-			if c == '.' {
-				r.state = stateDot
-				continue
+
+		p := copy(b, c[:i+2])
+		n += p
+
+		// b was to small
+		if p < i+2 {
+			// we only wrote \r
+			if i+2-p == 1 {
+				r.state = stateCR // next time we want to write \n
+				skipped--         // prevent \r from being discarded
 			}
-			if c == '\r' {
-				r.state = stateCR
-				break
-			}
-			r.state = stateData
-		case stateDot:
-			if c == '\r' {
-				r.state = stateDotCR
-				continue
-			}
-			r.state = stateData
-		case stateDotCR:
-			if c == '\n' {
-				r.state = stateEOF
-				continue
-			}
-			r.state = stateData
-		case stateCR:
-			if c == '\n' {
-				r.state = stateBeginLine
-				break
-			}
-			r.state = stateData
-		case stateData:
-			if c == '\r' {
-				r.state = stateCR
-			}
+			break
 		}
-		b[n] = c
-		n++
+
+		// the end \r\n.\n\r
+		if c[i+3] == '\r' && c[i+4] == '\n' {
+			r.state = stateEOF
+			skipped += 3 // skip .\r\n
+			break
+		}
+
+		skipped++ // . isn't written
+		b = b[i+2:]
+		c = c[i+3:]
 	}
-	if err == nil && r.state == stateEOF {
+
+	// n + skipped is always smaller then what was peeked, so it is guaranteed to work
+	_, _ = r.r.Discard(n + skipped)
+
+	if err == io.EOF && r.state != stateEOF {
+		err = io.ErrUnexpectedEOF
+	} else if err == nil && r.state == stateEOF {
 		err = io.EOF
 	}
 
