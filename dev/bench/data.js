@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1761749482939,
+  "lastUpdate": 1761750992277,
   "repoUrl": "https://github.com/uponusolutions/go-smtp",
   "entries": {
     "Benchmark": [
@@ -264,6 +264,78 @@ window.BENCHMARK_DATA = {
             "value": 102857393,
             "unit": "ns/op",
             "extra": "100 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "committer": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "distinct": true,
+          "id": "896cc1ffa0c38253b04ac28e24a021235ca39b51",
+          "message": "feat(perf): dotreader",
+          "timestamp": "2025-10-29T16:14:32+01:00",
+          "tree_id": "c4a1b14fd4926d9ff857c0981d723bb46b902f2d",
+          "url": "https://github.com/uponusolutions/go-smtp/commit/896cc1ffa0c38253b04ac28e24a021235ca39b51"
+        },
+        "date": 1761750991589,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkSmallWithChunking",
+            "value": 362055,
+            "unit": "ns/op",
+            "extra": "33310 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSameConnection",
+            "value": 110350,
+            "unit": "ns/op",
+            "extra": "108602 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunking",
+            "value": 359830,
+            "unit": "ns/op",
+            "extra": "33375 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSameConnection",
+            "value": 110120,
+            "unit": "ns/op",
+            "extra": "108214 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunking",
+            "value": 35688917,
+            "unit": "ns/op",
+            "extra": "348 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSameConnection",
+            "value": 38374395,
+            "unit": "ns/op",
+            "extra": "308 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunking",
+            "value": 36858739,
+            "unit": "ns/op",
+            "extra": "328 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSameConnection",
+            "value": 37586112,
+            "unit": "ns/op",
+            "extra": "315 times\n4 procs"
           }
         ]
       }
