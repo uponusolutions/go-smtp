@@ -22,3 +22,4 @@ __debug_bin*
 
 # test benchmark
 output.txt
+coverage.html
