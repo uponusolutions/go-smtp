@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 	"github.com/uponusolutions/go-smtp/tester"
 )
@@ -33,6 +34,60 @@ func TestDotReader(t *testing.T) {
 			reader := textsmtp.NewDotReader(bufio.NewReader(b), 0) // textsmtp.NewDotReader(bufio.NewReader(b), 999999)
 			return io.ReadAll(reader)
 		})
+	})
+
+	t.Run("CompareTestByte", func(t *testing.T) {
+		input := "dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n"
+		readerOld := bufio.NewReader(strings.NewReader(input))
+		reader := bufio.NewReader(strings.NewReader(input))
+
+		dotReaderOld := NewDotReader(readerOld, 0)
+		bufOld := make([]byte, 1)
+
+		dotReader := textsmtp.NewDotReader(reader, 0)
+		buf := make([]byte, 1)
+
+		i := 0
+
+		for {
+			nOld, errOld := dotReaderOld.Read(bufOld)
+			n, err := dotReader.Read(buf)
+
+			require.Equal(t, bufOld, buf, i)
+			require.Equal(t, nOld, n, i)
+
+			if errOld != nil && err != io.EOF {
+				require.Equal(t, errOld, err, i)
+			}
+
+			i++
+
+			if errOld == io.EOF {
+				break
+			}
+		}
+
+		dotReaderOld = NewDotReader(readerOld, 0)
+		dotReader = textsmtp.NewDotReader(reader, 0)
+
+		i = 0
+
+		for {
+			print(i)
+
+			nOld, errOld := dotReaderOld.Read(bufOld)
+			n, err := dotReader.Read(buf)
+
+			require.Equal(t, bufOld, buf, i)
+			require.Equal(t, nOld, n, i)
+			require.Equal(t, errOld, err, i)
+
+			i++
+
+			if errOld == io.ErrUnexpectedEOF {
+				break
+			}
+		}
 	})
 
 	t.Run("Decode", func(t *testing.T) {

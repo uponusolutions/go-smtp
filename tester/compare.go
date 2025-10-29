@@ -121,7 +121,7 @@ func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Rea
 
 		buf1, err := actual(pr)
 		require.ErrorIs(t, io.ErrUnexpectedEOF, err)
-		print(string(buf), string(buf1))
+		// print(string(buf), string(buf1))
 		require.Equal(t, buf, buf1)
 
 		size++
