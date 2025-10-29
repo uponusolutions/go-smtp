@@ -11,6 +11,7 @@ import (
 	"embed"
 	"io"
 	legacy "net/textproto"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -120,8 +121,9 @@ func BenchmarkDotReader(b *testing.B) {
 	data := buf.Bytes()
 
 	b.Run("Legacy", func(b *testing.B) {
-		b.ResetTimer()
-		b.SetBytes(size)
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(size)
+		}
 		for b.Loop() {
 			r := legacy.NewReader(bufio.NewReader(bytes.NewReader(data))).DotReader()
 			_, _ = io.Copy(io.Discard, r)
@@ -130,7 +132,9 @@ func BenchmarkDotReader(b *testing.B) {
 
 	b.Run("Optimized", func(b *testing.B) {
 		b.ResetTimer()
-		b.SetBytes(size)
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(size)
+		}
 		for b.Loop() {
 			r := textsmtp.NewDotReader(bufio.NewReader(bytes.NewReader(data)), 0)
 			_, _ = io.Copy(io.Discard, r)

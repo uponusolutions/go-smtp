@@ -11,6 +11,7 @@ import (
 	"embed"
 	"io"
 	legacy "net/textproto"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -150,8 +151,9 @@ func BenchmarkDotWriter(b *testing.B) {
 	data, _ := io.ReadAll(io.LimitReader(rand.Reader, size))
 
 	b.Run("Legacy", func(b *testing.B) {
-		b.ResetTimer()
-		b.SetBytes(size)
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(size)
+		}
 		for b.Loop() {
 			r := bytes.NewReader(data)
 			w := legacy.NewWriter(bufio.NewWriter(io.Discard)).DotWriter()
@@ -160,8 +162,9 @@ func BenchmarkDotWriter(b *testing.B) {
 	})
 
 	b.Run("Optimized", func(b *testing.B) {
-		b.ResetTimer()
-		b.SetBytes(size)
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(size)
+		}
 		for b.Loop() {
 			r := bytes.NewReader(data)
 			w := textsmtp.NewDotWriter(bufio.NewWriter(io.Discard))
