@@ -92,7 +92,9 @@ func (r *dotReader) Read(b []byte) (int, error) {
 				n += copy(b, c)
 			}
 			break
-		} else if len(c) < i+4 {
+		} else if len(c)-1 < i+4 {
+			// i is \r, \n.\r\n needs to be accessible
+
 			// not enough bytes to check for \r\n.\r\n, write everything before
 			if i > 0 {
 				n += copy(b, c[:i])
