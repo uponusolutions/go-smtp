@@ -56,7 +56,7 @@ func (r *dotReader) Read(b []byte) (int, error) {
 
 	// IMPORTANT: We cannot wait on read, because no EOL returns
 	if r.r.Buffered() == 0 {
-		_, _ = r.r.Peek(1)
+		_, _ = r.r.Peek(5)
 	}
 
 	// min 5, max buffer size, default len(b)
