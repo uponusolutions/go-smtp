@@ -18,7 +18,7 @@ bench:
 	@go test ./... -bench . -run ^$ -benchtime=10s
 
 pprof:
-	@go test ./internal/benchmark -cpuprofile cpu.pprof -memprofile mem.pprof -bench ^Benchmark/^SmallWithChunkingSameConnection$
+	@go test ./internal/benchmark -cpuprofile cpu.pprof -memprofile mem.pprof -bench ^Benchmark/^LargeWithChunkingSameConnection$
 	@go tool pprof -http=":8000" cpu.pprof
 
 vet:
