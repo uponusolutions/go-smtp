@@ -105,7 +105,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	c.ctx = sctx
 	c.session = session
 
-	c.logger().InfoContext(c.ctx, "connection is opened")
+	c.logger().DebugContext(c.ctx, "connection is opened")
 
 	// explicit tls handshake call
 	if tlsConn, ok := c.conn.(*tls.Conn); ok {

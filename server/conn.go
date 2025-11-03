@@ -234,7 +234,7 @@ func (c *Conn) Server() *Server {
 
 // Close closes the connection.
 func (c *Conn) Close(err error) {
-	c.logger().InfoContext(c.ctx, "connection is closing")
+	c.logger().DebugContext(c.ctx, "connection is closing")
 
 	closeErr := c.conn.Close()
 	if closeErr != nil {
