@@ -402,6 +402,2036 @@ type VrfyOptions struct {
 }
 ```
 
+# client
+
+```go
+import "github.com/uponusolutions/go-smtp/client"
+```
+
+## Index
+
+- [type Client](<#Client>)
+  - [func New\(opts ...Option\) \*Client](<#New>)
+  - [func \(c \*Client\) Auth\(a sasl.Client\) error](<#Client.Auth>)
+  - [func \(c \*Client\) Close\(\) error](<#Client.Close>)
+  - [func \(c \*Client\) Connect\(ctx context.Context\) error](<#Client.Connect>)
+  - [func \(c \*Client\) Data\(\) \(\*DataCloser, error\)](<#Client.Data>)
+  - [func \(c \*Client\) Extension\(ext string\) \(bool, string\)](<#Client.Extension>)
+  - [func \(c \*Client\) Mail\(from string, opts \*MailOptions\) error](<#Client.Mail>)
+  - [func \(c \*Client\) MaxMessageSize\(\) \(size int, ok bool\)](<#Client.MaxMessageSize>)
+  - [func \(c \*Client\) Noop\(\) error](<#Client.Noop>)
+  - [func \(c \*Client\) Quit\(\) error](<#Client.Quit>)
+  - [func \(c \*Client\) Rcpt\(to string, opts \*smtp.RcptOptions\) error](<#Client.Rcpt>)
+  - [func \(c \*Client\) Reset\(\) error](<#Client.Reset>)
+  - [func \(c \*Client\) Send\(from string, rcpt \[\]string, msg \[\]byte\) error](<#Client.Send>)
+  - [func \(c \*Client\) SendMail\(from string, rcpt \[\]string, in io.Reader\) \(code int, msg string, err error\)](<#Client.SendMail>)
+  - [func \(c \*Client\) ServerAddress\(\) string](<#Client.ServerAddress>)
+  - [func \(c \*Client\) ServerAddresses\(\) \[\]\[\]string](<#Client.ServerAddresses>)
+  - [func \(c \*Client\) ServerName\(\) string](<#Client.ServerName>)
+  - [func \(c \*Client\) SetXOORG\(xoorg \*string\)](<#Client.SetXOORG>)
+  - [func \(c \*Client\) SupportsAuth\(mech string\) bool](<#Client.SupportsAuth>)
+  - [func \(c \*Client\) TLSConnectionState\(\) \(tls.ConnectionState, bool\)](<#Client.TLSConnectionState>)
+  - [func \(c \*Client\) Verify\(addr string, opts \*VrfyOptions\) error](<#Client.Verify>)
+- [type DataCloser](<#DataCloser>)
+  - [func \(d \*DataCloser\) Close\(\) error](<#DataCloser.Close>)
+  - [func \(d \*DataCloser\) CloseWithResponse\(\) \(code int, msg string, err error\)](<#DataCloser.CloseWithResponse>)
+- [type MailOptions](<#MailOptions>)
+- [type Option](<#Option>)
+  - [func WithCommandTimeout\(commandTimeout time.Duration\) Option](<#WithCommandTimeout>)
+  - [func WithDialTimeout\(dialTimeout time.Duration\) Option](<#WithDialTimeout>)
+  - [func WithLocalName\(localName string\) Option](<#WithLocalName>)
+  - [func WithMailOptions\(mailOptions MailOptions\) Option](<#WithMailOptions>)
+  - [func WithMaxLineLength\(maxLineLength int\) Option](<#WithMaxLineLength>)
+  - [func WithReaderSize\(readerSize int\) Option](<#WithReaderSize>)
+  - [func WithSASLClient\(cl sasl.Client\) Option](<#WithSASLClient>)
+  - [func WithSecurity\(security Security\) Option](<#WithSecurity>)
+  - [func WithServerAddressIndex\(index int\) Option](<#WithServerAddressIndex>)
+  - [func WithServerAddresses\(addrs ...string\) Option](<#WithServerAddresses>)
+  - [func WithServerAddressesPrio\(addrs ...\[\]string\) Option](<#WithServerAddressesPrio>)
+  - [func WithSubmissionTimeout\(submissionTimeout time.Duration\) Option](<#WithSubmissionTimeout>)
+  - [func WithTLSConfig\(cfg \*tls.Config\) Option](<#WithTLSConfig>)
+  - [func WithTlsHandshakeTimeout\(tlsHandshakeTimeout time.Duration\) Option](<#WithTlsHandshakeTimeout>)
+  - [func WithWriterSize\(writerSize int\) Option](<#WithWriterSize>)
+- [type Security](<#Security>)
+- [type UTF8](<#UTF8>)
+- [type VrfyOptions](<#VrfyOptions>)
+
+
+<a name="Client"></a>
+## type Client
+
+Client is an SMTP client. It sends one or more mails to a SMTP server over a single connection. TODO: Add context support.
+
+```go
+type Client struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="New"></a>
+### func New
+
+```go
+func New(opts ...Option) *Client
+```
+
+New returns a new SMTP client. When not set via options the address 127.0.0.1:25 is used. When not set via options a default tls.Config is used.
+
+<a name="Client.Auth"></a>
+### func \(\*Client\) Auth
+
+```go
+func (c *Client) Auth(a sasl.Client) error
+```
+
+Auth authenticates a client using the provided authentication mechanism. Only servers that advertise the AUTH extension support this function.
+
+If server returns an error, it will be of type \*smtp.
+
+<a name="Client.Close"></a>
+### func \(\*Client\) Close
+
+```go
+func (c *Client) Close() error
+```
+
+Close closes the connection.
+
+<a name="Client.Connect"></a>
+### func \(\*Client\) Connect
+
+```go
+func (c *Client) Connect(ctx context.Context) error
+```
+
+Connect connects to one of the available SMTP server. When server supports auth and clients SaslClient is set, auth is called. Security is enforced like configured \(Plain, TLS, StartTLS or PreferStartTLS\) If an error occures, the connection is closed if open.
+
+<a name="Client.Data"></a>
+### func \(\*Client\) Data
+
+```go
+func (c *Client) Data() (*DataCloser, error)
+```
+
+Data issues a DATA command to the server and returns a writer that can be used to write the mail headers and body. The caller should close the writer before calling any more methods on c. A call to Data must be preceded by one or more calls to Rcpt.
+
+If server returns an error, it will be of type \*smtp.
+
+<a name="Client.Extension"></a>
+### func \(\*Client\) Extension
+
+```go
+func (c *Client) Extension(ext string) (bool, string)
+```
+
+Extension reports whether an extension is support by the server. The extension name is case\-insensitive. If the extension is supported, Extension also returns a string that contains any parameters the server specifies for the extension.
+
+<a name="Client.Mail"></a>
+### func \(\*Client\) Mail
+
+```go
+func (c *Client) Mail(from string, opts *MailOptions) error
+```
+
+Mail issues a MAIL command to the server using the provided email address. If the server supports the 8BITMIME extension, Mail adds the BODY=8BITMIME parameter. This initiates a mail transaction and is followed by one or more Rcpt calls.
+
+If opts is not nil, MAIL arguments provided in the structure will be added to the command. Handling of unsupported options depends on the extension.
+
+If server returns an error, it will be of type \*smtp.
+
+<a name="Client.MaxMessageSize"></a>
+### func \(\*Client\) MaxMessageSize
+
+```go
+func (c *Client) MaxMessageSize() (size int, ok bool)
+```
+
+MaxMessageSize returns the maximum message size accepted by the server. 0 means unlimited.
+
+If the server doesn't convey this information, ok = false is returned.
+
+<a name="Client.Noop"></a>
+### func \(\*Client\) Noop
+
+```go
+func (c *Client) Noop() error
+```
+
+Noop sends the NOOP command to the server. It does nothing but check that the connection to the server is okay.
+
+<a name="Client.Quit"></a>
+### func \(\*Client\) Quit
+
+```go
+func (c *Client) Quit() error
+```
+
+Quit sends the QUIT command and closes the connection to the server. If Quit fails the connection will still be closed.
+
+<a name="Client.Rcpt"></a>
+### func \(\*Client\) Rcpt
+
+```go
+func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error
+```
+
+Rcpt issues a RCPT command to the server using the provided email address. A call to Rcpt must be preceded by a call to Mail and may be followed by a Data call or another Rcpt call.
+
+If opts is not nil, RCPT arguments provided in the structure will be added to the command. Handling of unsupported options depends on the extension.
+
+If server returns an error, it will be of type \*smtp.
+
+<a name="Client.Reset"></a>
+### func \(\*Client\) Reset
+
+```go
+func (c *Client) Reset() error
+```
+
+Reset sends the RSET command to the server, aborting the current mail transaction.
+
+<a name="Client.Send"></a>
+### func \(\*Client\) Send
+
+```go
+func (c *Client) Send(from string, rcpt []string, msg []byte) error
+```
+
+Send implements enmime.Sender interface.
+
+<a name="Client.SendMail"></a>
+### func \(\*Client\) SendMail
+
+```go
+func (c *Client) SendMail(from string, rcpt []string, in io.Reader) (code int, msg string, err error)
+```
+
+SendMail will use an existing connection to send an email from address from, to addresses to, with message r.
+
+This function does not start TLS, nor does it perform authentication. Use DialStartTLS and Auth before\-hand if desirable.
+
+The addresses in the to parameter are the SMTP RCPT addresses.
+
+The r parameter should be an RFC 822\-style email with headers first, a blank line, and then the message body. The lines of r should be CRLF terminated. The r headers should usually include fields such as "From", "To", "Subject", and "Cc". Sending "Bcc" messages is accomplished by including an email address in the to parameter but not including it in the r headers.
+
+<a name="Client.ServerAddress"></a>
+### func \(\*Client\) ServerAddress
+
+```go
+func (c *Client) ServerAddress() string
+```
+
+ServerAddress returns the current server address.
+
+<a name="Client.ServerAddresses"></a>
+### func \(\*Client\) ServerAddresses
+
+```go
+func (c *Client) ServerAddresses() [][]string
+```
+
+ServerAddresses returns the server address.
+
+<a name="Client.ServerName"></a>
+### func \(\*Client\) ServerName
+
+```go
+func (c *Client) ServerName() string
+```
+
+ServerName returns the current server name.
+
+<a name="Client.SetXOORG"></a>
+### func \(\*Client\) SetXOORG
+
+```go
+func (c *Client) SetXOORG(xoorg *string)
+```
+
+SetXOORG set xoorg support
+
+<a name="Client.SupportsAuth"></a>
+### func \(\*Client\) SupportsAuth
+
+```go
+func (c *Client) SupportsAuth(mech string) bool
+```
+
+SupportsAuth checks whether an authentication mechanism is supported.
+
+<a name="Client.TLSConnectionState"></a>
+### func \(\*Client\) TLSConnectionState
+
+```go
+func (c *Client) TLSConnectionState() (tls.ConnectionState, bool)
+```
+
+TLSConnectionState returns the client's TLS connection state. The return values are their zero values if STARTTLS did not succeed.
+
+<a name="Client.Verify"></a>
+### func \(\*Client\) Verify
+
+```go
+func (c *Client) Verify(addr string, opts *VrfyOptions) error
+```
+
+Verify checks the validity of an email address on the server. If Verify returns nil, the address is valid. A non\-nil return does not necessarily indicate an invalid address. Many servers will not verify addresses for security reasons.
+
+If server returns an error, it will be of type \*smtp.
+
+<a name="DataCloser"></a>
+## type DataCloser
+
+DataCloser implement an io.WriteCloser with the additional CloseWithResponse function.
+
+```go
+type DataCloser struct {
+    io.WriteCloser
+    // contains filtered or unexported fields
+}
+```
+
+<a name="DataCloser.Close"></a>
+### func \(\*DataCloser\) Close
+
+```go
+func (d *DataCloser) Close() error
+```
+
+Close closes the data closer.
+
+<a name="DataCloser.CloseWithResponse"></a>
+### func \(\*DataCloser\) CloseWithResponse
+
+```go
+func (d *DataCloser) CloseWithResponse() (code int, msg string, err error)
+```
+
+CloseWithResponse closes the data closer and returns code, msg
+
+<a name="MailOptions"></a>
+## type MailOptions
+
+MailOptions contains parameters for the MAIL command.
+
+```go
+type MailOptions struct {
+    // Size of the body. Can be 0 if not specified by client.
+    Size int64
+
+    // TLS is required for the message transmission.
+    //
+    // The message should be rejected if it can't be transmitted
+    // with TLS.
+    RequireTLS bool
+
+    // The message envelope or message header contains UTF-8-encoded strings.
+    // This flag is set by SMTPUTF8-aware (RFC 6531) client.
+    UTF8 UTF8
+
+    // Value of RET= argument, FULL or HDRS.
+    Return smtp.DSNReturn
+
+    // Envelope identifier set by the client.
+    EnvelopeID string
+
+    // Accepted Domain from Exchange Online, e.g. from OutgoingConnector
+    XOORG *string
+
+    // The authorization identity asserted by the message sender in decoded
+    // form with angle brackets stripped.
+    //
+    // nil value indicates missing AUTH, non-nil empty string indicates
+    // AUTH=<>.
+    //
+    // Defined in RFC 4954.
+    Auth *string
+}
+```
+
+<a name="Option"></a>
+## type Option
+
+Option defines a client option.
+
+```go
+type Option func(c *Client)
+```
+
+<a name="WithCommandTimeout"></a>
+### func WithCommandTimeout
+
+```go
+func WithCommandTimeout(commandTimeout time.Duration) Option
+```
+
+WithCommandTimeout sets the command timeout.
+
+<a name="WithDialTimeout"></a>
+### func WithDialTimeout
+
+```go
+func WithDialTimeout(dialTimeout time.Duration) Option
+```
+
+WithDialTimeout sets the dial timeout.
+
+<a name="WithLocalName"></a>
+### func WithLocalName
+
+```go
+func WithLocalName(localName string) Option
+```
+
+WithLocalName sets the HELO local name.
+
+<a name="WithMailOptions"></a>
+### func WithMailOptions
+
+```go
+func WithMailOptions(mailOptions MailOptions) Option
+```
+
+WithMailOptions sets the mail options.
+
+<a name="WithMaxLineLength"></a>
+### func WithMaxLineLength
+
+```go
+func WithMaxLineLength(maxLineLength int) Option
+```
+
+WithMaxLineLength sets the max line length.
+
+<a name="WithReaderSize"></a>
+### func WithReaderSize
+
+```go
+func WithReaderSize(readerSize int) Option
+```
+
+WithReaderSize sets the reader size.
+
+<a name="WithSASLClient"></a>
+### func WithSASLClient
+
+```go
+func WithSASLClient(cl sasl.Client) Option
+```
+
+WithSASLClient sets the SASL client.
+
+<a name="WithSecurity"></a>
+### func WithSecurity
+
+```go
+func WithSecurity(security Security) Option
+```
+
+WithSecurity sets the TLS config.
+
+<a name="WithServerAddressIndex"></a>
+### func WithServerAddressIndex
+
+```go
+func WithServerAddressIndex(index int) Option
+```
+
+WithServerAddressIndex sets the SMTP server index.
+
+<a name="WithServerAddresses"></a>
+### func WithServerAddresses
+
+```go
+func WithServerAddresses(addrs ...string) Option
+```
+
+WithServerAddresses sets the SMTP servers address.
+
+<a name="WithServerAddressesPrio"></a>
+### func WithServerAddressesPrio
+
+```go
+func WithServerAddressesPrio(addrs ...[]string) Option
+```
+
+WithServerAddressesPrio sets the SMTP servers address.
+
+<a name="WithSubmissionTimeout"></a>
+### func WithSubmissionTimeout
+
+```go
+func WithSubmissionTimeout(submissionTimeout time.Duration) Option
+```
+
+WithSubmissionTimeout sets the submission timeout.
+
+<a name="WithTLSConfig"></a>
+### func WithTLSConfig
+
+```go
+func WithTLSConfig(cfg *tls.Config) Option
+```
+
+WithTLSConfig sets the TLS config.
+
+<a name="WithTlsHandshakeTimeout"></a>
+### func WithTlsHandshakeTimeout
+
+```go
+func WithTlsHandshakeTimeout(tlsHandshakeTimeout time.Duration) Option
+```
+
+WithTlsHandshakeTimeout sets tls handshake timeout.
+
+<a name="WithWriterSize"></a>
+### func WithWriterSize
+
+```go
+func WithWriterSize(writerSize int) Option
+```
+
+WithWriterSize sets the reader size.
+
+<a name="Security"></a>
+## type Security
+
+Security describes how the connection is etablished.
+
+```go
+type Security int32
+```
+
+<a name="SecurityPreferStartTLS"></a>
+
+```go
+const (
+    // SecurityPreferStartTLS tries to use StartTls but fallbacks to plain.
+    SecurityPreferStartTLS Security = 0
+    // SecurityPlain is always just a plain connection.
+    SecurityPlain Security = 1
+    // SecurityTLS does a implicit tls connection.
+    SecurityTLS Security = 2
+    // SecurityStartTLS always does starttls.
+    SecurityStartTLS Security = 3
+)
+```
+
+<a name="UTF8"></a>
+## type UTF8
+
+UTF8 describes how SMTPUTF8 is used.
+
+```go
+type UTF8 int32
+```
+
+<a name="UTF8Prefer"></a>
+
+```go
+const (
+    // UTF8Prefer uses SMTPUTF8 if possible.
+    UTF8Prefer UTF8 = 0
+    // UTF8Force always uses SMTPUTF8.
+    UTF8Force UTF8 = 1
+    // UTF8Disabled never uses SMTPUTF8.
+    UTF8Disabled UTF8 = 2
+)
+```
+
+<a name="VrfyOptions"></a>
+## type VrfyOptions
+
+VrfyOptions contains parameters for the VRFY command.
+
+```go
+type VrfyOptions struct {
+    // The message envelope or message header contains UTF-8-encoded strings.
+    // This flag is set by SMTPUTF8-aware (RFC 6531) client.
+    UTF8 UTF8
+}
+```
+
+# server
+
+```go
+import "github.com/uponusolutions/go-smtp/server"
+```
+
+<details><summary>Example</summary>
+<p>
+
+
+
+```go
+// Set up authentication information.
+auth := sasl.NewPlainClient("", "user@example.com", "password")
+
+// Connect to the server, authenticate, set the sender and recipient,
+// and send the email all in one step.
+to := []string{"recipient@example.net"}
+msg := strings.NewReader("To: recipient@example.net\r\n" +
+	"Subject: discount Gophers!\r\n" +
+	"\r\n" +
+	"This is the email body.\r\n")
+
+c := client.New(
+	client.WithServerAddresses("mail.example.com:25"),
+	client.WithSASLClient(auth),
+)
+
+_, _, err := c.SendMail("sender@example.org", to, msg)
+if err != nil {
+	log.Fatal(err)
+}
+```
+
+</p>
+</details>
+
+<details><summary>Example (Plain Auth)</summary>
+<p>
+
+
+
+```go
+// hostname is used by PlainAuth to validate the TLS certificate.
+hostname := "mail.example.com"
+auth := sasl.NewPlainClient("", "user@example.com", "password")
+
+c := client.New(
+	client.WithServerAddresses(hostname+":25"),
+	client.WithSASLClient(auth),
+)
+
+_, _, err := c.SendMail(from, recipients, msg)
+if err != nil {
+	log.Fatal(err)
+}
+```
+
+</p>
+</details>
+
+## Index
+
+- [Variables](<#variables>)
+- [type Backend](<#Backend>)
+- [type BackendFunc](<#BackendFunc>)
+  - [func \(f BackendFunc\) NewSession\(ctx context.Context, c \*Conn\) \(context.Context, Session, error\)](<#BackendFunc.NewSession>)
+- [type Conn](<#Conn>)
+  - [func \(c \*Conn\) Close\(err error\)](<#Conn.Close>)
+  - [func \(c \*Conn\) Conn\(\) net.Conn](<#Conn.Conn>)
+  - [func \(c \*Conn\) Hostname\(\) string](<#Conn.Hostname>)
+  - [func \(c \*Conn\) IsTLS\(\) bool](<#Conn.IsTLS>)
+  - [func \(c \*Conn\) Mechanisms\(\) \[\]string](<#Conn.Mechanisms>)
+  - [func \(c \*Conn\) Server\(\) \*Server](<#Conn.Server>)
+  - [func \(c \*Conn\) TLSConnectionState\(\) \(tls.ConnectionState, bool\)](<#Conn.TLSConnectionState>)
+- [type Option](<#Option>)
+  - [func WithAddr\(addr string\) Option](<#WithAddr>)
+  - [func WithBackend\(backend Backend\) Option](<#WithBackend>)
+  - [func WithEnableBINARYMIME\(enableBINARYMIME bool\) Option](<#WithEnableBINARYMIME>)
+  - [func WithEnableCHUNKING\(enableCHUNKING bool\) Option](<#WithEnableCHUNKING>)
+  - [func WithEnableDSN\(enableDSN bool\) Option](<#WithEnableDSN>)
+  - [func WithEnableREQUIRETLS\(enableREQUIRETLS bool\) Option](<#WithEnableREQUIRETLS>)
+  - [func WithEnableSMTPUTF8\(enableSMTPUTF8 bool\) Option](<#WithEnableSMTPUTF8>)
+  - [func WithEnableXOORG\(enableXOORG bool\) Option](<#WithEnableXOORG>)
+  - [func WithEnforceAuthentication\(enforceAuthentication bool\) Option](<#WithEnforceAuthentication>)
+  - [func WithEnforceSecureConnection\(enforceSecureConnection bool\) Option](<#WithEnforceSecureConnection>)
+  - [func WithHostname\(hostname string\) Option](<#WithHostname>)
+  - [func WithImplicitTLS\(implicitTLS bool\) Option](<#WithImplicitTLS>)
+  - [func WithLogger\(logger \*slog.Logger\) Option](<#WithLogger>)
+  - [func WithMaxLineLength\(maxLineLength int\) Option](<#WithMaxLineLength>)
+  - [func WithMaxMessageBytes\(maxMessageBytes int64\) Option](<#WithMaxMessageBytes>)
+  - [func WithMaxRecipients\(maxRecipients int\) Option](<#WithMaxRecipients>)
+  - [func WithNetwork\(network string\) Option](<#WithNetwork>)
+  - [func WithReadTimeout\(readTimeout time.Duration\) Option](<#WithReadTimeout>)
+  - [func WithReaderSize\(readerSize int\) Option](<#WithReaderSize>)
+  - [func WithTLSConfig\(tlsConfig \*tls.Config\) Option](<#WithTLSConfig>)
+  - [func WithWriteTimeout\(writeTimeout time.Duration\) Option](<#WithWriteTimeout>)
+  - [func WithWriterSize\(writerSize int\) Option](<#WithWriterSize>)
+- [type Server](<#Server>)
+  - [func New\(opts ...Option\) \*Server](<#New>)
+  - [func \(s \*Server\) Backend\(\) Backend](<#Server.Backend>)
+  - [func \(s \*Server\) Close\(\) error](<#Server.Close>)
+  - [func \(s \*Server\) Listen\(\) \(net.Listener, error\)](<#Server.Listen>)
+  - [func \(s \*Server\) ListenAndServe\(ctx context.Context\) error](<#Server.ListenAndServe>)
+  - [func \(s \*Server\) Serve\(ctx context.Context, l net.Listener\) error](<#Server.Serve>)
+  - [func \(s \*Server\) Shutdown\(ctx context.Context\) error](<#Server.Shutdown>)
+- [type Session](<#Session>)
+
+
+## Variables
+
+<a name="ErrServerClosed"></a>ErrServerClosed occurs if a server is already closed.
+
+```go
+var ErrServerClosed = errors.New("smtp: server already closed")
+```
+
+<a name="Backend"></a>
+## type Backend
+
+Backend is a SMTP server backend.
+
+```go
+type Backend interface {
+    NewSession(ctx context.Context, c *Conn) (context.Context, Session, error)
+}
+```
+
+<a name="BackendFunc"></a>
+## type BackendFunc
+
+BackendFunc is an adapter to allow the use of an ordinary function as a Backend.
+
+```go
+type BackendFunc func(ctx context.Context, c *Conn) (context.Context, Session, error)
+```
+
+<a name="BackendFunc.NewSession"></a>
+### func \(BackendFunc\) NewSession
+
+```go
+func (f BackendFunc) NewSession(ctx context.Context, c *Conn) (context.Context, Session, error)
+```
+
+NewSession calls f\(c\). The returning context is used in the session.
+
+<a name="Conn"></a>
+## type Conn
+
+Conn is a connection inside a smtp server.
+
+```go
+type Conn struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="Conn.Close"></a>
+### func \(\*Conn\) Close
+
+```go
+func (c *Conn) Close(err error)
+```
+
+Close closes the connection.
+
+<a name="Conn.Conn"></a>
+### func \(\*Conn\) Conn
+
+```go
+func (c *Conn) Conn() net.Conn
+```
+
+Conn returns the connection.
+
+<a name="Conn.Hostname"></a>
+### func \(\*Conn\) Hostname
+
+```go
+func (c *Conn) Hostname() string
+```
+
+Hostname returns the name of the connected client.
+
+<a name="Conn.IsTLS"></a>
+### func \(\*Conn\) IsTLS
+
+```go
+func (c *Conn) IsTLS() bool
+```
+
+IsTLS returns if the connection is encrypted by tls.
+
+<a name="Conn.Mechanisms"></a>
+### func \(\*Conn\) Mechanisms
+
+```go
+func (c *Conn) Mechanisms() []string
+```
+
+Mechanisms returns the allowed auth mechanism for this connection.
+
+<a name="Conn.Server"></a>
+### func \(\*Conn\) Server
+
+```go
+func (c *Conn) Server() *Server
+```
+
+Server returns the server this connection comes from.
+
+<a name="Conn.TLSConnectionState"></a>
+### func \(\*Conn\) TLSConnectionState
+
+```go
+func (c *Conn) TLSConnectionState() (tls.ConnectionState, bool)
+```
+
+TLSConnectionState returns the connection's TLS connection state. Zero values are returned if the connection doesn't use TLS.
+
+<a name="Option"></a>
+## type Option
+
+Option is an option for the server.
+
+```go
+type Option func(*Server)
+```
+
+<a name="WithAddr"></a>
+### func WithAddr
+
+```go
+func WithAddr(addr string) Option
+```
+
+WithAddr sets addr.
+
+<a name="WithBackend"></a>
+### func WithBackend
+
+```go
+func WithBackend(backend Backend) Option
+```
+
+WithBackend sets the backend.
+
+<a name="WithEnableBINARYMIME"></a>
+### func WithEnableBINARYMIME
+
+```go
+func WithEnableBINARYMIME(enableBINARYMIME bool) Option
+```
+
+WithEnableBINARYMIME sets EnableBINARYMIME.
+
+<a name="WithEnableCHUNKING"></a>
+### func WithEnableCHUNKING
+
+```go
+func WithEnableCHUNKING(enableCHUNKING bool) Option
+```
+
+WithEnableCHUNKING sets EnableCHUNKING.
+
+<a name="WithEnableDSN"></a>
+### func WithEnableDSN
+
+```go
+func WithEnableDSN(enableDSN bool) Option
+```
+
+WithEnableDSN sets EnableDSN.
+
+<a name="WithEnableREQUIRETLS"></a>
+### func WithEnableREQUIRETLS
+
+```go
+func WithEnableREQUIRETLS(enableREQUIRETLS bool) Option
+```
+
+WithEnableREQUIRETLS sets EnableREQUIRETLS.
+
+<a name="WithEnableSMTPUTF8"></a>
+### func WithEnableSMTPUTF8
+
+```go
+func WithEnableSMTPUTF8(enableSMTPUTF8 bool) Option
+```
+
+WithEnableSMTPUTF8 sets EnableSMTPUTF8.
+
+<a name="WithEnableXOORG"></a>
+### func WithEnableXOORG
+
+```go
+func WithEnableXOORG(enableXOORG bool) Option
+```
+
+WithEnableXOORG enables xoorg.
+
+<a name="WithEnforceAuthentication"></a>
+### func WithEnforceAuthentication
+
+```go
+func WithEnforceAuthentication(enforceAuthentication bool) Option
+```
+
+WithEnforceAuthentication enforces authentication before mail usage.
+
+<a name="WithEnforceSecureConnection"></a>
+### func WithEnforceSecureConnection
+
+```go
+func WithEnforceSecureConnection(enforceSecureConnection bool) Option
+```
+
+WithEnforceSecureConnection enforces implicit TLS or STARTTLS.
+
+<a name="WithHostname"></a>
+### func WithHostname
+
+```go
+func WithHostname(hostname string) Option
+```
+
+WithHostname sets the domain.
+
+<a name="WithImplicitTLS"></a>
+### func WithImplicitTLS
+
+```go
+func WithImplicitTLS(implicitTLS bool) Option
+```
+
+WithImplicitTLS sets implicitTLS.
+
+<a name="WithLogger"></a>
+### func WithLogger
+
+```go
+func WithLogger(logger *slog.Logger) Option
+```
+
+WithLogger sets the backend.
+
+<a name="WithMaxLineLength"></a>
+### func WithMaxLineLength
+
+```go
+func WithMaxLineLength(maxLineLength int) Option
+```
+
+WithMaxLineLength sets the max length per line.
+
+<a name="WithMaxMessageBytes"></a>
+### func WithMaxMessageBytes
+
+```go
+func WithMaxMessageBytes(maxMessageBytes int64) Option
+```
+
+WithMaxMessageBytes sets the max message size.
+
+<a name="WithMaxRecipients"></a>
+### func WithMaxRecipients
+
+```go
+func WithMaxRecipients(maxRecipients int) Option
+```
+
+WithMaxRecipients sets the max recipients per mail.
+
+<a name="WithNetwork"></a>
+### func WithNetwork
+
+```go
+func WithNetwork(network string) Option
+```
+
+WithNetwork sets the network.
+
+<a name="WithReadTimeout"></a>
+### func WithReadTimeout
+
+```go
+func WithReadTimeout(readTimeout time.Duration) Option
+```
+
+WithReadTimeout sets the read timeout.
+
+<a name="WithReaderSize"></a>
+### func WithReaderSize
+
+```go
+func WithReaderSize(readerSize int) Option
+```
+
+WithReaderSize sets ReaderSize.
+
+<a name="WithTLSConfig"></a>
+### func WithTLSConfig
+
+```go
+func WithTLSConfig(tlsConfig *tls.Config) Option
+```
+
+WithTLSConfig sets certificate.
+
+<a name="WithWriteTimeout"></a>
+### func WithWriteTimeout
+
+```go
+func WithWriteTimeout(writeTimeout time.Duration) Option
+```
+
+WithWriteTimeout sets the write timeout.
+
+<a name="WithWriterSize"></a>
+### func WithWriterSize
+
+```go
+func WithWriterSize(writerSize int) Option
+```
+
+WithWriterSize sets WriterSize.
+
+<a name="Server"></a>
+## type Server
+
+Server implements a SMTP server.
+
+```go
+type Server struct {
+    // contains filtered or unexported fields
+}
+```
+
+<details><summary>Example</summary>
+<p>
+
+ExampleServer runs an example SMTP server.
+
+It can be tested manually with e.g. netcat:
+
+```
+> netcat -C localhost 1025
+EHLO localhost
+AUTH PLAIN
+AHVzZXJuYW1lAHBhc3N3b3Jk
+MAIL FROM:<root@nsa.gov>
+RCPT TO:<root@gchq.gov.uk>
+DATA
+Hey <3
+.
+```
+
+```go
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"io"
+	"log"
+	"log/slog"
+	"time"
+
+	"github.com/uponusolutions/go-sasl"
+	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/server"
+)
+
+// The Backend implements SMTP server methods.
+type Backend struct{}
+
+// NewSession is called after client greeting (EHLO, HELO).
+func (*Backend) NewSession(ctx context.Context, _ *server.Conn) (context.Context, server.Session, error) {
+	return ctx, &Session{}, nil
+}
+
+// A Session is returned after successful login.
+type Session struct {
+	auth bool
+}
+
+// Logger returns nil.
+func (*Session) Logger(_ context.Context) *slog.Logger {
+	return nil
+}
+
+// AuthMechanisms returns a slice of available auth mechanisms; only PLAIN is
+// supported in this example.
+func (*Session) AuthMechanisms(_ context.Context) []string {
+	return []string{sasl.Plain}
+}
+
+// Auth is the handler for supported authenticators.
+func (s *Session) Auth(_ context.Context, _ string) (sasl.Server, error) {
+	return sasl.NewPlainServer(func(_, username, password string) error {
+		if username != "username" || password != "password" {
+			return errors.New("Invalid username or password")
+		}
+		s.auth = true
+		return nil
+	}), nil
+}
+
+func (s *Session) Mail(_ context.Context, from string, _ *smtp.MailOptions) error {
+	if !s.auth {
+		return smtp.ErrAuthRequired
+	}
+	log.Println("Mail from:", from)
+	return nil
+}
+
+func (*Session) Verify(_ context.Context, _ string, _ *smtp.VrfyOptions) error {
+	return nil
+}
+
+func (s *Session) Rcpt(_ context.Context, to string, _ *smtp.RcptOptions) error {
+	if !s.auth {
+		return smtp.ErrAuthRequired
+	}
+	log.Println("Rcpt to:", to)
+	return nil
+}
+
+func (*Session) STARTTLS(_ context.Context, tls *tls.Config) (*tls.Config, error) {
+	return tls, nil
+}
+
+func (s *Session) Data(_ context.Context, r func() io.Reader) (string, error) {
+	if !s.auth {
+		return "", smtp.ErrAuthRequired
+	}
+
+	b, err := io.ReadAll(r())
+	if err != nil {
+		return "", err
+	}
+	log.Println("Data:", string(b))
+	return "", nil
+}
+
+func (*Session) Reset(ctx context.Context, _ bool) (context.Context, error) {
+	return ctx, nil
+}
+
+func (*Session) Close(_ context.Context, _ error) {
+}
+
+// ExampleServer runs an example SMTP server.
+//
+// It can be tested manually with e.g. netcat:
+//
+//	> netcat -C localhost 1025
+//	EHLO localhost
+//	AUTH PLAIN
+//	AHVzZXJuYW1lAHBhc3N3b3Jk
+//	MAIL FROM:<root@nsa.gov>
+//	RCPT TO:<root@gchq.gov.uk>
+//	DATA
+//	Hey <3
+//	.
+func main() {
+	be := &Backend{}
+	addr := "localhost:1025"
+
+	s := server.New(
+		server.WithBackend(be),
+		server.WithAddr(addr),
+		server.WithHostname("localhost"),
+		server.WithWriteTimeout(10*time.Second),
+		server.WithReadTimeout(10*time.Second),
+		server.WithMaxMessageBytes(1024*1024),
+		server.WithMaxRecipients(50),
+	)
+
+	log.Println("Starting server at", addr)
+	if err := s.ListenAndServe(context.Background()); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+</p>
+</details>
+
+<a name="New"></a>
+### func New
+
+```go
+func New(opts ...Option) *Server
+```
+
+New creates a new SMTP server.
+
+<a name="Server.Backend"></a>
+### func \(\*Server\) Backend
+
+```go
+func (s *Server) Backend() Backend
+```
+
+Backend returns the servers Backend.
+
+<a name="Server.Close"></a>
+### func \(\*Server\) Close
+
+```go
+func (s *Server) Close() error
+```
+
+Close immediately closes all active listeners and connections.
+
+Close returns any error returned from closing the server's underlying listener\(s\).
+
+<a name="Server.Listen"></a>
+### func \(\*Server\) Listen
+
+```go
+func (s *Server) Listen() (net.Listener, error)
+```
+
+Listen listens on the network address s.Addr to handle requests on incoming connections.
+
+If s.Addr is blank and LMTP is disabled, ":smtp" is used.
+
+<a name="Server.ListenAndServe"></a>
+### func \(\*Server\) ListenAndServe
+
+```go
+func (s *Server) ListenAndServe(ctx context.Context) error
+```
+
+ListenAndServe listens on the network address s.Addr and then calls Serve to handle requests on incoming connections.
+
+If s.Addr is blank and LMTP is disabled, ":smtp" is used.
+
+<a name="Server.Serve"></a>
+### func \(\*Server\) Serve
+
+```go
+func (s *Server) Serve(ctx context.Context, l net.Listener) error
+```
+
+Serve accepts incoming connections on the Listener l.
+
+<a name="Server.Shutdown"></a>
+### func \(\*Server\) Shutdown
+
+```go
+func (s *Server) Shutdown(ctx context.Context) error
+```
+
+Shutdown gracefully shuts down the server without interrupting any active connections. Shutdown works by first closing all open listeners and then waiting indefinitely for connections to return to idle and then shut down. If the provided context expires before the shutdown is complete, Shutdown returns the context's error, otherwise it returns any error returned from closing the Server's underlying Listener\(s\).
+
+<a name="Session"></a>
+## type Session
+
+Session is used by servers to respond to an SMTP client.
+
+The methods are called when the remote client issues the matching command.
+
+```go
+type Session interface {
+    // Discard currently processed message.
+    // The returning context replaces the context used in the current session.
+    // Upgrade is true when the reset is called after a tls upgrade.
+    Reset(ctx context.Context, upgrade bool) (context.Context, error)
+
+    // Free all resources associated with session.
+    // Error is set if an error occurred during session or connection.
+    // Close is always called after the session is done.
+    Close(ctx context.Context, err error)
+
+    // Returns logger to use when an error occurs inside a session.
+    // If no logger is returned the default *slog.Logger is used.
+    Logger(ctx context.Context) *slog.Logger
+
+    // Set return path for currently processed message.
+    Mail(ctx context.Context, from string, opts *smtp.MailOptions) error
+
+    // Add recipient for currently processed message.
+    Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) error
+
+    // Verify checks the validity of an email address on the server.
+    // If error is nil then smtp code 252 is send
+    // if error is smtp status then the smtp status is send
+    // else internal server error is returned and connection is closed
+    Verify(ctx context.Context, addr string, opts *smtp.VrfyOptions) error
+
+    // Set currently processed message contents and send it.
+    // If r is called then the data must be consumed completely before returning.
+    // The queuedid must not be unique.
+    Data(ctx context.Context, r func() io.Reader) (queueid string, err error)
+
+    // AuthMechanisms returns valid auth mechanism.
+    // Nil or an empty list means no authentication mechanism is allowed.
+    AuthMechanisms(ctx context.Context) []string
+
+    // Auth returns a matching sasl server for the given mech.
+    Auth(ctx context.Context, mech string) (sasl.Server, error)
+
+    // STARTTLS returns a valid *tls.Config.
+    // Is called with the default tls config and the returned tls config is used in the tls upgrade.
+    // If the tls.Config is nil or an error is returned, the tls upgrade is aborted and the connection closed.
+    // The *tls.Config received must not be changed.
+    STARTTLS(ctx context.Context, tls *tls.Config) (*tls.Config, error)
+}
+```
+
+# tester
+
+```go
+import "github.com/uponusolutions/go-smtp/tester"
+```
+
+Package smtptester implements a simple SMTP server for testing. All received mails are saved in a sync.Map with a key:
+
+```
+From+Recipient1+Recipient2
+```
+
+Mails to the same sender and recipients will overwrite a previous received mail, when the recipients slice has the same order as in the mail received before.
+
+## Index
+
+- [func GenX509KeyPair\(domain string\) \(tls.Certificate, error\)](<#GenX509KeyPair>)
+- [func LookupKey\(f string, r \[\]string\) string](<#LookupKey>)
+- [func ReaderCompareTest\(t \*testing.T, fs \*embed.FS, path string, expected func\(io.Reader\) \(\[\]byte, error\), actual func\(io.Reader\) \(\[\]byte, error\)\)](<#ReaderCompareTest>)
+- [func Standard\(\) \*server.Server](<#Standard>)
+- [func StandardWithAddress\(addr string\) \*server.Server](<#StandardWithAddress>)
+- [func WriterCompareTest\(t \*testing.T, fs \*embed.FS, path string, expected func\(io.Writer\) io.WriteCloser, actual func\(io.Writer\) io.WriteCloser\)](<#WriterCompareTest>)
+- [type Backend](<#Backend>)
+  - [func GetBackend\(s \*server.Server\) \*Backend](<#GetBackend>)
+  - [func NewBackend\(\) \*Backend](<#NewBackend>)
+  - [func \(b \*Backend\) Add\(m \*Mail\)](<#Backend.Add>)
+  - [func \(b \*Backend\) Load\(from string, recipients \[\]string\) \(\*Mail, bool\)](<#Backend.Load>)
+  - [func \(b \*Backend\) NewSession\(ctx context.Context, \_ \*server.Conn\) \(context.Context, server.Session, error\)](<#Backend.NewSession>)
+- [type FakeConn](<#FakeConn>)
+  - [func NewFakeConn\(in string, out \*bytes.Buffer\) \*FakeConn](<#NewFakeConn>)
+  - [func NewFakeConnStream\(in io.Reader, out \*bytes.Buffer\) \*FakeConn](<#NewFakeConnStream>)
+  - [func \(FakeConn\) Close\(\) error](<#FakeConn.Close>)
+  - [func \(FakeConn\) LocalAddr\(\) net.Addr](<#FakeConn.LocalAddr>)
+  - [func \(f FakeConn\) RemoteAddr\(\) net.Addr](<#FakeConn.RemoteAddr>)
+  - [func \(FakeConn\) SetDeadline\(time.Time\) error](<#FakeConn.SetDeadline>)
+  - [func \(FakeConn\) SetReadDeadline\(time.Time\) error](<#FakeConn.SetReadDeadline>)
+  - [func \(FakeConn\) SetWriteDeadline\(time.Time\) error](<#FakeConn.SetWriteDeadline>)
+- [type Mail](<#Mail>)
+  - [func \(m \*Mail\) LookupKey\(\) string](<#Mail.LookupKey>)
+- [type Session](<#Session>)
+  - [func \(Session\) Auth\(\_ context.Context, \_ string\) \(sasl.Server, error\)](<#Session.Auth>)
+  - [func \(Session\) AuthMechanisms\(\_ context.Context\) \[\]string](<#Session.AuthMechanisms>)
+  - [func \(s \*Session\) Close\(\_ context.Context, \_ error\)](<#Session.Close>)
+  - [func \(s \*Session\) Data\(\_ context.Context, r func\(\) io.Reader\) \(string, error\)](<#Session.Data>)
+  - [func \(Session\) Logger\(\_ context.Context\) \*slog.Logger](<#Session.Logger>)
+  - [func \(s \*Session\) Mail\(\_ context.Context, from string, \_ \*smtp.MailOptions\) error](<#Session.Mail>)
+  - [func \(s \*Session\) Rcpt\(\_ context.Context, to string, \_ \*smtp.RcptOptions\) error](<#Session.Rcpt>)
+  - [func \(s \*Session\) Reset\(ctx context.Context, \_ bool\) \(context.Context, error\)](<#Session.Reset>)
+  - [func \(Session\) STARTTLS\(\_ context.Context, config \*tls.Config\) \(\*tls.Config, error\)](<#Session.STARTTLS>)
+  - [func \(Session\) Verify\(\_ context.Context, \_ string, \_ \*smtp.VrfyOptions\) error](<#Session.Verify>)
+
+
+<a name="GenX509KeyPair"></a>
+## func GenX509KeyPair
+
+```go
+func GenX509KeyPair(domain string) (tls.Certificate, error)
+```
+
+GenX509KeyPair generates a self signed smtp server certificate with the given domain.
+
+<a name="LookupKey"></a>
+## func LookupKey
+
+```go
+func LookupKey(f string, r []string) string
+```
+
+LookupKey returns a key of the format:
+
+```
+m.From+m.Recipient_1+m.Recipient_2...
+```
+
+<a name="ReaderCompareTest"></a>
+## func ReaderCompareTest
+
+```go
+func ReaderCompareTest(t *testing.T, fs *embed.FS, path string, expected func(io.Reader) ([]byte, error), actual func(io.Reader) ([]byte, error))
+```
+
+ReaderCompareTest reads all files out of fs\[path\] and compares the result of the expected func against the actual func. To simulate differences of Read calls with different sizes it slices the files in increasing sizes up to 4048.
+
+<a name="Standard"></a>
+## func Standard
+
+```go
+func Standard() *server.Server
+```
+
+Standard returns a standard SMTP server listening on a random Port.
+
+<a name="StandardWithAddress"></a>
+## func StandardWithAddress
+
+```go
+func StandardWithAddress(addr string) *server.Server
+```
+
+StandardWithAddress with address returns a standard SMTP server listenting on addr.
+
+<a name="WriterCompareTest"></a>
+## func WriterCompareTest
+
+```go
+func WriterCompareTest(t *testing.T, fs *embed.FS, path string, expected func(io.Writer) io.WriteCloser, actual func(io.Writer) io.WriteCloser)
+```
+
+WriterCompareTest reads all files out of fs\[path\] and compares the expected func against the actual func. To simulate differences of Write calls of different sizes it slices the files in increasing sizes up to 4048.
+
+<a name="Backend"></a>
+## type Backend
+
+Backend is the backend for out test server. It contains a sync.Map with all mails received.
+
+```go
+type Backend struct {
+    Mails sync.Map
+}
+```
+
+<a name="GetBackend"></a>
+### func GetBackend
+
+```go
+func GetBackend(s *server.Server) *Backend
+```
+
+GetBackend returns the concrete type \*Backend from SMTP server.
+
+<a name="NewBackend"></a>
+### func NewBackend
+
+```go
+func NewBackend() *Backend
+```
+
+NewBackend returns a new Backend with an empty \(not nil\) Mails map.
+
+<a name="Backend.Add"></a>
+### func \(\*Backend\) Add
+
+```go
+func (b *Backend) Add(m *Mail)
+```
+
+Add adds mail to backends map.
+
+<a name="Backend.Load"></a>
+### func \(\*Backend\) Load
+
+```go
+func (b *Backend) Load(from string, recipients []string) (*Mail, bool)
+```
+
+Load loads mail from 'from' to recipients 'recipients'. The ok result indicates whether value was found in the map.
+
+<a name="Backend.NewSession"></a>
+### func \(\*Backend\) NewSession
+
+```go
+func (b *Backend) NewSession(ctx context.Context, _ *server.Conn) (context.Context, server.Session, error)
+```
+
+NewSession returns a new Session.
+
+<a name="FakeConn"></a>
+## type FakeConn
+
+FakeConn fakes a conn for testing.
+
+```go
+type FakeConn struct {
+    io.ReadWriter
+    RemoteAddrReturn net.Addr
+}
+```
+
+<a name="NewFakeConn"></a>
+### func NewFakeConn
+
+```go
+func NewFakeConn(in string, out *bytes.Buffer) *FakeConn
+```
+
+NewFakeConn creates a new FakeConn with a string as a input.
+
+<a name="NewFakeConnStream"></a>
+### func NewFakeConnStream
+
+```go
+func NewFakeConnStream(in io.Reader, out *bytes.Buffer) *FakeConn
+```
+
+NewFakeConnStream creates a new FakeConn with a stream as a input.
+
+<a name="FakeConn.Close"></a>
+### func \(FakeConn\) Close
+
+```go
+func (FakeConn) Close() error
+```
+
+Close always returns nil.
+
+<a name="FakeConn.LocalAddr"></a>
+### func \(FakeConn\) LocalAddr
+
+```go
+func (FakeConn) LocalAddr() net.Addr
+```
+
+LocalAddr always returns nil.
+
+<a name="FakeConn.RemoteAddr"></a>
+### func \(FakeConn\) RemoteAddr
+
+```go
+func (f FakeConn) RemoteAddr() net.Addr
+```
+
+RemoteAddr always returns RemoteAddrReturn.
+
+<a name="FakeConn.SetDeadline"></a>
+### func \(FakeConn\) SetDeadline
+
+```go
+func (FakeConn) SetDeadline(time.Time) error
+```
+
+SetDeadline always returns nil and does nothing.
+
+<a name="FakeConn.SetReadDeadline"></a>
+### func \(FakeConn\) SetReadDeadline
+
+```go
+func (FakeConn) SetReadDeadline(time.Time) error
+```
+
+SetReadDeadline always returns nil and does nothing.
+
+<a name="FakeConn.SetWriteDeadline"></a>
+### func \(FakeConn\) SetWriteDeadline
+
+```go
+func (FakeConn) SetWriteDeadline(time.Time) error
+```
+
+SetWriteDeadline always returns nil and does nothing.
+
+<a name="Mail"></a>
+## type Mail
+
+Mail is one mail received by SMTP server.
+
+```go
+type Mail struct {
+    From       string
+    Recipients []string
+    Data       []byte
+}
+```
+
+<a name="Mail.LookupKey"></a>
+### func \(\*Mail\) LookupKey
+
+```go
+func (m *Mail) LookupKey() string
+```
+
+LookupKey call LookupKey for current mail.
+
+<a name="Session"></a>
+## type Session
+
+A Session is returned after successful login.
+
+```go
+type Session struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="Session.Auth"></a>
+### func \(Session\) Auth
+
+```go
+func (Session) Auth(_ context.Context, _ string) (sasl.Server, error)
+```
+
+Auth implements the Auth interface.
+
+<a name="Session.AuthMechanisms"></a>
+### func \(Session\) AuthMechanisms
+
+```go
+func (Session) AuthMechanisms(_ context.Context) []string
+```
+
+AuthMechanisms implements the AuthMechanisms interface.
+
+<a name="Session.Close"></a>
+### func \(\*Session\) Close
+
+```go
+func (s *Session) Close(_ context.Context, _ error)
+```
+
+Close implements the Close interface.
+
+<a name="Session.Data"></a>
+### func \(\*Session\) Data
+
+```go
+func (s *Session) Data(_ context.Context, r func() io.Reader) (string, error)
+```
+
+Data implements the Data interface.
+
+<a name="Session.Logger"></a>
+### func \(Session\) Logger
+
+```go
+func (Session) Logger(_ context.Context) *slog.Logger
+```
+
+Logger implements the Logger interface.
+
+<a name="Session.Mail"></a>
+### func \(\*Session\) Mail
+
+```go
+func (s *Session) Mail(_ context.Context, from string, _ *smtp.MailOptions) error
+```
+
+Mail implements the Mail interface.
+
+<a name="Session.Rcpt"></a>
+### func \(\*Session\) Rcpt
+
+```go
+func (s *Session) Rcpt(_ context.Context, to string, _ *smtp.RcptOptions) error
+```
+
+Rcpt implements the Rcpt interface.
+
+<a name="Session.Reset"></a>
+### func \(\*Session\) Reset
+
+```go
+func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error)
+```
+
+Reset implements Reset interface.
+
+<a name="Session.STARTTLS"></a>
+### func \(Session\) STARTTLS
+
+```go
+func (Session) STARTTLS(_ context.Context, config *tls.Config) (*tls.Config, error)
+```
+
+STARTTLS implements the STARTTLS interface.
+
+<a name="Session.Verify"></a>
+### func \(Session\) Verify
+
+```go
+func (Session) Verify(_ context.Context, _ string, _ *smtp.VrfyOptions) error
+```
+
+Verify implements the Verify interface.
+
+# faker
+
+```go
+import "github.com/uponusolutions/go-smtp/examples/faker"
+```
+
+## Index
+
+
+
+# benchmark
+
+```go
+import "github.com/uponusolutions/go-smtp/internal/benchmark"
+```
+
+## Index
+
+
+
+# limit
+
+```go
+import "github.com/uponusolutions/go-smtp/internal/limit"
+```
+
+## Index
+
+- [Variables](<#variables>)
+- [type Ratelimit](<#Ratelimit>)
+  - [func New\(config \*RatelimitConfig\) \*Ratelimit](<#New>)
+  - [func \(c \*Ratelimit\) Take\(\) error](<#Ratelimit.Take>)
+- [type RatelimitConfig](<#RatelimitConfig>)
+
+
+## Variables
+
+<a name="ErrRatelimit"></a>ErrRatelimit is returned if limit reached and strict mode is enabled.
+
+```go
+var ErrRatelimit = errors.New("rate limit occurred")
+```
+
+<a name="Ratelimit"></a>
+## type Ratelimit
+
+Ratelimit is used e.g. to limit the calls to a function.
+
+```go
+type Ratelimit struct {
+    // contains filtered or unexported fields
+}
+```
+
+<a name="New"></a>
+### func New
+
+```go
+func New(config *RatelimitConfig) *Ratelimit
+```
+
+New creates a new rate limit.
+
+<a name="Ratelimit.Take"></a>
+### func \(\*Ratelimit\) Take
+
+```go
+func (c *Ratelimit) Take() error
+```
+
+Take returns when it is allowed to do something again.
+
+<a name="RatelimitConfig"></a>
+## type RatelimitConfig
+
+RatelimitConfig configures a rate limit.
+
+```go
+type RatelimitConfig struct {
+    Rate     int
+    Duration time.Duration
+    Strict   bool
+}
+```
+
+# parse
+
+```go
+import "github.com/uponusolutions/go-smtp/internal/parse"
+```
+
+## Index
+
+- [func Args\(s string\) \(map\[string\]string, error\)](<#Args>)
+- [func Cmd\(line string\) \(cmd string, arg string, err error\)](<#Cmd>)
+- [func CutPrefixFold\(s, prefix string\) \(string, bool\)](<#CutPrefixFold>)
+- [func HelloArgument\(arg string\) \(string, error\)](<#HelloArgument>)
+- [type Parser](<#Parser>)
+  - [func \(p \*Parser\) Mailbox\(\) \(string, error\)](<#Parser.Mailbox>)
+  - [func \(p \*Parser\) Path\(\) \(string, error\)](<#Parser.Path>)
+  - [func \(p \*Parser\) ReversePath\(\) \(string, error\)](<#Parser.ReversePath>)
+
+
+<a name="Args"></a>
+## func Args
+
+```go
+func Args(s string) (map[string]string, error)
+```
+
+Args takes the arguments proceeding a command and files them into a map\[string\]string after uppercasing each key. Sample arg string:
+
+```
+" BODY=8BITMIME SIZE=1024 SMTPUTF8"
+```
+
+The leading space is mandatory.
+
+<a name="Cmd"></a>
+## func Cmd
+
+```go
+func Cmd(line string) (cmd string, arg string, err error)
+```
+
+Cmd parses a line and returns the command, argument or an error.
+
+<a name="CutPrefixFold"></a>
+## func CutPrefixFold
+
+```go
+func CutPrefixFold(s, prefix string) (string, bool)
+```
+
+CutPrefixFold is a version of strings.CutPrefix which is case\-insensitive.
+
+<a name="HelloArgument"></a>
+## func HelloArgument
+
+```go
+func HelloArgument(arg string) (string, error)
+```
+
+HelloArgument parses helo argument
+
+<a name="Parser"></a>
+## type Parser
+
+Parser parses command arguments defined in RFC 5321 section 4.1.2.
+
+```go
+type Parser struct {
+    S string
+}
+```
+
+<a name="Parser.Mailbox"></a>
+### func \(\*Parser\) Mailbox
+
+```go
+func (p *Parser) Mailbox() (string, error)
+```
+
+Mailbox parses a mailbox.
+
+<a name="Parser.Path"></a>
+### func \(\*Parser\) Path
+
+```go
+func (p *Parser) Path() (string, error)
+```
+
+Path parses a recipient.
+
+<a name="Parser.ReversePath"></a>
+### func \(\*Parser\) ReversePath
+
+```go
+func (p *Parser) ReversePath() (string, error)
+```
+
+ReversePath parses a recipient.
+
+# textsmtp
+
+```go
+import "github.com/uponusolutions/go-smtp/internal/textsmtp"
+```
+
+## Index
+
+- [Variables](<#variables>)
+- [func CheckNotifySet\(values \[\]smtp.DSNNotify\) error](<#CheckNotifySet>)
+- [func IsPrintableASCII\(val string\) bool](<#IsPrintableASCII>)
+- [func NewDotReader\(reader \*bufio.Reader, maxMessageBytes int64\) io.Reader](<#NewDotReader>)
+- [func NewDotWriter\(writer \*bufio.Writer\) io.WriteCloser](<#NewDotWriter>)
+- [type Textproto](<#Textproto>)
+  - [func NewTextproto\(conn io.ReadWriteCloser, readerSize int, writerSize int, maxLineLength int\) \*Textproto](<#NewTextproto>)
+  - [func \(t \*Textproto\) Close\(\) error](<#Textproto.Close>)
+  - [func \(t \*Textproto\) Cmd\(format string, args ...any\) \(id uint, err error\)](<#Textproto.Cmd>)
+  - [func \(t \*Textproto\) PrintfLine\(format string, args ...any\) error](<#Textproto.PrintfLine>)
+  - [func \(t \*Textproto\) PrintfLineAndFlush\(format string, args ...any\) error](<#Textproto.PrintfLineAndFlush>)
+  - [func \(t \*Textproto\) ReadCodeLine\(expectCode int\) \(int, string, error\)](<#Textproto.ReadCodeLine>)
+  - [func \(t \*Textproto\) ReadLine\(\) \(string, error\)](<#Textproto.ReadLine>)
+  - [func \(t \*Textproto\) ReadResponse\(expectCode int\) \(code int, message string, err error\)](<#Textproto.ReadResponse>)
+  - [func \(t \*Textproto\) Replace\(conn io.ReadWriteCloser\)](<#Textproto.Replace>)
+
+
+## Variables
+
+<a name="ErrTooLongLine"></a>ErrTooLongLine occurs if the smtp line is too long.
+
+```go
+var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
+```
+
+<a name="CheckNotifySet"></a>
+## func CheckNotifySet
+
+```go
+func CheckNotifySet(values []smtp.DSNNotify) error
+```
+
+CheckNotifySet checks if a DSNNotify array isn't malformed.
+
+<a name="IsPrintableASCII"></a>
+## func IsPrintableASCII
+
+```go
+func IsPrintableASCII(val string) bool
+```
+
+IsPrintableASCII checks if string contains only printable ascii.
+
+<a name="NewDotReader"></a>
+## func NewDotReader
+
+```go
+func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader
+```
+
+NewDotReader creates a new dot reader.
+
+<a name="NewDotWriter"></a>
+## func NewDotWriter
+
+```go
+func NewDotWriter(writer *bufio.Writer) io.WriteCloser
+```
+
+NewDotWriter returns a writer that can be used to write a dot\-encoding to w. It takes care of inserting leading dots when necessary, translating line\-ending \\n into \\r\\n, and adding the final .\\r\\n line when the DotWriter is closed. The caller should close the DotWriter before the next call to a method on w.
+
+See the documentation for Reader's DotReader method for details about dot\-encoding.
+
+<a name="Textproto"></a>
+## type Textproto
+
+Textproto is used as a wrapper around a connection to read and write to it
+
+```go
+type Textproto struct {
+    R   *bufio.Reader
+    W   *bufio.Writer
+
+    textproto.Pipeline
+    // contains filtered or unexported fields
+}
+```
+
+<a name="NewTextproto"></a>
+### func NewTextproto
+
+```go
+func NewTextproto(conn io.ReadWriteCloser, readerSize int, writerSize int, maxLineLength int) *Textproto
+```
+
+NewTextproto creates a new connection wrapper.
+
+<a name="Textproto.Close"></a>
+### func \(\*Textproto\) Close
+
+```go
+func (t *Textproto) Close() error
+```
+
+Close closes the connection.
+
+<a name="Textproto.Cmd"></a>
+### func \(\*Textproto\) Cmd
+
+```go
+func (t *Textproto) Cmd(format string, args ...any) (id uint, err error)
+```
+
+Cmd is a convenience method that sends a command after waiting its turn in the pipeline. The command text is the result of formatting format with args and appending \\r\\n. Cmd returns the id of the command, for use with StartResponse and EndResponse.
+
+For example, a client might run a HELP command that returns a dot\-body by using:
+
+```
+id, err := c.Cmd("HELP")
+if err != nil {
+	return nil, err
+}
+
+c.StartResponse(id)
+defer c.EndResponse(id)
+
+if _, _, err = c.ReadCodeLine(110); err != nil {
+	return nil, err
+}
+text, err := c.ReadDotBytes()
+if err != nil {
+	return nil, err
+}
+return c.ReadCodeLine(250)
+```
+
+<a name="Textproto.PrintfLine"></a>
+### func \(\*Textproto\) PrintfLine
+
+```go
+func (t *Textproto) PrintfLine(format string, args ...any) error
+```
+
+PrintfLine writes the formatted output followed by \\r\\n.
+
+<a name="Textproto.PrintfLineAndFlush"></a>
+### func \(\*Textproto\) PrintfLineAndFlush
+
+```go
+func (t *Textproto) PrintfLineAndFlush(format string, args ...any) error
+```
+
+PrintfLineAndFlush writes the formatted output followed by \\r\\n anf flushes.
+
+<a name="Textproto.ReadCodeLine"></a>
+### func \(\*Textproto\) ReadCodeLine
+
+```go
+func (t *Textproto) ReadCodeLine(expectCode int) (int, string, error)
+```
+
+ReadCodeLine reads a code line.
+
+<a name="Textproto.ReadLine"></a>
+### func \(\*Textproto\) ReadLine
+
+```go
+func (t *Textproto) ReadLine() (string, error)
+```
+
+ReadLine reads a single line from r, eliding the final \\n or \\r\\n from the returned string.
+
+<a name="Textproto.ReadResponse"></a>
+### func \(\*Textproto\) ReadResponse
+
+```go
+func (t *Textproto) ReadResponse(expectCode int) (code int, message string, err error)
+```
+
+ReadResponse reads a multi\-line response of the form:
+
+```
+code-message line 1
+code-message line 2
+...
+code message line n
+```
+
+where code is a three\-digit status code. The first line starts with the code and a hyphen. The response is terminated by a line that starts with the same code followed by a space. Each line in message is separated by a newline \(\\n\).
+
+See page 36 of RFC 959 \(https://www.ietf.org/rfc/rfc959.txt\) for details of another form of response accepted:
+
+```
+code-message line 1
+message line 2
+...
+code message line n
+```
+
+If the prefix of the status does not match the digits in expectCode, ReadResponse returns with err set to &Error\{code, message\}. For example, if expectCode is 31, an error will be returned if the status is not in the range \[310,319\].
+
+An expectCode \<= 0 disables the check of the status code.
+
+<a name="Textproto.Replace"></a>
+### func \(\*Textproto\) Replace
+
+```go
+func (t *Textproto) Replace(conn io.ReadWriteCloser)
+```
+
+Replace conn.
+
 Generated by [gomarkdoc](<https://github.com/princjef/gomarkdoc>)
 
 
