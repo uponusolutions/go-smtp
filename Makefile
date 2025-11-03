@@ -23,3 +23,6 @@ pprof:
 
 vet:
 	@go vet ./...
+
+doc:
+	go tool -modfile=go.tool.mod gomarkdoc -e ./...
