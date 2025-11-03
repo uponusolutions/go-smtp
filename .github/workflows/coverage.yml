@@ -23,6 +23,16 @@ jobs:
       - name: generate test coverage
         run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
+      - name: generate html
+        run: mkdir coverage && go tool -modfile=go.tool.mod cover -html=cover.out -o=coverage/index.html && go tool -modfile=go.tool.mod mdtohtml ./docs/README.md ./docs/index.html
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./coverage
+          destination_dir: ./coverage
+
       - name: download artifact (main.breakdown)
         id: download-main-breakdown
         uses: dawidd6/action-download-artifact@v10
