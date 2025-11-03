@@ -1,4 +1,3 @@
-
 test:
 	go test ./...
 
@@ -23,7 +22,3 @@ pprof:
 
 vet:
 	@go vet ./...
-
-doc:
-	@go tool -modfile=go.tool.mod gomarkdoc -e ./...
-	@go tool -modfile=go.tool.mod mdtohtml ./docs/README.md ./docs/index.html
