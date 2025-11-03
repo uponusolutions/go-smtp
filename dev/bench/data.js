@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1762010561881,
+  "lastUpdate": 1762185466768,
   "repoUrl": "https://github.com/uponusolutions/go-smtp",
   "entries": {
     "Benchmark": [
@@ -1054,6 +1054,102 @@ window.BENCHMARK_DATA = {
           {
             "name": "BenchmarkDotWriterOptimized",
             "value": 48294244,
+            "unit": "ns/op",
+            "extra": "248 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "committer": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "distinct": true,
+          "id": "9e92f2af95c169cc1c243cf0aa6e3f056eb9786e",
+          "message": "chore: docs generation",
+          "timestamp": "2025-11-03T16:55:06+01:00",
+          "tree_id": "39778527b89fac1bdb91eb8901ef070a645d6784",
+          "url": "https://github.com/uponusolutions/go-smtp/commit/9e92f2af95c169cc1c243cf0aa6e3f056eb9786e"
+        },
+        "date": 1762185466388,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkSmallWithChunking",
+            "value": 361681,
+            "unit": "ns/op",
+            "extra": "33411 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSameConnection",
+            "value": 110272,
+            "unit": "ns/op",
+            "extra": "108691 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunking",
+            "value": 361307,
+            "unit": "ns/op",
+            "extra": "33067 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSameConnection",
+            "value": 111430,
+            "unit": "ns/op",
+            "extra": "108013 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunking",
+            "value": 37197055,
+            "unit": "ns/op",
+            "extra": "338 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSameConnection",
+            "value": 37392381,
+            "unit": "ns/op",
+            "extra": "332 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunking",
+            "value": 37681726,
+            "unit": "ns/op",
+            "extra": "321 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSameConnection",
+            "value": 37788298,
+            "unit": "ns/op",
+            "extra": "319 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderLegacy",
+            "value": 20199107,
+            "unit": "ns/op",
+            "extra": "594 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderOptimized",
+            "value": 1127184,
+            "unit": "ns/op",
+            "extra": "10000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterLegacy",
+            "value": 1274576051,
+            "unit": "ns/op",
+            "extra": "8 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterOptimized",
+            "value": 48286287,
             "unit": "ns/op",
             "extra": "248 times\n4 procs"
           }
