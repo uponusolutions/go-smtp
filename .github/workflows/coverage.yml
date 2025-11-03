@@ -24,9 +24,11 @@ jobs:
         run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
       - name: generate html
+        if: github.ref == 'refs/heads/main'
         run: mkdir coverage && go tool -modfile=go.tool.mod cover -html=cover.out -o=coverage/index.html
 
       - name: Deploy
+        if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
