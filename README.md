@@ -8,8 +8,8 @@ An ESMTP client and server library written in Go.
 
 ## Pages
 
-[Coverage](https://uponusolutions.github.io/go-smtp/coverage/)
-[Benchmark](https://uponusolutions.github.io/go-smtp/dev/bench/)
+ - [Coverage](https://uponusolutions.github.io/go-smtp/coverage/)
+ - [Benchmark](https://uponusolutions.github.io/go-smtp/dev/bench/)
 
 ## Features
 
@@ -27,7 +27,6 @@ provides a server implementation and a number of client improvements.
 
 MIT
 
-[RFC 5321]: https://tools.ietf.org/html/rfc5321
-[AUTH]: https://tools.ietf.org/html/rfc4954
-[PIPELINING]: https://tools.ietf.org/html/rfc2920
-[LMTP]: https://tools.ietf.org/html/rfc2033
+- [RFC 5321](https://tools.ietf.org/html/rfc5321)
+- [AUTH](https://tools.ietf.org/html/rfc4954)
+- [PIPELINING](https://tools.ietf.org/html/rfc2920)
