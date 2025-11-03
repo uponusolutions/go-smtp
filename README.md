@@ -8,6 +8,8 @@ An ESMTP client and server library written in Go.
 
 ## Pages
 
+[Documentation](https://uponusolutions.github.io/go-smtp/docs/)
+[Coverage](https://uponusolutions.github.io/go-smtp/coverage/)
 [Benchmark](https://uponusolutions.github.io/go-smtp/dev/bench/)
 
 ## Features
