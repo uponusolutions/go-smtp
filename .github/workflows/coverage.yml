@@ -24,7 +24,7 @@ jobs:
         run: go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
       - name: generate html
-        run: mkdir coverage && go tool -modfile=go.tool.mod cover -html=cover.out -o=coverage/index.html && go tool -modfile=go.tool.mod mdtohtml ./docs/README.md ./docs/index.html
+        run: mkdir coverage && go tool -modfile=go.tool.mod cover -html=cover.out -o=coverage/index.html
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
