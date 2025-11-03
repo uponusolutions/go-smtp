@@ -1918,7 +1918,7 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span c
 }
 
 // Read reads in some more bytes.
-func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="592089">{
+func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="592087">{
         // Run data through a simple state machine to
         // elide leading dots and detect End-of-Data (&lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;) line.
         const (
@@ -1936,7 +1936,7 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="592089
                 }</span>
         }
 
-        <span class="cov9" title="592088">var n int       // data written to b
+        <span class="cov9" title="592086">var n int       // data written to b
         var skipped int // how many
 
         // IMPORTANT: We cannot wait on read, because no EOL returns
@@ -1945,7 +1945,7 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="592089
         }</span>
 
         // min 5, max buffer size, default len(b)
-        <span class="cov9" title="592088">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+        <span class="cov9" title="592086">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
 
         // write \n
         if r.state == stateCR </span><span class="cov1" title="3">{
@@ -1962,12 +1962,12 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="592089
                 }</span>
         }
 
-        <span class="cov9" title="592088">for r.state != stateEOF </span><span class="cov10" title="624466">{
+        <span class="cov9" title="592086">for r.state != stateEOF </span><span class="cov10" title="624464">{
                 i := bytes.Index(c, crlfdot)
 
                 // no full \r\n. found
-                if i == -1 </span><span class="cov9" title="591844">{
-                        if err != io.EOF &amp;&amp; len(c) &gt; 1 &amp;&amp; c[len(c)-2] == '\r' &amp;&amp; c[len(c)-1] == '\n' </span><span class="cov6" title="5312">{
+                if i == -1 </span><span class="cov9" title="591842">{
+                        if err != io.EOF &amp;&amp; len(c) &gt; 1 &amp;&amp; c[len(c)-2] == '\r' &amp;&amp; c[len(c)-1] == '\n' </span><span class="cov6" title="5310">{
                                 // ends with \r\n, write everything before
                                 n += copy(b, c[:len(c)-2])
                         }</span> else<span class="cov9" title="586532"> if err != io.EOF &amp;&amp; len(c) &gt; 0 &amp;&amp; c[len(c)-1] == '\r' </span><span class="cov5" title="1503">{
@@ -1976,7 +1976,7 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="592089
                         }</span> else<span class="cov9" title="585029"> {
                                 n += copy(b, c)
                         }</span>
-                        <span class="cov9" title="591844">break</span>
+                        <span class="cov9" title="591842">break</span>
                 } else<span class="cov8" title="32622"> if len(c)-1 &lt; i+4 </span><span class="cov4" title="223">{
                         // i is \r, \n.\r\n needs to be accessible
 
@@ -2013,18 +2013,18 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="592089
         }
 
         // n + skipped is always smaller then what was peeked, so it is guaranteed to work
-        <span class="cov9" title="592088">_, _ = r.r.Discard(n + skipped)
+        <span class="cov9" title="592086">_, _ = r.r.Discard(n + skipped)
 
         if err == io.EOF &amp;&amp; r.state != stateEOF </span><span class="cov6" title="4053">{
                 err = io.ErrUnexpectedEOF
-        }</span> else<span class="cov9" title="588035"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov2" title="18">{
+        }</span> else<span class="cov9" title="588033"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov2" title="18">{
                 err = io.EOF
         }</span>
 
-        <span class="cov9" title="592088">if r.limited </span><span class="cov1" title="4">{
+        <span class="cov9" title="592086">if r.limited </span><span class="cov1" title="4">{
                 r.n -= int64(n)
         }</span>
-        <span class="cov9" title="592088">return n, err</span>
+        <span class="cov9" title="592086">return n, err</span>
 }
 </pre>
 		
@@ -2627,7 +2627,7 @@ func bdatArg(arg string) (int64, bool, error) <span class="cov7" title="13">{
         <span class="cov7" title="13">return int64(size), last, nil</span>
 }
 
-func (d *bdat) Read(b []byte) (int, error) <span class="cov10" title="34">{
+func (d *bdat) Read(b []byte) (int, error) <span class="cov10" title="35">{
         if d.size == 0 </span><span class="cov8" title="16">{
                 if d.last </span><span class="cov5" title="6">{
                         return 0, io.EOF
@@ -2662,15 +2662,15 @@ func (d *bdat) Read(b []byte) (int, error) <span class="cov10" title="34">{
                 }
         }
 
-        <span class="cov8" title="22">if d.maxMessageBytes != 0 &amp;&amp; d.bytesReceived+d.size &gt; d.maxMessageBytes </span><span class="cov2" title="2">{
+        <span class="cov8" title="23">if d.maxMessageBytes != 0 &amp;&amp; d.bytesReceived+d.size &gt; d.maxMessageBytes </span><span class="cov2" title="2">{
                 return 0, smtp.NewStatus(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
         }</span>
 
-        <span class="cov8" title="20">if d.chunk == nil </span><span class="cov7" title="12">{
+        <span class="cov8" title="21">if d.chunk == nil </span><span class="cov7" title="12">{
                 d.chunk = io.LimitReader(d.input, int64(d.size))
         }</span>
 
-        <span class="cov8" title="20">n, err := d.chunk.Read(b)
+        <span class="cov8" title="21">n, err := d.chunk.Read(b)
         d.bytesReceived += int64(n)
         d.size -= int64(n)
 
@@ -2684,7 +2684,7 @@ func (d *bdat) Read(b []byte) (int, error) <span class="cov10" title="34">{
                 }</span>
         }
 
-        <span class="cov8" title="20">return n, err</span>
+        <span class="cov8" title="21">return n, err</span>
 }
 </pre>
 		
@@ -2927,10 +2927,10 @@ func (c *Conn) Close(err error) <span class="cov6" title="58">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="23">{
+        if closeErr != nil </span><span class="cov5" title="28">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="23"> {
+                }</span> else<span class="cov5" title="28"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
@@ -4041,7 +4041,7 @@ func (s *Server) Close() error <span class="cov8" title="42">{
                 }</span>
         }
 
-        <span class="cov8" title="42">for conn := range s.conns </span><span class="cov7" title="26">{
+        <span class="cov8" title="42">for conn := range s.conns </span><span class="cov7" title="34">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
