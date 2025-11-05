@@ -200,12 +200,12 @@ func TestDotReader(t *testing.T) {
 		r := textsmtp.NewDotReader(buf, 0)
 		b, err := io.ReadAll(r)
 		require.NoError(t, err)
-		require.Equal(t, "dotlines\r\nfoo\r\n.bar\n...baz\nquux\r\n\r\n", b)
+		require.Equal(t, []byte("dotlines\r\nfoo\r\n.bar\n...baz\nquux\r\n\r\n"), b)
 
 		r = textsmtp.NewDotReader(buf, 0)
 		b, err = io.ReadAll(r)
-		require.NoError(t, err)
-		require.Equal(t, "anot.her\n", b)
+		require.Error(t, io.ErrUnexpectedEOF, err)
+		require.Equal(t, []byte("anot.her\n"), b)
 	})
 
 	t.Run("Limit", func(t *testing.T) {
