@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"embed"
+	"errors"
 	"io"
 	legacy "net/textproto"
 	"os"
@@ -365,6 +366,32 @@ func TestDotReaderBytes(t *testing.T) {
 		require.Equal(t, 0, bufio.Buffered())
 	})
 
+	t.Run("Case4RandomError", func(t *testing.T) {
+		reader, writer := io.Pipe()
+		buf := make([]byte, 255)
+		bufio := bufio.NewReader(reader)
+		r := textsmtp.NewDotReader(bufio, 0)
+
+		// only t is read
+		write(writer, "testtest\r\n.")
+		n, err = r.Read(buf)
+		require.NoError(t, err)
+		require.Equal(t, 8, n)
+		require.Equal(t, []byte("testtest"), buf[:n])
+
+		// close writer
+		serr := errors.New("test")
+		_ = writer.CloseWithError(serr)
+
+		n, err = r.Read(buf)
+		require.Error(t, serr, err)
+		require.Equal(t, 2, n)
+		require.Equal(t, []byte("\r\n"), buf[:n])
+
+		// buffer must be empty
+		require.Equal(t, 0, bufio.Buffered())
+	})
+
 	t.Run("Case5", func(t *testing.T) {
 		reader, writer := io.Pipe()
 		buf := make([]byte, 255)
@@ -383,6 +410,32 @@ func TestDotReaderBytes(t *testing.T) {
 
 		n, err = r.Read(buf)
 		require.Error(t, io.ErrUnexpectedEOF, err)
+		require.Equal(t, 2, n)
+		require.Equal(t, []byte("\r\n"), buf[:n])
+
+		// buffer must be empty
+		require.Equal(t, 0, bufio.Buffered())
+	})
+
+	t.Run("Case5RandomError", func(t *testing.T) {
+		reader, writer := io.Pipe()
+		buf := make([]byte, 255)
+		bufio := bufio.NewReader(reader)
+		r := textsmtp.NewDotReader(bufio, 0)
+
+		// only t is read
+		write(writer, "testtest\r\n")
+		n, err = r.Read(buf)
+		require.NoError(t, err)
+		require.Equal(t, 8, n)
+		require.Equal(t, []byte("testtest"), buf[:n])
+
+		// close writer
+		serr := errors.New("test")
+		_ = writer.CloseWithError(serr)
+
+		n, err = r.Read(buf)
+		require.Error(t, serr, err)
 		require.Equal(t, 2, n)
 		require.Equal(t, []byte("\r\n"), buf[:n])
 
