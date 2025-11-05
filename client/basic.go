@@ -494,7 +494,7 @@ func (c *Client) SupportsAuth(mech string) bool {
 	if !ok {
 		return false
 	}
-	for _, m := range strings.Split(mechs, " ") {
+	for m := range strings.SplitSeq(mechs, " ") {
 		if strings.EqualFold(m, mech) {
 			return true
 		}
