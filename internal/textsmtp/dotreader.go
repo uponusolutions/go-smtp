@@ -32,15 +32,21 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader {
 	return dr
 }
 
-//go:inline
 func noCrlfDotFound(err error, b []byte, c []byte) int {
-	if err == nil && len(c) > 1 && c[len(c)-2] == '\r' && c[len(c)-1] == '\n' {
-		// ends with \r\n, write everything before
-		return copy(b, c[:len(c)-2])
-	} else if err == nil && len(c) > 0 && c[len(c)-1] == '\r' {
-		// ends with \r, write everything before
-		return copy(b, c[:len(c)-1])
+	if err == nil {
+		l := len(c)
+
+		if l > 1 && c[l-2] == '\r' && c[l-1] == '\n' {
+			// Ends with \r\n, write everything before.
+			return copy(b, c[:l-2])
+		}
+
+		if l > 0 && c[l-1] == '\r' {
+			// Ends with \r, write everything before.
+			return copy(b, c[:l-1])
+		}
 	}
+
 	return copy(b, c)
 }
 
