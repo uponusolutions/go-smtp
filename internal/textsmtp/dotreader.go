@@ -11,11 +11,10 @@ import (
 var crlfdot = []byte{'\r', '\n', '.'}
 
 type dotReader struct {
-	r     *bufio.Reader
-	state int
-
+	r       *bufio.Reader
+	state   int
 	limited bool
-	n       int64 // Maximum bytes remaining
+	n       int64 // Maximum bytes remaining.
 }
 
 // NewDotReader creates a new dot reader.
@@ -50,29 +49,32 @@ func noCrlfDotFound(err error, b []byte, c []byte) int {
 	return copy(b, c)
 }
 
-// Read reads in some more bytes.
-func (r *dotReader) Read(b []byte) (int, error) {
-	// Run data through a simple state machine to
-	// elide leading dots and detect End-of-Data (<CR><LF>.<CR><LF>) line.
-	const (
-		stateBeginLine = iota // beginning of line; initial state; must be zero
-		stateCR               // wrote \r
-		stateEOF              // reached .\r\n end marker line
-	)
+const (
+	stateBeginLine = iota // Beginning of line; initial state; must be zero.
+	stateCR               // Wrote \r.
+	stateEOF              // Reached .\r\n end marker line.
+)
 
+// Read reads in some more bytes.
+// Run data through a simple state machine to
+// elide leading dots and detect End-of-Data
+// (<CR><LF>.<CR><LF>) line.
+func (r *dotReader) Read(b []byte) (int, error) {
 	if r.limited {
 		if r.n <= 0 {
 			return 0, smtp.ErrDataTooLarge
 		}
+
 		if int64(len(b)) > r.n {
 			b = b[0:r.n]
 		}
 	}
 
-	var n int       // data written to b
-	var skipped int // how many
+	var n int       // Data written to b.
+	var skipped int // How many.
 
-	// IMPORTANT: We cannot wait on read, because no EOL returns
+	// IMPORTANT: We cannot wait on read,
+	// because no EOL returns.
 	if r.r.Buffered() < 5 {
 		_, _ = r.r.Peek(5)
 	}
@@ -99,7 +101,7 @@ func (r *dotReader) Read(b []byte) (int, error) {
 		for {
 			i := bytes.Index(c, crlfdot)
 
-			// no full \r\n. found
+			// No full \r\n. found.
 			if i == -1 {
 				n += noCrlfDotFound(err, b, c)
 				break
@@ -107,13 +109,13 @@ func (r *dotReader) Read(b []byte) (int, error) {
 
 			if len(c)-1 < i+4 {
 				// i is \r, \n.\r\n needs to be accessible
-
 				if err != nil {
-					// no more data, just read to the end
+					// No more data, just read to the end.
 					n += copy(b, c[:i+2])
 					skipped++
 				} else if i > 0 {
-					// not enough bytes to check for \r\n.\r\n, write everything before
+					// Not enough bytes to check for \r\n.\r\n,
+					// write everything before
 					n += copy(b, c[:i])
 				}
 
@@ -127,13 +129,13 @@ func (r *dotReader) Read(b []byte) (int, error) {
 			if p < i+2 {
 				// we only wrote \r
 				if i+2-p == 1 {
-					r.state = stateCR // next time we want to write \n
-					skipped--         // prevent \r from being discarded
+					r.state = stateCR // Next time we want to write '\n'.
+					skipped--         // Prevent \r from being discarded
 				}
 				break
 			}
 
-			// the end \r\n.\n\r
+			// The end \r\n.\n\r
 			if c[i+3] == '\r' && c[i+4] == '\n' {
 				r.state = stateEOF
 				skipped += 3 // skip .\r\n
@@ -146,7 +148,8 @@ func (r *dotReader) Read(b []byte) (int, error) {
 		}
 	}
 
-	// n + skipped is always smaller then what was peeked, so it is guaranteed to work
+	// n + skipped is always smaller then what was peeked,
+	// so it is guaranteed to work
 	_, _ = r.r.Discard(n + skipped)
 
 	if err == io.EOF && r.state != stateEOF {
