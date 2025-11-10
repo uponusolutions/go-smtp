@@ -405,7 +405,7 @@ func (c *Client) prepare(from string, rcpt []string) (*DataCloser, error) {
 	}
 
 	// DATA
-	w, err := c.Data()
+	w, err := c.Content()
 	if err != nil {
 		return nil, err
 	}

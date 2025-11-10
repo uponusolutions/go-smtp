@@ -431,37 +431,18 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	return nil
 }
 
-// DataCloser implement an io.WriteCloser with the additional
-// CloseWithResponse function.
-type DataCloser struct {
-	c *Client
-	io.WriteCloser
-	closed bool
-}
-
-// CloseWithResponse closes the data closer and returns code, msg
-func (d *DataCloser) CloseWithResponse() (code int, msg string, err error) {
-	if d.closed {
-		return 0, "", errors.New("smtp: data writer closed twice")
+// Content issues a DATA or BDAT (prefer BDAT if available) command to
+// the server and returns a writer that
+// can be used to write the mail headers and body. The caller should
+// close the writer before calling any more methods on c. A call to
+// Data must be preceded by one or more calls to Rcpt.
+//
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Content() (*DataCloser, error) {
+	if _, ok := c.ext["CHUNKING"]; ok {
+		return c.Bdat()
 	}
-
-	if err := d.WriteCloser.Close(); err != nil {
-		return 0, "", err
-	}
-
-	timeout := smtp.Timeout(d.c.conn, d.c.submissionTimeout)
-	defer timeout()
-
-	code, msg, err = d.c.readResponse(250)
-
-	d.closed = true
-	return code, msg, err
-}
-
-// Close closes the data closer.
-func (d *DataCloser) Close() error {
-	_, _, err := d.CloseWithResponse()
-	return err
+	return c.Data()
 }
 
 // Data issues a DATA command to the server and returns a writer that
@@ -476,6 +457,19 @@ func (c *Client) Data() (*DataCloser, error) {
 		return nil, err
 	}
 	return &DataCloser{c: c, WriteCloser: textsmtp.NewDotWriter(c.text.W)}, nil
+}
+
+// Bdat issues a BDAT command to the server and returns a writer that
+// can be used to write the mail headers and body. The caller should
+// close the writer before calling any more methods on c. A call to
+// Data must be preceded by one or more calls to Rcpt.
+//
+// If server returns an error, it will be of type *smtp.
+func (c *Client) Bdat() (*DataCloser, error) {
+	return &DataCloser{c: c, WriteCloser: textsmtp.NewBdatWriter(c.text.W, func() error {
+		_, _, err := c.text.ReadResponse(250)
+		return err
+	})}, nil
 }
 
 // Extension reports whether an extension is support by the server.
