@@ -14,7 +14,7 @@ lint:
 	@go tool -modfile=go.tool.mod golangci-lint run
 
 bench:
-	@go test ./... -bench . -run ^$ -benchtime=10s
+	@go test ./... -bench . -benchtime=10s -run ^$
 
 pprof:
 	@go test ./internal/benchmark -cpuprofile cpu.pprof -memprofile mem.pprof -bench ^Benchmark/^LargeWithChunkingSameConnection$
