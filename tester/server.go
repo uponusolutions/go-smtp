@@ -22,26 +22,18 @@ import (
 )
 
 // Standard returns a standard SMTP server listening on a random Port.
-func Standard() *server.Server {
-	return server.New(
+func Standard(opts ...server.Option) *server.Server {
+	defaultOpts := []server.Option{
 		server.WithAddr(":0"),
-		server.WithReadTimeout(10*time.Second),
-		server.WithWriteTimeout(10*time.Second),
-		server.WithMaxMessageBytes(1024*1024),
+		server.WithReadTimeout(10 * time.Second),
+		server.WithWriteTimeout(10 * time.Second),
+		server.WithMaxMessageBytes(1024 * 1024),
 		server.WithMaxRecipients(100),
 		server.WithBackend(NewBackend()),
-	)
-}
+	}
 
-// StandardWithAddress with address returns a standard SMTP server listenting on addr.
-func StandardWithAddress(addr string) *server.Server {
 	return server.New(
-		server.WithAddr(addr),
-		server.WithReadTimeout(10*time.Second),
-		server.WithWriteTimeout(10*time.Second),
-		server.WithMaxMessageBytes(1024*1024),
-		server.WithMaxRecipients(100),
-		server.WithBackend(NewBackend()),
+		append(defaultOpts, opts...)...,
 	)
 }
 
