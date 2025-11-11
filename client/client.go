@@ -122,6 +122,11 @@ type Client struct {
 	// Writer size
 	writerSize int
 
+	// Chunking max size
+	// A zero value disables chunk size limitation.
+	// A negative value disables chunking from the client.
+	chunkingMaxSize int
+
 	// Logger for all network activity.
 	debug io.Writer
 
@@ -161,6 +166,9 @@ func New(opts ...Option) *Client {
 		readerSize: 4096,
 		// Writer buffer of textproto
 		writerSize: 4096,
+
+		// Default chunking max size, 2 MiB
+		chunkingMaxSize: 1048576 * 2,
 	}
 
 	for _, o := range opts {
@@ -261,6 +269,15 @@ func WithSASLClient(cl sasl.Client) Option {
 func WithMaxLineLength(maxLineLength int) Option {
 	return func(c *Client) {
 		c.maxLineLength = maxLineLength
+	}
+}
+
+// WithChunkingMaxSize sets the chunking max size.
+// A zero value disables chunk size limitation.
+// A negative value disables chunking from the client.
+func WithChunkingMaxSize(chunkingMaxSize int) Option {
+	return func(c *Client) {
+		c.chunkingMaxSize = chunkingMaxSize
 	}
 }
 

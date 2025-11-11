@@ -439,7 +439,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Content() (*DataCloser, error) {
-	if _, ok := c.ext["CHUNKING"]; ok {
+	if _, ok := c.ext["CHUNKING"]; c.chunkingMaxSize >= 0 && ok {
 		return c.Bdat()
 	}
 	return c.Data()
@@ -466,7 +466,14 @@ func (c *Client) Data() (*DataCloser, error) {
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Bdat() (*DataCloser, error) {
-	return &DataCloser{c: c, WriteCloser: textsmtp.NewBdatWriter(c.text.W, func() error {
+	if c.chunkingMaxSize < 0 {
+		return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
+	}
+	if _, ok := c.ext["CHUNKING"]; !ok {
+		return nil, errors.New("smtp: server doesn't support chunking")
+	}
+
+	return &DataCloser{c: c, WriteCloser: textsmtp.NewBdatWriter(c.chunkingMaxSize, c.text.W, func() error {
 		_, _, err := c.text.ReadResponse(250)
 		return err
 	})}, nil

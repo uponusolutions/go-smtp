@@ -47,6 +47,36 @@ func TestMain(m *testing.M) {
 	os.Exit(ret)
 }
 
+func TestClient_ChunkingErrors(t *testing.T) {
+	c := New(WithServerAddresses(addr))
+	require.NotNil(t, c)
+
+	require.NoError(t, c.Connect(context.Background()))
+	defer func() {
+		assert.NoError(t, c.Close())
+
+		// Calling again must be ok.
+		assert.NoError(t, c.Quit())
+	}()
+
+	// server doesn't support chunking
+	_, err := c.Bdat()
+	require.ErrorContains(t, err, "doesn't support chunking")
+
+	assert.NoError(t, c.Quit())
+
+	c = New(WithServerAddresses(addr), WithChunkingMaxSize(-1))
+	require.NotNil(t, c)
+
+	require.NoError(t, c.Connect(context.Background()))
+
+	// client chunking is disabled
+	_, err = c.Bdat()
+	require.ErrorContains(t, err, "chunking is disabled")
+
+	assert.NoError(t, c.Quit())
+}
+
 func TestClient_SendMail(t *testing.T) {
 	c := New(WithServerAddresses(addr))
 	require.NotNil(t, c)
