@@ -51,7 +51,7 @@ func Cmd(line string) (cmd string, arg string, err error) {
 // The leading space is mandatory.
 func Args(s string) (map[string]string, error) {
 	argMap := map[string]string{}
-	for _, arg := range strings.Fields(s) {
+	for arg := range strings.FieldsSeq(s) {
 		m := strings.Split(arg, "=")
 		switch len(m) {
 		case 2:
@@ -118,8 +118,8 @@ func (p *Parser) expectByte(ch byte) error {
 
 // ReversePath parses a recipient.
 func (p *Parser) ReversePath() (string, error) {
-	if strings.HasPrefix(p.S, "<>") {
-		p.S = strings.TrimPrefix(p.S, "<>")
+	if after, ok := strings.CutPrefix(p.S, "<>"); ok {
+		p.S = after
 		return "", nil
 	}
 	return p.Path()
