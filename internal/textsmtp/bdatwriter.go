@@ -16,7 +16,7 @@ import (
 var (
 	ending = []byte("BDAT 0 LAST\r\n")
 	prefix = []byte("BDAT ")
-	suffix = []byte(" \r\n")
+	crlf   = []byte("\r\n")
 )
 
 // NewBdatWriter returns a writer that can be used to write bdat commands to w.
@@ -61,11 +61,11 @@ func (d *bdatWriter) bdat(size int) (err error) {
 		return err
 	}
 
-	if _, err = d.w.Write([]byte(strconv.Itoa(size))); err != nil {
+	if _, err = d.w.WriteString(strconv.Itoa(size)); err != nil {
 		return err
 	}
 
-	if _, err = d.w.Write(suffix); err != nil {
+	if _, err = d.w.Write(crlf); err != nil {
 		return err
 	}
 

@@ -33,7 +33,7 @@ func TestBdatWriter(t *testing.T) {
 		}
 		require.NoError(t, d.Close())
 
-		want := "BDAT " + strconv.Itoa(len(input1)) + " \r\n" + string(input1) + "BDAT " + strconv.Itoa(len(input2)) + " \r\n" + string(input2) + "BDAT 0 LAST\r\n"
+		want := "BDAT " + strconv.Itoa(len(input1)) + "\r\n" + string(input1) + "BDAT " + strconv.Itoa(len(input2)) + "\r\n" + string(input2) + "BDAT 0 LAST\r\n"
 		if s := buf.String(); s != want {
 			t.Fatalf("wrote %q", s)
 		}
@@ -56,7 +56,7 @@ func TestBdatWriter(t *testing.T) {
 		}
 		require.NoError(t, d.Close())
 
-		want := "BDAT 1 \r\naBDAT 1 \r\nbBDAT 1 \r\ncBDAT 1 \r\ndBDAT 0 LAST\r\n"
+		want := "BDAT 1\r\naBDAT 1\r\nbBDAT 1\r\ncBDAT 1\r\ndBDAT 0 LAST\r\n"
 		if s := buf.String(); s != want {
 			t.Fatalf("wrote %q", s)
 		}
