@@ -110,14 +110,7 @@ func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Rea
 
 		pr, pw = io.Pipe()
 
-		go func() {
-			for _, b := range bsplitted {
-				_, err = pw.Write(b)
-				require.NoError(t, err)
-			}
-			err = pw.Close()
-			require.NoError(t, err)
-		}()
+		writeInGoroutine(t, bsplitted, pw)
 
 		buf1, err := actual(pr)
 		require.ErrorIs(t, io.ErrUnexpectedEOF, err)
@@ -126,6 +119,18 @@ func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Rea
 
 		size++
 	}
+}
+
+func writeInGoroutine(t *testing.T, bsplitted [][]byte, pw *io.PipeWriter) {
+	go func() {
+		var err error
+		for _, b := range bsplitted {
+			_, err = pw.Write(b)
+			require.NoError(t, err)
+		}
+		err = pw.Close()
+		require.NoError(t, err)
+	}()
 }
 
 // ReaderCompareTest reads all files out of fs[path] and compares the result of the expected func against the actual func.
