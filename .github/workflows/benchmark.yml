@@ -18,7 +18,7 @@ jobs:
         with:
           go-version: "stable"
       - name: Run benchmark
-        run: export SETBYTES=NO && go test ./... -bench . -run ^$ -benchtime=10s | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt  && sed -i 's/BenchmarkDotReader\//BenchmarkDotReader/g' output.txt  && sed -i 's/BenchmarkDotWriter\//BenchmarkDotWriter/g' output.txt
+        run: export SETBYTES=NO && go test ./... -bench . -benchtime=10s -run ^$ | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt  && sed -i 's/BenchmarkDotReader\//BenchmarkDotReader/g' output.txt  && sed -i 's/BenchmarkDotWriter\//BenchmarkDotWriter/g' output.txt
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:

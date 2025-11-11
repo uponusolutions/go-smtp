@@ -20,10 +20,3 @@ threshold:
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
   total: 70
-
-# Holds regexp rules which will exclude matched files or packages
-# from coverage statistics.
-exclude:
-  # Exclude files or packages matching their paths
-  paths:
-    - ^examples # exclude examples
