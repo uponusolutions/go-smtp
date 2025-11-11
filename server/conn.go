@@ -51,11 +51,15 @@ type Conn struct {
 }
 
 // run loops until an error occurs (quit for example)
-func (c *Conn) run() error {
+func (c *Conn) run() (err error) {
+	var (
+		cmd string
+		arg string
+	)
 	c.greet()
 
 	for {
-		cmd, arg, err := c.nextCommand()
+		cmd, arg, err = c.nextCommand()
 		if err != nil {
 			return err
 		}
@@ -235,6 +239,9 @@ func (c *Conn) Server() *Server {
 // Close closes the connection.
 func (c *Conn) Close(err error) {
 	c.logger().DebugContext(c.ctx, "connection is closing")
+
+	// flush any pending data from writer before closing connection
+	_ = c.text.W.Flush()
 
 	closeErr := c.conn.Close()
 	if closeErr != nil {
@@ -848,8 +855,6 @@ func (c *Conn) handleBdat(arg string) error {
 	})
 	if err != nil {
 		if smtpErr, ok := err.(*smtp.Status); ok {
-			// write down error
-			c.writeStatus(smtpErr)
 			// read anything left to continue after this failure, ignore any read error
 			// https://www.rfc-editor.org/rfc/rfc3030.html
 			// If a 5XX or 4XX code is received by the sender-SMTP in response to a BDAT
@@ -860,6 +865,8 @@ func (c *Conn) handleBdat(arg string) error {
 			// already in the pipeline after the failed BDAT.
 			closed = true
 			_, _ = io.Copy(io.Discard, data)
+			// write down error after data is discarded to prevent deadlock because of pipelining
+			c.writeStatus(smtpErr)
 			return c.reset()
 		}
 		// an error which isn't a SMTPStatus error will always terminate the connection
@@ -927,9 +934,16 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	}
 
 	if enhCode == smtp.NoEnhancedCode {
-		_ = c.text.PrintfLineAndFlush("%d %v", code, text[p:])
+		_ = c.text.PrintfLine("%d %v", code, text[p:])
 	} else {
-		_ = c.text.PrintfLineAndFlush("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[p:])
+		_ = c.text.PrintfLine("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[p:])
+	}
+
+	// PIPELINE support
+	// If there is something buffered in c.text.R then we can assume another command is following.
+	// This means the client is doing pipelining and we don't need to respond just now.
+	if c.text.R.Buffered() == 0 {
+		_ = c.text.W.Flush()
 	}
 }
 

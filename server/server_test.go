@@ -685,6 +685,48 @@ func TestServer(t *testing.T) {
 	}
 }
 
+func TestServerPipeline(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t, nil)
+	defer func() { _ = s.Close() }()
+	defer func() { _ = c.Close() }()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\nRCPT TO:<root@gchq.gov.uk>\r\nDATA\r\nFrom: root@nsa.gov\r\n\r\nHey\r <3\r\n..this dot is fine\r\n.\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid MAIL response:", scanner.Text())
+	}
+
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RCPT response:", scanner.Text())
+	}
+
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "354 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	if len(be.messages) != 1 || len(be.anonmsgs) != 0 {
+		t.Fatal("Invalid number of sent messages:", be.messages, be.anonmsgs)
+	}
+
+	msg := be.messages[0]
+	if msg.From != "root@nsa.gov" {
+		t.Fatal("Invalid mail sender:", msg.From)
+	}
+	if len(msg.To) != 1 || msg.To[0] != "root@gchq.gov.uk" {
+		t.Fatal("Invalid mail recipients:", msg.To)
+	}
+	if string(msg.Data) != "From: root@nsa.gov\r\n\r\nHey\r <3\r\n.this dot is fine\r\n" {
+		t.Fatal("Invalid mail data:", string(msg.Data))
+	}
+}
+
 func TestServer_LFDotLF(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil)
 	defer func() { _ = s.Close() }()
