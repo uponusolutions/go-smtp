@@ -14,33 +14,35 @@ import (
 )
 
 var (
-	maxChunkSize = 1048576
-	last         = []byte("BDAT 0 LAST\r\n")
-	prefix       = []byte("BDAT ")
-	spacecrlf    = []byte(" \r\n")
+	ending = []byte("BDAT 0 LAST\r\n")
+	prefix = []byte("BDAT ")
+	suffix = []byte(" \r\n")
 )
 
 // NewBdatWriter returns a writer that can be used to write bdat commands to w.
 // The caller should close the BdatWriter before the next call to a method on w.
-func NewBdatWriter(writer *bufio.Writer, read func() error) io.WriteCloser {
+func NewBdatWriter(maxChunkSize int, writer *bufio.Writer, read func() error) io.WriteCloser {
 	return &bdatWriter{
-		w:    writer,
-		read: read,
+		w:            writer,
+		read:         read,
+		maxChunkSize: maxChunkSize,
 	}
 }
 
 type bdatWriter struct {
-	w    *bufio.Writer
-	read func() error
+	w            *bufio.Writer
+	read         func() error
+	maxChunkSize int
 }
 
+// Write writes bytes as multiple bdat commands split by max chunk size.
 func (d *bdatWriter) Write(b []byte) (n int, err error) {
 	var p int
 
-	for len(b) > maxChunkSize {
-		p, err = d.write(b[:maxChunkSize])
+	for d.maxChunkSize > 0 && len(b) > d.maxChunkSize {
+		p, err = d.write(b[:d.maxChunkSize])
 		n += p
-		b = b[maxChunkSize:]
+		b = b[d.maxChunkSize:]
 
 		if err != nil {
 			return n, err
@@ -53,16 +55,26 @@ func (d *bdatWriter) Write(b []byte) (n int, err error) {
 	return n, err
 }
 
-func (d *bdatWriter) write(b []byte) (n int, err error) {
+// write BDAT <SIZE> \r\n
+func (d *bdatWriter) bdat(size int) (err error) {
 	if _, err = d.w.Write(prefix); err != nil {
-		return n, err
+		return err
 	}
 
-	if _, err = d.w.Write([]byte(strconv.Itoa(len(b)))); err != nil {
-		return n, err
+	if _, err = d.w.Write([]byte(strconv.Itoa(size))); err != nil {
+		return err
 	}
 
-	if _, err = d.w.Write(spacecrlf); err != nil {
+	if _, err = d.w.Write(suffix); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// write writes b as bdat command and checks return
+func (d *bdatWriter) write(b []byte) (n int, err error) {
+	if err = d.bdat(len(b)); err != nil {
 		return n, err
 	}
 
@@ -78,7 +90,7 @@ func (d *bdatWriter) write(b []byte) (n int, err error) {
 }
 
 func (d *bdatWriter) Close() error {
-	if _, err := d.w.Write(last); err != nil {
+	if _, err := d.w.Write(ending); err != nil {
 		return err
 	}
 	return d.w.Flush()
