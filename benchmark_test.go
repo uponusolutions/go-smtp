@@ -15,6 +15,7 @@ import (
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/client"
 	"github.com/uponusolutions/go-smtp/server"
+	"github.com/uponusolutions/go-smtp/tester"
 )
 
 //go:embed testdata/*
@@ -128,17 +129,23 @@ func testServer(bei *backend, opts ...server.Option) (be *backend, s *server.Ser
 	return be, s, l.Addr().String(), nil
 }
 
-func sendMailCon(c *client.Client, data []byte) error {
+func sendMailCon(c *client.Client, data []byte, simplereader bool) error {
 	from := "alice@internal.com"
 	recipients := []string{"bob@external.com", "tim@external.com"}
 
-	in := bytes.NewReader(data)
+	var in io.Reader
+
+	if simplereader {
+		in = tester.NewBuffer(data)
+	} else {
+		in = bytes.NewBuffer(data)
+	}
 
 	_, _, err := c.SendMail(from, recipients, in)
 	return err
 }
 
-func sendMail(addr string, data []byte) error {
+func sendMail(addr string, data []byte, simplereader bool) error {
 	c := client.New(
 		client.WithServerAddresses(addr),
 		client.WithSecurity(client.SecurityPlain),
@@ -150,7 +157,7 @@ func sendMail(addr string, data []byte) error {
 		return nil
 	}
 
-	err = sendMailCon(c, data)
+	err = sendMailCon(c, data, simplereader)
 	if err != nil {
 		return nil
 	}
@@ -193,7 +200,7 @@ func Benchmark(b *testing.B) {
 				b.SetBytes(int64(len(t.eml)))
 			}
 			for b.Loop() {
-				_ = sendMail(addr1, t.eml)
+				_ = sendMail(addr1, t.eml, false)
 			}
 		})
 
@@ -210,7 +217,27 @@ func Benchmark(b *testing.B) {
 			require.NoError(b, c.Connect(context.Background()))
 
 			for b.Loop() {
-				_ = sendMailCon(c, t.eml)
+				_ = sendMailCon(c, t.eml, false)
+			}
+
+			err = c.Quit()
+			require.NoError(b, err)
+		})
+
+		b.Run(t.name+"WithChunkingSameConnectionSimpleReader", func(b *testing.B) {
+			if os.Getenv("SETBYTES") == "" {
+				b.SetBytes(int64(len(t.eml)))
+			}
+			c := client.New(
+				client.WithServerAddresses(addr1),
+				client.WithSecurity(client.SecurityPlain),
+				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			)
+			require.NotNil(b, c)
+			require.NoError(b, c.Connect(context.Background()))
+
+			for b.Loop() {
+				_ = sendMailCon(c, t.eml, true)
 			}
 
 			err = c.Quit()
@@ -227,7 +254,7 @@ func Benchmark(b *testing.B) {
 				b.SetBytes(int64(len(t.eml)))
 			}
 			for b.Loop() {
-				_ = sendMail(addr2, t.eml)
+				_ = sendMail(addr2, t.eml, false)
 			}
 		})
 
@@ -245,12 +272,34 @@ func Benchmark(b *testing.B) {
 			require.NoError(b, c.Connect(context.Background()))
 
 			for b.Loop() {
-				_ = sendMailCon(c, t.eml)
+				_ = sendMailCon(c, t.eml, false)
 			}
 
 			err = c.Quit()
 			require.NoError(b, err)
 		})
+
+		b.Run(t.name+"WithoutChunkingSameConnectionSimpleReader", func(b *testing.B) {
+			if os.Getenv("SETBYTES") == "" {
+				b.SetBytes(int64(len(t.eml)))
+			}
+			c := client.New(
+				client.WithServerAddresses(addr2),
+				client.WithSecurity(client.SecurityPlain),
+				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			)
+			require.NotNil(b, c)
+
+			require.NoError(b, c.Connect(context.Background()))
+
+			for b.Loop() {
+				_ = sendMailCon(c, t.eml, true)
+			}
+
+			err = c.Quit()
+			require.NoError(b, err)
+		})
+
 		require.NoError(b, s2.Close())
 	}
 
