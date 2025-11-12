@@ -171,4 +171,26 @@ func BenchmarkDotWriter(b *testing.B) {
 			_, _ = io.Copy(w, r)
 		}
 	})
+
+	b.Run("LegacySimpleReader", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(size)
+		}
+		for b.Loop() {
+			r := tester.NewBuffer(data)
+			w := legacy.NewWriter(bufio.NewWriter(io.Discard)).DotWriter()
+			_, _ = io.Copy(w, r)
+		}
+	})
+
+	b.Run("OptimizedSimpleReader", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(size)
+		}
+		for b.Loop() {
+			r := tester.NewBuffer(data)
+			w := textsmtp.NewDotWriter(bufio.NewWriter(io.Discard))
+			_, _ = io.Copy(w, r)
+		}
+	})
 }
