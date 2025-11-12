@@ -400,7 +400,11 @@ func (c *Client) auth() error {
 	return nil
 }
 
-func (c *Client) prepare(from string, rcpt []string) (*DataCloser, error) {
+type Len interface {
+	Len() int
+}
+
+func (c *Client) prepare(from string, rcpt []string, size int) (*DataCloser, error) {
 	if c.conn == nil {
 		return nil, errors.New("client is nil or not connected")
 	}
@@ -409,8 +413,13 @@ func (c *Client) prepare(from string, rcpt []string) (*DataCloser, error) {
 		return nil, errors.New("no recipients")
 	}
 
+	mailOptions := c.mailOptions
+	if size > 0 && c.mailOptions.Size == 0 {
+		mailOptions.Size = int64(size)
+	}
+
 	// MAIL FROM:
-	if err := c.Mail(from, &c.mailOptions); err != nil {
+	if err := c.Mail(from, &mailOptions); err != nil {
 		return nil, err
 	}
 
@@ -422,7 +431,7 @@ func (c *Client) prepare(from string, rcpt []string) (*DataCloser, error) {
 	}
 
 	// DATA
-	w, err := c.Content()
+	w, err := c.Content(size)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +453,12 @@ func (c *Client) prepare(from string, rcpt []string) (*DataCloser, error) {
 // messages is accomplished by including an email address in the to
 // parameter but not including it in the r headers.
 func (c *Client) SendMail(from string, rcpt []string, in io.Reader) (code int, msg string, err error) {
-	w, err := c.prepare(from, rcpt)
+	size := 0
+	if wt, ok := in.(Len); ok {
+		size = wt.Len()
+	}
+
+	w, err := c.prepare(from, rcpt, size)
 	if err != nil {
 		return 0, "", err
 	}

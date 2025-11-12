@@ -438,9 +438,9 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Content() (*DataCloser, error) {
+func (c *Client) Content(size int) (*DataCloser, error) {
 	if _, ok := c.ext["CHUNKING"]; c.chunkingMaxSize >= 0 && ok {
-		return c.Bdat()
+		return c.Bdat(size)
 	}
 	return c.Data()
 }
@@ -465,7 +465,7 @@ func (c *Client) Data() (*DataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Bdat() (*DataCloser, error) {
+func (c *Client) Bdat(size int) (*DataCloser, error) {
 	if c.chunkingMaxSize < 0 {
 		return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
 	}
@@ -476,7 +476,7 @@ func (c *Client) Bdat() (*DataCloser, error) {
 	return &DataCloser{c: c, WriteCloser: textsmtp.NewBdatWriter(c.chunkingMaxSize, c.text.W, func() error {
 		_, _, err := c.text.ReadResponse(250)
 		return err
-	})}, nil
+	}, size)}, nil
 }
 
 // Extension reports whether an extension is support by the server.

@@ -60,7 +60,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 	}()
 
 	// server doesn't support chunking
-	_, err := c.Bdat()
+	_, err := c.Bdat(0)
 	require.ErrorContains(t, err, "doesn't support chunking")
 
 	assert.NoError(t, c.Quit())
@@ -71,7 +71,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 	require.NoError(t, c.Connect(context.Background()))
 
 	// client chunking is disabled
-	_, err = c.Bdat()
+	_, err = c.Bdat(0)
 	require.ErrorContains(t, err, "chunking is disabled")
 
 	assert.NoError(t, c.Quit())

@@ -18,7 +18,7 @@ import (
 func TestBdatWriter(t *testing.T) {
 	t.Run("WithoutChunkSize", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil })
+		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 0)
 
 		input1 := []byte("a")
 		n, err := d.Write(input1)
@@ -41,7 +41,7 @@ func TestBdatWriter(t *testing.T) {
 
 	t.Run("WithChunkSize", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriter(1, bufio.NewWriter(&buf), func() error { return nil })
+		d := textsmtp.NewBdatWriter(1, bufio.NewWriter(&buf), func() error { return nil }, 0)
 
 		input1 := []byte("ab")
 		n, err := d.Write(input1)
@@ -64,14 +64,70 @@ func TestBdatWriter(t *testing.T) {
 
 	t.Run("WithError", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return errors.New("failed") })
+		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return errors.New("failed") }, 0)
 		n, err := d.Write([]byte("ab"))
 		require.Equal(t, 2, n)
 		require.ErrorContains(t, err, "failed")
 
-		d = textsmtp.NewBdatWriter(1, bufio.NewWriter(&buf), func() error { return errors.New("failed") })
+		d = textsmtp.NewBdatWriter(1, bufio.NewWriter(&buf), func() error { return errors.New("failed") }, 0)
 		n, err = d.Write([]byte("ab"))
 		require.Equal(t, 1, n)
 		require.ErrorContains(t, err, "failed")
+	})
+
+	t.Run("WithSize", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 2)
+
+		input1 := []byte("a")
+		n, err := d.Write(input1)
+		if n != len(input1) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		input2 := []byte("b")
+		n, err = d.Write(input2)
+		if n != len(input2) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+		require.NoError(t, d.Close())
+
+		want := "BDAT " + strconv.Itoa(len(input1)) + "\r\n" + string(input1) + "BDAT " + strconv.Itoa(len(input2)) + " LAST\r\n" + string(input2)
+		if s := buf.String(); s != want {
+			t.Fatalf("wrote %q", s)
+		}
+	})
+
+	t.Run("WithSizeErrorTooMuch", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 1)
+
+		input1 := []byte("a")
+		n, err := d.Write(input1)
+		if n != len(input1) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		input2 := []byte("b")
+		_, err = d.Write(input2)
+		require.ErrorContains(t, err, "got more bytes")
+	})
+
+	t.Run("WithSizeErrorTooLess", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 3)
+
+		input1 := []byte("a")
+		n, err := d.Write(input1)
+		if n != len(input1) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		input2 := []byte("b")
+		if n != len(input2) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		require.ErrorContains(t, d.Close(), "got less bytes")
 	})
 }
