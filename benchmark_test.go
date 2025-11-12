@@ -192,116 +192,123 @@ func Benchmark(b *testing.B) {
 			name: "Large",
 		},
 	} {
-		_, s1, addr1, err := testServer(nil, server.WithEnableCHUNKING(true))
-		require.NoError(b, err)
-
-		b.Run(t.name+"WithChunking", func(b *testing.B) {
-			if os.Getenv("SETBYTES") == "" {
-				b.SetBytes(int64(len(t.eml)))
-			}
-			for b.Loop() {
-				_ = sendMail(addr1, t.eml, false)
-			}
-		})
-
-		b.Run(t.name+"WithChunkingSameConnection", func(b *testing.B) {
-			if os.Getenv("SETBYTES") == "" {
-				b.SetBytes(int64(len(t.eml)))
-			}
-			c := client.New(
-				client.WithServerAddresses(addr1),
-				client.WithSecurity(client.SecurityPlain),
-				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			)
-			require.NotNil(b, c)
-			require.NoError(b, c.Connect(context.Background()))
-
-			for b.Loop() {
-				_ = sendMailCon(c, t.eml, false)
-			}
-
-			err = c.Quit()
-			require.NoError(b, err)
-		})
-
-		b.Run(t.name+"WithChunkingSameConnectionSimpleReader", func(b *testing.B) {
-			if os.Getenv("SETBYTES") == "" {
-				b.SetBytes(int64(len(t.eml)))
-			}
-			c := client.New(
-				client.WithServerAddresses(addr1),
-				client.WithSecurity(client.SecurityPlain),
-				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			)
-			require.NotNil(b, c)
-			require.NoError(b, c.Connect(context.Background()))
-
-			for b.Loop() {
-				_ = sendMailCon(c, t.eml, true)
-			}
-
-			err = c.Quit()
-			require.NoError(b, err)
-		})
-
-		require.NoError(b, s1.Close())
-
-		_, s2, addr2, err := testServer(nil, server.WithEnableCHUNKING(false))
-		require.NoError(b, err)
-
-		b.Run(t.name+"WithoutChunking", func(b *testing.B) {
-			if os.Getenv("SETBYTES") == "" {
-				b.SetBytes(int64(len(t.eml)))
-			}
-			for b.Loop() {
-				_ = sendMail(addr2, t.eml, false)
-			}
-		})
-
-		b.Run(t.name+"WithoutChunkingSameConnection", func(b *testing.B) {
-			if os.Getenv("SETBYTES") == "" {
-				b.SetBytes(int64(len(t.eml)))
-			}
-			c := client.New(
-				client.WithServerAddresses(addr2),
-				client.WithSecurity(client.SecurityPlain),
-				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			)
-			require.NotNil(b, c)
-
-			require.NoError(b, c.Connect(context.Background()))
-
-			for b.Loop() {
-				_ = sendMailCon(c, t.eml, false)
-			}
-
-			err = c.Quit()
-			require.NoError(b, err)
-		})
-
-		b.Run(t.name+"WithoutChunkingSameConnectionSimpleReader", func(b *testing.B) {
-			if os.Getenv("SETBYTES") == "" {
-				b.SetBytes(int64(len(t.eml)))
-			}
-			c := client.New(
-				client.WithServerAddresses(addr2),
-				client.WithSecurity(client.SecurityPlain),
-				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			)
-			require.NotNil(b, c)
-
-			require.NoError(b, c.Connect(context.Background()))
-
-			for b.Loop() {
-				_ = sendMailCon(c, t.eml, true)
-			}
-
-			err = c.Quit()
-			require.NoError(b, err)
-		})
-
-		require.NoError(b, s2.Close())
+		s1(b, t)
+		s2(b, t)
 	}
 
 	// require.EqualValues(b, be1.messages, be2.messages)
+}
+
+func s1(b *testing.B, t testcase) {
+	_, s1, addr1, err := testServer(nil, server.WithEnableCHUNKING(true))
+	require.NoError(b, err)
+
+	b.Run(t.name+"WithChunking", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(t.eml)))
+		}
+		for b.Loop() {
+			_ = sendMail(addr1, t.eml, false)
+		}
+	})
+
+	b.Run(t.name+"WithChunkingSameConnection", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(t.eml)))
+		}
+		c := client.New(
+			client.WithServerAddresses(addr1),
+			client.WithSecurity(client.SecurityPlain),
+			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+		)
+		require.NotNil(b, c)
+		require.NoError(b, c.Connect(context.Background()))
+
+		for b.Loop() {
+			_ = sendMailCon(c, t.eml, false)
+		}
+
+		err = c.Quit()
+		require.NoError(b, err)
+	})
+
+	b.Run(t.name+"WithChunkingSameConnectionSimpleReader", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(t.eml)))
+		}
+		c := client.New(
+			client.WithServerAddresses(addr1),
+			client.WithSecurity(client.SecurityPlain),
+			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+		)
+		require.NotNil(b, c)
+		require.NoError(b, c.Connect(context.Background()))
+
+		for b.Loop() {
+			_ = sendMailCon(c, t.eml, true)
+		}
+
+		err = c.Quit()
+		require.NoError(b, err)
+	})
+
+	require.NoError(b, s1.Close())
+}
+
+func s2(b *testing.B, t testcase) {
+	_, s2, addr2, err := testServer(nil, server.WithEnableCHUNKING(false))
+	require.NoError(b, err)
+
+	b.Run(t.name+"WithoutChunking", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(t.eml)))
+		}
+		for b.Loop() {
+			_ = sendMail(addr2, t.eml, false)
+		}
+	})
+
+	b.Run(t.name+"WithoutChunkingSameConnection", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(t.eml)))
+		}
+		c := client.New(
+			client.WithServerAddresses(addr2),
+			client.WithSecurity(client.SecurityPlain),
+			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+		)
+		require.NotNil(b, c)
+
+		require.NoError(b, c.Connect(context.Background()))
+
+		for b.Loop() {
+			_ = sendMailCon(c, t.eml, false)
+		}
+
+		err = c.Quit()
+		require.NoError(b, err)
+	})
+
+	b.Run(t.name+"WithoutChunkingSameConnectionSimpleReader", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(t.eml)))
+		}
+		c := client.New(
+			client.WithServerAddresses(addr2),
+			client.WithSecurity(client.SecurityPlain),
+			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+		)
+		require.NotNil(b, c)
+
+		require.NoError(b, c.Connect(context.Background()))
+
+		for b.Loop() {
+			_ = sendMailCon(c, t.eml, true)
+		}
+
+		err = c.Quit()
+		require.NoError(b, err)
+	})
+
+	require.NoError(b, s2.Close())
 }

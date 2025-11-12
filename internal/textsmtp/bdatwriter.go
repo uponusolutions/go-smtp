@@ -78,8 +78,13 @@ func (d *bdatWriter) write(b []byte, last bool) (n int, err error) {
 		return n, err
 	}
 
-	if n, err = d.w.Write(b); err != nil {
-		return n, err
+	var p int
+	for n < len(b) {
+		p, err = d.w.Write(b[n:])
+		n += p
+		if err != nil {
+			return n, err
+		}
 	}
 
 	if err = d.w.Flush(); err != nil {

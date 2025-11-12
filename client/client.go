@@ -15,6 +15,8 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
+const defaultChunkingMaxSize = 1048576 * 2
+
 // Security describes how the connection is etablished.
 type Security int32
 
@@ -134,6 +136,10 @@ type Client struct {
 	security Security
 
 	mailOptions MailOptions
+
+	// The buffer is used if bdat is used with buffering.
+	// It is created on first use and it's size is chunkingMaxSize.
+	bdatBuffer []byte
 }
 
 // New returns a new SMTP client.
@@ -168,7 +174,7 @@ func New(opts ...Option) *Client {
 		writerSize: 4096,
 
 		// Default chunking max size, 2 MiB
-		chunkingMaxSize: 1048576 * 2,
+		chunkingMaxSize: defaultChunkingMaxSize,
 	}
 
 	for _, o := range opts {
@@ -400,11 +406,12 @@ func (c *Client) auth() error {
 	return nil
 }
 
+// Len defines the Len method existing in some structs to get the length of the internal []byte (e.g. bytes.Buffer)
 type Len interface {
 	Len() int
 }
 
-func (c *Client) prepare(from string, rcpt []string, size int) (*DataCloser, error) {
+func (c *Client) prepare(from string, rcpt []string, size int, useBuffer bool) (*DataCloser, error) {
 	if c.conn == nil {
 		return nil, errors.New("client is nil or not connected")
 	}
@@ -431,7 +438,7 @@ func (c *Client) prepare(from string, rcpt []string, size int) (*DataCloser, err
 	}
 
 	// DATA
-	w, err := c.Content(size)
+	w, err := c.Content(size, useBuffer)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +465,9 @@ func (c *Client) SendMail(from string, rcpt []string, in io.Reader) (code int, m
 		size = wt.Len()
 	}
 
-	w, err := c.prepare(from, rcpt, size)
+	_, noUseBuffer := in.(io.WriterTo)
+
+	w, err := c.prepare(from, rcpt, size, !noUseBuffer)
 	if err != nil {
 		return 0, "", err
 	}
