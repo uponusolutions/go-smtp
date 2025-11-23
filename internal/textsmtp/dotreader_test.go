@@ -124,12 +124,12 @@ func (r *dotReader) Read(b []byte) (n int, err error) {
 	return n, err
 }
 
-//go:embed testdatareader/*
+//go:embed testdata/reader/*
 var embedFSReader embed.FS
 
 func TestDotReader(t *testing.T) {
 	t.Run("CompareTest", func(t *testing.T) {
-		tester.ReaderCompareTest(t, &embedFSReader, "testdatareader", func(b io.Reader) ([]byte, error) {
+		tester.ReaderCompareTest(t, &embedFSReader, "testdata/reader", func(b io.Reader) ([]byte, error) {
 			reader := legacy.NewReader(bufio.NewReader(b)).DotReader()
 			buf, err := io.ReadAll(reader)
 			buf = bytes.ReplaceAll(buf, []byte("\n"), []byte("\r\n"))

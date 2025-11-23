@@ -19,12 +19,12 @@ import (
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
-//go:embed testdatawriter/*
+//go:embed testdata/writer/*
 var embedFSWriter embed.FS
 
 func TestDotWriter(t *testing.T) {
 	t.Run("CompareTest", func(t *testing.T) {
-		tester.WriterCompareTest(t, &embedFSWriter, "testdatawriter", func(b io.Writer) io.WriteCloser {
+		tester.WriterCompareTest(t, &embedFSWriter, "testdata/writer", func(b io.Writer) io.WriteCloser {
 			return legacy.NewWriter(bufio.NewWriter(b)).DotWriter()
 		}, func(b io.Writer) io.WriteCloser {
 			return textsmtp.NewDotWriter(bufio.NewWriter(b))
