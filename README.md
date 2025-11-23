@@ -6,6 +6,12 @@
 
 An ESMTP client and server library written in Go.
 
+## Documentation
+
+  - [Client](https://pkg.go.dev/github.com/uponusolutions/go-smtp/client)
+  - [Server](https://pkg.go.dev/github.com/uponusolutions/go-smtp/server)
+  - [Shared](https://pkg.go.dev/github.com/uponusolutions/go-smtp)
+
 ## Pages
 
  - [Coverage](https://uponusolutions.github.io/go-smtp/coverage/)
