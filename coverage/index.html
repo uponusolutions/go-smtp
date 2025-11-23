@@ -699,7 +699,22 @@ func (c *Client) Quit() error <span class="cov5" title="13">{
 }
 </pre>
 		
-		<pre class="file" id="file1" style="display: none">package client
+		<pre class="file" id="file1" style="display: none">// Package smtp implements the client of the Simple Mail Transfer Protocol as defined in RFC 5321.
+//
+// It also implements the following extensions:
+//
+//   - 8BITMIME (RFC 1652)
+//   - AUTH (RFC 2554)
+//   - STARTTLS (RFC 3207)
+//   - ENHANCEDSTATUSCODES (RFC 2034)
+//   - SMTPUTF8 (RFC 6531)
+//   - REQUIRETLS (RFC 8689)
+//   - CHUNKING (RFC 3030)
+//   - BINARYMIME (RFC 3030)
+//   - DSN (RFC 3461, RFC 6533)
+//
+// Additional extensions may be handled by other packages.
+package client
 
 import (
         "bytes"
@@ -2520,7 +2535,7 @@ func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="52
         <span class="cov9" title="526">var line []byte
         for </span><span class="cov9" title="526">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov6" title="54">{
+                if err != nil </span><span class="cov6" title="52">{
                         return nil, err
                 }</span>
 
@@ -2899,7 +2914,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="62">{
 
         for </span><span class="cov8" title="286">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov6" title="55">{
+                if err != nil </span><span class="cov6" title="53">{
                         return err
                 }</span>
 
@@ -2925,7 +2940,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="62">{
 
 func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="292">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov6" title="53">{
+        if err != nil </span><span class="cov6" title="51">{
                 return "", "", err
         }</span>
         <span class="cov8" title="237">return parse.Cmd(line)</span>
@@ -3076,26 +3091,26 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov6" title="60">{
+func (c *Conn) Close(err error) <span class="cov6" title="58">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="34">{
+        if closeErr != nil </span><span class="cov5" title="33">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="34"> {
+                }</span> else<span class="cov5" title="33"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
 
-        <span class="cov6" title="60">if err != nil </span><span class="cov6" title="56">{
+        <span class="cov6" title="58">if err != nil </span><span class="cov6" title="54">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
-        <span class="cov6" title="60">if c.session != nil </span><span class="cov6" title="60">{
+        <span class="cov6" title="58">if c.session != nil </span><span class="cov6" title="58">{
                 c.session.Close(c.ctx, err)
                 c.session = nil
         }</span>
@@ -3231,8 +3246,8 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error <span class="cov6" t
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov6" title="59">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="51">{
+func (c *Conn) handleError(err error) <span class="cov6" title="57">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="49">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -3265,13 +3280,13 @@ func (c *Conn) handleError(err error) <span class="cov6" title="59">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="798">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="794">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="798">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="798">{
+        <span class="cov10" title="794">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="794">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -3803,7 +3818,7 @@ func (c *Conn) readLine() (string, error) <span class="cov8" title="324">{
         if err == nil </span><span class="cov8" title="269">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov8" title="322">return line, err</span>
+        <span class="cov8" title="320">return line, err</span>
 }
 
 func (c *Conn) reset() error <span class="cov5" title="28">{
@@ -3995,7 +4010,22 @@ func decodeTypedAddress(val string) (smtp.DSNAddressType, string, error) <span c
 }
 </pre>
 		
-		<pre class="file" id="file18" style="display: none">package server
+		<pre class="file" id="file18" style="display: none">// Package smtp implements the server of the Simple Mail Transfer Protocol as defined in RFC 5321.
+//
+// It also implements the following extensions:
+//
+//   - 8BITMIME (RFC 1652)
+//   - AUTH (RFC 2554)
+//   - STARTTLS (RFC 3207)
+//   - ENHANCEDSTATUSCODES (RFC 2034)
+//   - SMTPUTF8 (RFC 6531)
+//   - REQUIRETLS (RFC 8689)
+//   - CHUNKING (RFC 3030)
+//   - BINARYMIME (RFC 3030)
+//   - DSN (RFC 3461, RFC 6533)
+//
+// Additional extensions may be handled by other packages.
+package server
 
 import (
         "context"
@@ -4070,7 +4100,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
 
         var err error
 
-        defer func() </span><span class="cov8" title="60">{
+        defer func() </span><span class="cov8" title="58">{
                 if err := recover(); err != nil </span><span class="cov1" title="1">{
                         c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
                         stack := debug.Stack()
@@ -4083,7 +4113,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                         c.Close(errors.New("recovered from panic inside handleConn"))
                 }</span>
 
-                <span class="cov8" title="60">s.locker.Lock()
+                <span class="cov8" title="58">s.locker.Lock()
                 delete(s.conns, c)
                 s.locker.Unlock()
 
