@@ -59,7 +59,7 @@
 				
 				<option value="file1">github.com/uponusolutions/go-smtp/client/client.go (62.3%)</option>
 				
-				<option value="file2">github.com/uponusolutions/go-smtp/client/datacloser.go (81.8%)</option>
+				<option value="file2">github.com/uponusolutions/go-smtp/client/datacloser.go (40.9%)</option>
 				
 				<option value="file3">github.com/uponusolutions/go-smtp/client/util.go (98.2%)</option>
 				
@@ -73,7 +73,7 @@
 				
 				<option value="file8">github.com/uponusolutions/go-smtp/internal/textsmtp/bdatwriter.go (84.5%)</option>
 				
-				<option value="file9">github.com/uponusolutions/go-smtp/internal/textsmtp/bdatwriterbuffered.go (86.7%)</option>
+				<option value="file9">github.com/uponusolutions/go-smtp/internal/textsmtp/bdatwriterbuffered.go (87.8%)</option>
 				
 				<option value="file10">github.com/uponusolutions/go-smtp/internal/textsmtp/dotreader.go (100.0%)</option>
 				
@@ -95,7 +95,7 @@
 				
 				<option value="file19">github.com/uponusolutions/go-smtp/server/server_options.go (84.3%)</option>
 				
-				<option value="file20">github.com/uponusolutions/go-smtp/tester/buffer.go (0.0%)</option>
+				<option value="file20">github.com/uponusolutions/go-smtp/tester/buffer.go (91.7%)</option>
 				
 				<option value="file21">github.com/uponusolutions/go-smtp/tester/cert.go (85.0%)</option>
 				
@@ -570,7 +570,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error <span class="cov5
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Content(size int) (*DataCloser, error) <span class="cov2" title="2">{
+func (c *Client) Content(size int) (IDataCloser, error) <span class="cov2" title="2">{
         if _, ok := c.ext["CHUNKING"]; c.chunkingMaxSize &gt;= 0 &amp;&amp; ok </span><span class="cov0" title="0">{
                 return c.Bdat(size)
         }</span>
@@ -583,7 +583,7 @@ func (c *Client) Content(size int) (*DataCloser, error) <span class="cov2" title
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Data() (*DataCloser, error) <span class="cov3" title="3">{
+func (c *Client) Data() (IDataCloser, error) <span class="cov3" title="3">{
         _, _, err := c.cmd(354, "DATA")
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
@@ -597,7 +597,7 @@ func (c *Client) Data() (*DataCloser, error) <span class="cov3" title="3">{
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Bdat(size int) (*DataCloser, error) <span class="cov2" title="2">{
+func (c *Client) Bdat(size int) (IDataCloser, error) <span class="cov2" title="2">{
         if c.chunkingMaxSize &lt; 0 </span><span class="cov1" title="1">{
                 return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
         }</span>
@@ -616,7 +616,7 @@ func (c *Client) Bdat(size int) (*DataCloser, error) <span class="cov2" title="2
                         c.chunkingBuffer = make([]byte, bufferSize)
                 }</span>
 
-                <span class="cov0" title="0">return &amp;DataCloser{c: c, WriteCloser: textsmtp.NewBdatWriterBuffered(c.chunkingMaxSize, c.text.W, func() error </span><span class="cov0" title="0">{
+                <span class="cov0" title="0">return &amp;DataCloserReaderFrom{c: c, WriteCloserReaderFrom: textsmtp.NewBdatWriterBuffered(c.chunkingMaxSize, c.text.W, func() error </span><span class="cov0" title="0">{
                         _, _, err := c.text.ReadResponse(250)
                         return err
                 }</span>, size, c.chunkingBuffer[:bufferSize])}, nil
@@ -1147,7 +1147,7 @@ type Len interface {
         Len() int
 }
 
-func (c *Client) prepare(ctx context.Context, from string, rcpt []string, size int) (*DataCloser, error) <span class="cov4" title="4">{
+func (c *Client) prepare(ctx context.Context, from string, rcpt []string, size int) (IDataCloser, error) <span class="cov4" title="4">{
         if c.conn == nil </span><span class="cov0" title="0">{
                 err := c.Connect(ctx)
                 if err != nil </span><span class="cov0" title="0">{
@@ -1238,13 +1238,23 @@ import (
         "io"
 
         "github.com/uponusolutions/go-smtp"
+        "github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
+
+// ToDo: deduplicate CloseWithResponse
+
+// IDataCloser is an interface of io.WriteCloser with the additional
+// CloseWithResponse function.
+type IDataCloser interface {
+        io.WriteCloser
+        CloseWithResponse() (int, string, error)
+}
 
 // DataCloser implement an io.WriteCloser with the additional
 // CloseWithResponse function.
 type DataCloser struct {
-        c *Client
         io.WriteCloser
+        c      *Client
         closed bool
 }
 
@@ -1269,6 +1279,39 @@ func (d *DataCloser) CloseWithResponse() (code int, msg string, err error) <span
 
 // Close closes the data closer.
 func (d *DataCloser) Close() error <span class="cov1" title="1">{
+        _, _, err := d.CloseWithResponse()
+        return err
+}</span>
+
+// DataCloserReaderFrom implement an textsmtp.WriteCloserReaderFrom with the additional
+// CloseWithResponse function.
+type DataCloserReaderFrom struct {
+        textsmtp.WriteCloserReaderFrom
+        c      *Client
+        closed bool
+}
+
+// CloseWithResponse closes the data closer and returns code, msg
+func (d *DataCloserReaderFrom) CloseWithResponse() (code int, msg string, err error) <span class="cov0" title="0">{
+        if d.closed </span><span class="cov0" title="0">{
+                return 0, "", errors.New("smtp: data writer closed twice")
+        }</span>
+
+        <span class="cov0" title="0">if err := d.WriteCloserReaderFrom.Close(); err != nil </span><span class="cov0" title="0">{
+                return 0, "", err
+        }</span>
+
+        <span class="cov0" title="0">timeout := smtp.Timeout(d.c.conn, d.c.submissionTimeout)
+        defer timeout()
+
+        code, msg, err = d.c.readResponse(250)
+
+        d.closed = true
+        return code, msg, err</span>
+}
+
+// Close closes the data closer.
+func (d *DataCloserReaderFrom) Close() error <span class="cov0" title="0">{
         _, _, err := d.CloseWithResponse()
         return err
 }</span>
@@ -1991,7 +2034,7 @@ type bdatWriter struct {
 }
 
 // Write writes bytes as multiple bdat commands split by max chunk size.
-func (d *bdatWriter) Write(b []byte) (n int, err error) <span class="cov9" title="25">{
+func (d *bdatWriter) Write(b []byte) (n int, err error) <span class="cov9" title="27">{
         var p int
 
         // something left to write
@@ -2009,7 +2052,7 @@ func (d *bdatWriter) Write(b []byte) (n int, err error) <span class="cov9" title
         }
 
         // more then max chunk size received
-        <span class="cov9" title="22">for d.maxChunkSize &gt; 0 &amp;&amp; len(b) &gt; d.maxChunkSize </span><span class="cov6" title="8">{
+        <span class="cov9" title="24">for d.maxChunkSize &gt; 0 &amp;&amp; len(b) &gt; d.maxChunkSize </span><span class="cov6" title="8">{
                 p, err = d.writeBdat(b[:d.maxChunkSize], false)
                 n += p
                 b = b[p:]
@@ -2019,22 +2062,22 @@ func (d *bdatWriter) Write(b []byte) (n int, err error) <span class="cov9" title
                 }</span>
         }
 
-        <span class="cov9" title="20">if d.knownSize </span><span class="cov7" title="13">{
+        <span class="cov9" title="22">if d.knownSize </span><span class="cov7" title="14">{
                 if d.remainingSize &lt; len(b) </span><span class="cov2" title="2">{
                         return n, errors.New("got more bytes than expected, check length")
                 }</span>
         }
 
-        <span class="cov8" title="18">p, err = d.writeBdat(b, d.knownSize &amp;&amp; (d.maxChunkSize == 0 || d.remainingSize &lt;= d.maxChunkSize))
+        <span class="cov8" title="20">p, err = d.writeBdat(b, d.knownSize &amp;&amp; (d.maxChunkSize == 0 || d.remainingSize &lt;= d.maxChunkSize))
         n += p
 
         return n, err</span>
 }
 
 // write writes b until everything is written
-func (d *bdatWriter) write(b []byte) (n int, err error) <span class="cov10" title="29">{
+func (d *bdatWriter) write(b []byte) (n int, err error) <span class="cov10" title="31">{
         var p int
-        for n &lt; len(b) </span><span class="cov10" title="29">{
+        for n &lt; len(b) </span><span class="cov10" title="31">{
                 p, err = d.w.Write(b[n:])
                 n += p
                 if err != nil </span><span class="cov0" title="0">{
@@ -2042,31 +2085,31 @@ func (d *bdatWriter) write(b []byte) (n int, err error) <span class="cov10" titl
                 }</span>
         }
 
-        <span class="cov10" title="29">if d.remainingChunkSize &gt; 0 </span><span class="cov7" title="12">{
+        <span class="cov10" title="31">if d.remainingChunkSize &gt; 0 </span><span class="cov7" title="13">{
                 d.remainingChunkSize -= n
         }</span>
-        <span class="cov10" title="29">if d.knownSize </span><span class="cov8" title="16">{
+        <span class="cov10" title="31">if d.knownSize </span><span class="cov8" title="17">{
                 d.remainingSize -= n
         }</span>
-        <span class="cov10" title="29">return n, nil</span>
+        <span class="cov10" title="31">return n, nil</span>
 }
 
 // writeBdat writes b as bdat command and checks return
 // b must be smaller or equal maxChunkSize
 // if size is known we always use max chunk size
-func (d *bdatWriter) writeBdat(b []byte, last bool) (n int, err error) <span class="cov10" title="29">{
-        if d.remainingChunkSize == 0 </span><span class="cov9" title="26">{
+func (d *bdatWriter) writeBdat(b []byte, last bool) (n int, err error) <span class="cov10" title="31">{
+        if d.remainingChunkSize == 0 </span><span class="cov9" title="28">{
                 size := len(b)
                 // if size is known we can create nice chunks
-                if d.knownSize &amp;&amp; (d.maxChunkSize == 0 || size &lt; d.maxChunkSize) </span><span class="cov6" title="9">{
-                        if d.maxChunkSize == 0 </span><span class="cov6" title="7">{
+                if d.knownSize &amp;&amp; (d.maxChunkSize == 0 || size &lt; d.maxChunkSize) </span><span class="cov7" title="10">{
+                        if d.maxChunkSize == 0 </span><span class="cov6" title="8">{
                                 size = d.remainingSize
                         }</span> else<span class="cov2" title="2"> {
                                 size = min(d.maxChunkSize, d.remainingSize)
                         }</span>
-                        <span class="cov6" title="9">d.remainingChunkSize = size</span>
+                        <span class="cov7" title="10">d.remainingChunkSize = size</span>
                 }
-                <span class="cov9" title="26">if err = d.bdat(size, last); err != nil </span><span class="cov0" title="0">{
+                <span class="cov9" title="28">if err = d.bdat(size, last); err != nil </span><span class="cov0" title="0">{
                         return n, err
                 }</span>
         } else<span class="cov3" title="3"> if len(b) &gt; d.remainingChunkSize </span><span class="cov0" title="0">{
@@ -2074,63 +2117,63 @@ func (d *bdatWriter) writeBdat(b []byte, last bool) (n int, err error) <span cla
                 b = b[:d.remainingChunkSize]
         }</span>
 
-        <span class="cov10" title="29">n, err = d.write(b)
+        <span class="cov10" title="31">n, err = d.write(b)
         if err != nil </span><span class="cov0" title="0">{
                 return n, err
         }</span>
 
         // Are there still bytes missing to finish bdat chunk?
-        <span class="cov10" title="29">if d.remainingChunkSize &gt; 0 </span><span class="cov5" title="5">{
+        <span class="cov10" title="31">if d.remainingChunkSize &gt; 0 </span><span class="cov5" title="5">{
                 return n, nil
         }</span>
 
-        <span class="cov9" title="24">if err = d.w.Flush(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov9" title="26">if err = d.w.Flush(); err != nil </span><span class="cov0" title="0">{
                 return n, err
         }</span>
 
         // last read is done outside of bdat reader
-        <span class="cov9" title="24">if last </span><span class="cov6" title="7">{
+        <span class="cov9" title="26">if last </span><span class="cov6" title="8">{
                 return n, nil
         }</span>
 
-        <span class="cov8" title="17">return n, d.read()</span>
+        <span class="cov8" title="18">return n, d.read()</span>
 }
 
 // write BDAT &lt;SIZE&gt; \r\n
-func (d *bdatWriter) bdat(size int, last bool) (err error) <span class="cov9" title="26">{
+func (d *bdatWriter) bdat(size int, last bool) (err error) <span class="cov9" title="28">{
         if _, err = d.w.Write(prefix); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov9" title="26">if _, err = d.w.Write([]byte(strconv.Itoa(size))); err != nil </span><span class="cov0" title="0">{
+        <span class="cov9" title="28">if _, err = d.w.Write([]byte(strconv.Itoa(size))); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov9" title="26">if last </span><span class="cov6" title="9">{
+        <span class="cov9" title="28">if last </span><span class="cov7" title="10">{
                 if _, err = d.w.Write(lastcrlf); err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
-        } else<span class="cov8" title="17"> {
+        } else<span class="cov8" title="18"> {
                 if _, err = d.w.Write(crlf); err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
         }
 
-        <span class="cov9" title="26">return nil</span>
+        <span class="cov9" title="28">return nil</span>
 }
 
-func (d *bdatWriter) Close() error <span class="cov7" title="11">{
+func (d *bdatWriter) Close() error <span class="cov7" title="13">{
         // if size is known we always know when to send bdat last before close
-        if d.knownSize </span><span class="cov6" title="8">{
-                if d.remainingSize == 0 </span><span class="cov5" title="6">{
+        if d.knownSize </span><span class="cov6" title="9">{
+                if d.remainingSize == 0 </span><span class="cov6" title="7">{
                         return nil
                 }</span>
                 <span class="cov2" title="2">return errors.New("got less bytes than expected, check length")</span>
         }
-        <span class="cov3" title="3">if _, err := d.w.Write(ending); err != nil </span><span class="cov0" title="0">{
+        <span class="cov4" title="4">if _, err := d.w.Write(ending); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov3" title="3">return d.w.Flush()</span>
+        <span class="cov4" title="4">return d.w.Flush()</span>
 }
 </pre>
 		
@@ -2148,9 +2191,15 @@ import (
         "io"
 )
 
+// WriteCloserReaderFrom is an io.WriteCloser and io.ReaderFrom
+type WriteCloserReaderFrom interface {
+        io.WriteCloser
+        io.ReaderFrom
+}
+
 // NewBdatWriterBuffered returns a writer that can be used to write bdat commands to w.
 // The caller should close the BdatWriter before the next call to a method on w.
-func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() error, size int, buffer []byte) io.WriteCloser <span class="cov8" title="7">{
+func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() error, size int, buffer []byte) WriteCloserReaderFrom <span class="cov9" title="9">{
         return &amp;bdatWriterBuffered{
                 writer: bdatWriter{
                         w:             writer,
@@ -2168,6 +2217,27 @@ type bdatWriterBuffered struct {
         buffer   []byte
         position int
         writer   bdatWriter
+}
+
+func (d *bdatWriterBuffered) ReadFrom(r io.Reader) (n int64, err error) <span class="cov3" title="2">{
+        var p int
+
+        for err == nil </span><span class="cov6" title="4">{
+                p, err = r.Read(d.buffer[d.position:])
+                n += int64(p)
+                if p+d.position &gt;= len(d.buffer) </span><span class="cov1" title="1">{
+                        _, err = d.writer.Write(d.buffer)
+                        d.position = 0
+                }</span> else<span class="cov5" title="3"> {
+                        d.position += p
+                }</span>
+        }
+
+        <span class="cov3" title="2">if err == io.EOF </span><span class="cov3" title="2">{
+                return n, nil
+        }</span>
+
+        <span class="cov0" title="0">return n, err</span>
 }
 
 // Write writes bytes as multiple bdat commands split by max chunk size.
@@ -2211,20 +2281,20 @@ func (d *bdatWriterBuffered) write(b []byte) (n int, err error) <span class="cov
         return n, err</span>
 }
 
-func (d *bdatWriterBuffered) Close() error <span class="cov7" title="6">{
-        if d.position &gt; 0 </span><span class="cov7" title="5">{
+func (d *bdatWriterBuffered) Close() error <span class="cov8" title="8">{
+        if d.position &gt; 0 </span><span class="cov7" title="6">{
                 // force bdat last, if size is unknown
-                if !d.writer.knownSize </span><span class="cov3" title="2">{
+                if !d.writer.knownSize </span><span class="cov5" title="3">{
                         d.writer.knownSize = true
                         d.writer.remainingSize = d.position
                 }</span>
-                <span class="cov7" title="5">if _, err := d.writer.Write(d.buffer[:d.position]); err != nil </span><span class="cov1" title="1">{
+                <span class="cov7" title="6">if _, err := d.writer.Write(d.buffer[:d.position]); err != nil </span><span class="cov1" title="1">{
                         return err
                 }</span>
-                <span class="cov6" title="4">d.position = 0</span>
+                <span class="cov7" title="5">d.position = 0</span>
         }
 
-        <span class="cov7" title="5">return d.writer.Close()</span>
+        <span class="cov8" title="7">return d.writer.Close()</span>
 }
 </pre>
 		
@@ -2739,7 +2809,7 @@ func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="52
         <span class="cov9" title="526">var line []byte
         for </span><span class="cov9" title="526">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov6" title="53">{
+                if err != nil </span><span class="cov6" title="55">{
                         return nil, err
                 }</span>
 
@@ -3011,7 +3081,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="62">{
 
         for </span><span class="cov8" title="286">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov6" title="54">{
+                if err != nil </span><span class="cov6" title="56">{
                         return err
                 }</span>
 
@@ -3037,7 +3107,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="62">{
 
 func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="292">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov6" title="52">{
+        if err != nil </span><span class="cov6" title="54">{
                 return "", "", err
         }</span>
         <span class="cov8" title="237">return parse.Cmd(line)</span>
@@ -3188,7 +3258,7 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov6" title="59">{
+func (c *Conn) Close(err error) <span class="cov6" title="61">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
@@ -3203,11 +3273,11 @@ func (c *Conn) Close(err error) <span class="cov6" title="59">{
                 }</span>
         }
 
-        <span class="cov6" title="59">if err != nil </span><span class="cov6" title="55">{
+        <span class="cov6" title="61">if err != nil </span><span class="cov6" title="57">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
-        <span class="cov6" title="59">if c.session != nil </span><span class="cov6" title="59">{
+        <span class="cov6" title="61">if c.session != nil </span><span class="cov6" title="61">{
                 c.session.Close(c.ctx, err)
                 c.session = nil
         }</span>
@@ -3343,8 +3413,8 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error <span class="cov6" t
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov6" title="58">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="50">{
+func (c *Conn) handleError(err error) <span class="cov6" title="60">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="52">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -3377,13 +3447,13 @@ func (c *Conn) handleError(err error) <span class="cov6" title="58">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="796">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="800">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="796">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="796">{
+        <span class="cov10" title="800">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="800">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -3906,7 +3976,7 @@ func (c *Conn) readLine() (string, error) <span class="cov8" title="324">{
         if err == nil </span><span class="cov8" title="269">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov8" title="321">return line, err</span>
+        <span class="cov8" title="323">return line, err</span>
 }
 
 func (c *Conn) reset() error <span class="cov5" title="28">{
@@ -4188,7 +4258,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
 
         var err error
 
-        defer func() </span><span class="cov8" title="59">{
+        defer func() </span><span class="cov8" title="61">{
                 if err := recover(); err != nil </span><span class="cov1" title="1">{
                         c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
                         stack := debug.Stack()
@@ -4201,7 +4271,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                         c.Close(errors.New("recovered from panic inside handleConn"))
                 }</span>
 
-                <span class="cov8" title="59">s.locker.Lock()
+                <span class="cov8" title="61">s.locker.Lock()
                 delete(s.conns, c)
                 s.locker.Unlock()
 
@@ -4648,12 +4718,12 @@ type Buffer struct {
 }
 
 // empty reports whether the unread portion of the buffer is empty.
-func (b *Buffer) empty() bool <span class="cov0" title="0">{ return len(b.buf) &lt;= b.off }</span>
+func (b *Buffer) empty() bool <span class="cov10" title="4">{ return len(b.buf) &lt;= b.off }</span>
 
 // Reset resets the buffer to be empty,
 // but it retains the underlying storage for use by future writes.
 // Reset is the same as [Buffer.Truncate](0).
-func (b *Buffer) Reset() <span class="cov0" title="0">{
+func (b *Buffer) Reset() <span class="cov5" title="2">{
         b.buf = b.buf[:0]
         b.off = 0
 }</span>
@@ -4662,16 +4732,16 @@ func (b *Buffer) Reset() <span class="cov0" title="0">{
 // is drained. The return value n is the number of bytes read. If the
 // buffer has no data to return, err is [io.EOF] (unless len(p) is zero);
 // otherwise it is nil.
-func (b *Buffer) Read(p []byte) (n int, err error) <span class="cov0" title="0">{
-        if b.empty() </span><span class="cov0" title="0">{
+func (b *Buffer) Read(p []byte) (n int, err error) <span class="cov10" title="4">{
+        if b.empty() </span><span class="cov5" title="2">{
                 // Buffer is empty, reset to recover space.
                 b.Reset()
                 if len(p) == 0 </span><span class="cov0" title="0">{
                         return 0, nil
                 }</span>
-                <span class="cov0" title="0">return 0, io.EOF</span>
+                <span class="cov5" title="2">return 0, io.EOF</span>
         }
-        <span class="cov0" title="0">n = copy(p, b.buf[b.off:])
+        <span class="cov5" title="2">n = copy(p, b.buf[b.off:])
         b.off += n
         return n, nil</span>
 }
@@ -4685,7 +4755,7 @@ func (b *Buffer) Read(p []byte) (n int, err error) <span class="cov0" title="0">
 // sufficient to initialize a [Buffer].
 //
 // Buffer just implements a reader without any extra functionality.
-func NewBuffer(buf []byte) io.Reader <span class="cov0" title="0">{ return &amp;Buffer{buf: buf} }</span>
+func NewBuffer(buf []byte) io.Reader <span class="cov5" title="2">{ return &amp;Buffer{buf: buf} }</span>
 </pre>
 		
 		<pre class="file" id="file21" style="display: none">package tester
