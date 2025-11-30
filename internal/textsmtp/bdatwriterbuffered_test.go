@@ -8,12 +8,52 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"io"
 	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/tester"
 )
+
+func TestBdatWriterReaderFrom(t *testing.T) {
+	var buf bytes.Buffer
+	d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 1048576*2))
+
+	in := []byte("ab")
+
+	n, err := io.Copy(d, tester.NewBuffer(in))
+	if n != int64(len(in)) || err != nil {
+		t.Fatalf("Write: %d, %s", n, err)
+	}
+	require.NoError(t, d.Close())
+
+	// it's buffered, so he always knows when the last chunk is send
+	want := "BDAT 2 LAST\r\n" + string(in)
+	if s := buf.String(); s != want {
+		t.Fatalf("wrote %q", s)
+	}
+}
+
+func TestBdatWriterReaderFromExact(t *testing.T) {
+	var buf bytes.Buffer
+	d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 2))
+
+	in := []byte("ab")
+
+	n, err := io.Copy(d, tester.NewBuffer(in))
+	if n != int64(len(in)) || err != nil {
+		t.Fatalf("Write: %d, %s", n, err)
+	}
+	require.NoError(t, d.Close())
+
+	// it's buffered but size matched exactly, empty last expected
+	want := "BDAT 2\r\n" + string(in) + "BDAT 0 LAST\r\n"
+	if s := buf.String(); s != want {
+		t.Fatalf("wrote %q", s)
+	}
+}
 
 func TestBdatWriterBuffered(t *testing.T) {
 	t.Run("WithoutChunkSize", func(t *testing.T) {

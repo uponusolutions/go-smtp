@@ -12,9 +12,15 @@ import (
 	"io"
 )
 
+// WriteCloserReaderFrom is an io.WriteCloser and io.ReaderFrom
+type WriteCloserReaderFrom interface {
+	io.WriteCloser
+	io.ReaderFrom
+}
+
 // NewBdatWriterBuffered returns a writer that can be used to write bdat commands to w.
 // The caller should close the BdatWriter before the next call to a method on w.
-func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() error, size int, buffer []byte) io.WriteCloser {
+func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() error, size int, buffer []byte) WriteCloserReaderFrom {
 	return &bdatWriterBuffered{
 		writer: bdatWriter{
 			w:             writer,
@@ -32,6 +38,27 @@ type bdatWriterBuffered struct {
 	buffer   []byte
 	position int
 	writer   bdatWriter
+}
+
+func (d *bdatWriterBuffered) ReadFrom(r io.Reader) (n int64, err error) {
+	var p int
+
+	for err == nil {
+		p, err = r.Read(d.buffer[d.position:])
+		n += int64(p)
+		if p+d.position >= len(d.buffer) {
+			_, err = d.writer.Write(d.buffer)
+			d.position = 0
+		} else {
+			d.position += p
+		}
+	}
+
+	if err == io.EOF {
+		return n, nil
+	}
+
+	return n, err
 }
 
 // Write writes bytes as multiple bdat commands split by max chunk size.

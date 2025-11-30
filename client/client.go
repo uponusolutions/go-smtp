@@ -446,7 +446,7 @@ type Len interface {
 	Len() int
 }
 
-func (c *Client) prepare(ctx context.Context, from string, rcpt []string, size int) (*DataCloser, error) {
+func (c *Client) prepare(ctx context.Context, from string, rcpt []string, size int) (IDataCloser, error) {
 	if c.conn == nil {
 		err := c.Connect(ctx)
 		if err != nil {

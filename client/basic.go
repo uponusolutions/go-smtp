@@ -438,7 +438,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Content(size int) (*DataCloser, error) {
+func (c *Client) Content(size int) (IDataCloser, error) {
 	if _, ok := c.ext["CHUNKING"]; c.chunkingMaxSize >= 0 && ok {
 		return c.Bdat(size)
 	}
@@ -451,7 +451,7 @@ func (c *Client) Content(size int) (*DataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Data() (*DataCloser, error) {
+func (c *Client) Data() (IDataCloser, error) {
 	_, _, err := c.cmd(354, "DATA")
 	if err != nil {
 		return nil, err
@@ -465,7 +465,7 @@ func (c *Client) Data() (*DataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Bdat(size int) (*DataCloser, error) {
+func (c *Client) Bdat(size int) (IDataCloser, error) {
 	if c.chunkingMaxSize < 0 {
 		return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
 	}
@@ -484,7 +484,7 @@ func (c *Client) Bdat(size int) (*DataCloser, error) {
 			c.chunkingBuffer = make([]byte, bufferSize)
 		}
 
-		return &DataCloser{c: c, WriteCloser: textsmtp.NewBdatWriterBuffered(c.chunkingMaxSize, c.text.W, func() error {
+		return &DataCloserReaderFrom{c: c, WriteCloserReaderFrom: textsmtp.NewBdatWriterBuffered(c.chunkingMaxSize, c.text.W, func() error {
 			_, _, err := c.text.ReadResponse(250)
 			return err
 		}, size, c.chunkingBuffer[:bufferSize])}, nil
