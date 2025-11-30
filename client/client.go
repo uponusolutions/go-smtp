@@ -16,7 +16,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -139,11 +138,6 @@ type Client struct {
 	// Writer size
 	writerSize int
 
-	// Chunking max size
-	// A zero value disables chunk size limitation.
-	// A negative value disables chunking from the client.
-	chunkingMaxSize int
-
 	// Logger for all network activity.
 	debug io.Writer
 
@@ -152,9 +146,20 @@ type Client struct {
 
 	mailOptions MailOptions
 
-	// The buffer is used if bdat is used with buffering.
+	// Chunking max size
+	// A zero value disables chunk size limitation.
+	// A negative value disables chunking from the client.
+	chunkingMaxSize int
+
+	// If no size is available and chunkingMaxSize > 4096 then
+	// the buffer is automatically used.
+	// If you guarantee that you reader has large enough chunks,
+	// you can disable the chunking buffer here.
+	chunkingBufferEnabled bool
+
+	// The buffer is used if chunking/bdat is used with buffering.
 	// It is created on first use and it's size is chunkingMaxSize.
-	bdatBuffer []byte
+	chunkingBuffer []byte
 }
 
 // New returns a new SMTP client.
@@ -190,6 +195,9 @@ func New(opts ...Option) *Client {
 
 		// Default chunking max size, 2 MiB
 		chunkingMaxSize: defaultChunkingMaxSize,
+
+		// chunking buffer enabled by default
+		chunkingBufferEnabled: true,
 	}
 
 	for _, o := range opts {
@@ -299,6 +307,18 @@ func WithMaxLineLength(maxLineLength int) Option {
 func WithChunkingMaxSize(chunkingMaxSize int) Option {
 	return func(c *Client) {
 		c.chunkingMaxSize = chunkingMaxSize
+	}
+}
+
+// WithChunkingBuffer sets if the chunking buffer is used when necessary
+// If no size is available and chunkingMaxSize > 4096 then
+// the buffer is automatically used.
+// If you guarantee that you reader has large enough chunks,
+// you can disable the chunking buffer here.
+// It is enabled by default.
+func WithChunkingBuffer(enabled bool) Option {
+	return func(c *Client) {
+		c.chunkingBufferEnabled = enabled
 	}
 }
 
@@ -426,9 +446,12 @@ type Len interface {
 	Len() int
 }
 
-func (c *Client) prepare(from string, rcpt []string, size int, useBuffer bool) (*DataCloser, error) {
+func (c *Client) prepare(ctx context.Context, from string, rcpt []string, size int) (*DataCloser, error) {
 	if c.conn == nil {
-		return nil, errors.New("client is nil or not connected")
+		err := c.Connect(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if len(rcpt) < 1 {
@@ -453,15 +476,17 @@ func (c *Client) prepare(from string, rcpt []string, size int, useBuffer bool) (
 	}
 
 	// DATA
-	w, err := c.Content(size, useBuffer)
+	w, err := c.Content(size)
 	if err != nil {
 		return nil, err
 	}
 	return w, nil
 }
 
-// SendMail will use an existing connection to send an email from
+// SendMail send an email from
 // address from, to addresses to, with message r.
+//
+// It will use an existing connection if possible or create a new one otherwise.
 //
 // This function does not start TLS, nor does it perform authentication. Use
 // DialStartTLS and Auth before-hand if desirable.
@@ -474,34 +499,32 @@ func (c *Client) prepare(from string, rcpt []string, size int, useBuffer bool) (
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
 // parameter but not including it in the r headers.
-func (c *Client) SendMail(from string, rcpt []string, in io.Reader) (code int, msg string, err error) {
+func (c *Client) SendMail(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, err error) {
 	size := 0
 	if wt, ok := in.(Len); ok {
 		size = wt.Len()
 	}
 
-	_, noUseBuffer := in.(io.WriterTo)
-
-	w, err := c.prepare(from, rcpt, size, !noUseBuffer)
+	w, err := c.prepare(ctx, from, rcpt, size)
 	if err != nil {
 		return 0, "", err
 	}
 
 	_, err = io.Copy(w, in)
 	if err != nil {
+		// if err isn't smtp.Status we are in an unknown state, close connection
+		if _, ok := err.(*smtp.Status); !ok {
+			_ = c.Close()
+		}
 		return 0, "", err
 	}
 
-	return w.CloseWithResponse()
-}
+	code, msg, err = w.CloseWithResponse()
 
-// SetXOORG set xoorg support
-func (c *Client) SetXOORG(xoorg *string) {
-	c.mailOptions.XOORG = xoorg
-}
+	// if err isn't smtp.Status we are in an unknown state, close connection
+	if _, ok := err.(*smtp.Status); err != nil && !ok {
+		_ = c.Close()
+	}
 
-// Send implements enmime.Sender interface.
-func (c *Client) Send(from string, rcpt []string, msg []byte) error {
-	_, _, err := c.SendMail(from, rcpt, bytes.NewBuffer(msg))
-	return err
+	return code, msg, err
 }

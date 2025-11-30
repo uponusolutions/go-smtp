@@ -15,8 +15,8 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
-func TestBdatWriter(t *testing.T) {
-	t.Run("WithoutChunkSize", func(t *testing.T) {
+func TestBdatWriterWithoutSize(t *testing.T) {
+	t.Run("NoChunkingLimit", func(t *testing.T) {
 		var buf bytes.Buffer
 		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 0)
 
@@ -39,7 +39,7 @@ func TestBdatWriter(t *testing.T) {
 		}
 	})
 
-	t.Run("WithChunkSize", func(t *testing.T) {
+	t.Run("MinimalChunking", func(t *testing.T) {
 		var buf bytes.Buffer
 		d := textsmtp.NewBdatWriter(1, bufio.NewWriter(&buf), func() error { return nil }, 0)
 
@@ -74,8 +74,45 @@ func TestBdatWriter(t *testing.T) {
 		require.Equal(t, 1, n)
 		require.ErrorContains(t, err, "failed")
 	})
+}
 
-	t.Run("WithSize", func(t *testing.T) {
+func TestBdatWriterError(t *testing.T) {
+	t.Run("ErrorTooMuch", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 1)
+
+		input1 := []byte("a")
+		n, err := d.Write(input1)
+		if n != len(input1) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		input2 := []byte("b")
+		_, err = d.Write(input2)
+		require.ErrorContains(t, err, "got more bytes")
+	})
+
+	t.Run("ErrorTooLess", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 3)
+
+		input1 := []byte("a")
+		n, err := d.Write(input1)
+		if n != len(input1) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		input2 := []byte("b")
+		if n != len(input2) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		require.ErrorContains(t, d.Close(), "got less bytes")
+	})
+}
+
+func TestBdatWriterWithSize(t *testing.T) {
+	t.Run("NoChunkingLimit", func(t *testing.T) {
 		var buf bytes.Buffer
 		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 2)
 
@@ -92,42 +129,68 @@ func TestBdatWriter(t *testing.T) {
 		}
 		require.NoError(t, d.Close())
 
-		want := "BDAT " + strconv.Itoa(len(input1)) + "\r\n" + string(input1) + "BDAT " + strconv.Itoa(len(input2)) + " LAST\r\n" + string(input2)
+		want := "BDAT " + strconv.Itoa(len(input1)+len(input2)) + " LAST\r\n" + string(input1) + string(input2)
 		if s := buf.String(); s != want {
 			t.Fatalf("wrote %q", s)
 		}
 	})
 
-	t.Run("WithSizeErrorTooMuch", func(t *testing.T) {
+	t.Run("MinimalChunking", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 1)
+		d := textsmtp.NewBdatWriter(1, bufio.NewWriter(&buf), func() error { return nil }, 4)
 
-		input1 := []byte("a")
+		input1 := []byte("ab")
 		n, err := d.Write(input1)
 		if n != len(input1) || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
 		}
 
-		input2 := []byte("b")
-		_, err = d.Write(input2)
-		require.ErrorContains(t, err, "got more bytes")
+		input2 := []byte("cd")
+		n, err = d.Write(input2)
+		if n != len(input2) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+		require.NoError(t, d.Close())
+
+		want := "BDAT 1\r\naBDAT 1\r\nbBDAT 1\r\ncBDAT 1 LAST\r\nd"
+		if s := buf.String(); s != want {
+			t.Fatalf("wrote %q", s)
+		}
 	})
 
-	t.Run("WithSizeErrorTooLess", func(t *testing.T) {
+	t.Run("UseRemaining", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriter(0, bufio.NewWriter(&buf), func() error { return nil }, 3)
+		d := textsmtp.NewBdatWriter(4, bufio.NewWriter(&buf), func() error { return nil }, 7)
 
-		input1 := []byte("a")
+		input1 := []byte("ab")
 		n, err := d.Write(input1)
 		if n != len(input1) || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
 		}
 
-		input2 := []byte("b")
+		input2 := []byte("cd")
+		n, err = d.Write(input2)
 		if n != len(input2) || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
 		}
 
-		require.ErrorContains(t, d.Close(), "got less bytes")
+		input3 := []byte("ef")
+		n, err = d.Write(input3)
+		if n != len(input3) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		input4 := []byte("g")
+		n, err = d.Write(input4)
+		if n != len(input4) || err != nil {
+			t.Fatalf("Write: %d, %s", n, err)
+		}
+
+		require.NoError(t, d.Close())
+
+		want := "BDAT 4\r\nabcdBDAT 3 LAST\r\nefg"
+		if s := buf.String(); s != want {
+			t.Fatalf("wrote %q", s)
+		}
 	})
 }

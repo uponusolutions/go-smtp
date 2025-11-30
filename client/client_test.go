@@ -60,7 +60,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 	}()
 
 	// server doesn't support chunking
-	_, err := c.Bdat(0, false)
+	_, err := c.Bdat(0)
 	require.ErrorContains(t, err, "doesn't support chunking")
 
 	assert.NoError(t, c.Quit())
@@ -71,7 +71,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 	require.NoError(t, c.Connect(context.Background()))
 
 	// client chunking is disabled
-	_, err = c.Bdat(0, false)
+	_, err = c.Bdat(0)
 	require.ErrorContains(t, err, "chunking is disabled")
 
 	assert.NoError(t, c.Quit())
@@ -95,7 +95,7 @@ func TestClient_SendMail(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.SendMail(from, recipients, in)
+	_, _, err := c.SendMail(context.Background(), from, recipients, in)
 	require.NoError(t, err)
 
 	// Lookup email.
@@ -147,13 +147,13 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.SendMail(from, recipients, in)
+	_, _, err := c.SendMail(context.Background(), from, recipients, in)
 	require.ErrorContains(t, err, "server does not support SMTPUTF8")
 
 	// simulate from a client perspective that the server does support smtputf8
 	c.ext["SMTPUTF8"] = ""
 
-	_, _, err = c.SendMail(from, recipients, in)
+	_, _, err = c.SendMail(context.Background(), from, recipients, in)
 	require.ErrorContains(t, err, "504: SMTPUTF8 is not implemented")
 }
 
@@ -207,7 +207,7 @@ func TestClient_Send(t *testing.T) {
 	from := "alice1@internal.com"
 	recipients := []string{"Bob1@external.com", "mal1@external.com"}
 
-	err := c.Send(from, recipients, data)
+	_, _, err := c.SendMail(context.Background(), from, recipients, bytes.NewBuffer(data))
 	require.NoError(t, err)
 
 	// Lookup email.
@@ -242,6 +242,6 @@ func TestClient_SendMicrosoft(t *testing.T) {
 		assert.NoError(t, c.Quit())
 	}()
 
-	err = c.Send(from, recipients, []byte(eml))
+	_, _, err = c.SendMail(context.Background(), from, recipients, bytes.NewBuffer([]byte(eml)))
 	require.NoError(t, err)
 }

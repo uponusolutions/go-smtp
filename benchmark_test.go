@@ -141,7 +141,7 @@ func sendMailCon(c *client.Client, data []byte, simplereader bool) error {
 		in = bytes.NewBuffer(data)
 	}
 
-	_, _, err := c.SendMail(from, recipients, in)
+	_, _, err := c.SendMail(context.Background(), from, recipients, in)
 	return err
 }
 
