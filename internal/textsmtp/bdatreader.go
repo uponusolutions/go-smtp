@@ -1,4 +1,4 @@
-package server
+package textsmtp
 
 import (
 	"io"
@@ -8,7 +8,7 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-type bdat struct {
+type bdatReader struct {
 	size            int64
 	last            bool
 	bytesReceived   int64
@@ -44,7 +44,24 @@ func bdatArg(arg string) (int64, bool, error) {
 	return int64(size), last, nil
 }
 
-func (d *bdat) Read(b []byte) (int, error) {
+// NewBdatReader creates a new bdat reader.
+func NewBdatReader(arg string, maxMessageBytes int64, input io.Reader, nextCommand func() (string, string, error)) (io.Reader, error) {
+	size, last, err := bdatArg(arg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &bdatReader{
+		maxMessageBytes: maxMessageBytes,
+		size:            size,
+		last:            last,
+		bytesReceived:   0,
+		input:           input,
+		nextCommand:     nextCommand,
+	}, nil
+}
+
+func (d *bdatReader) Read(b []byte) (int, error) {
 	if d.size == 0 {
 		if d.last {
 			return 0, io.EOF

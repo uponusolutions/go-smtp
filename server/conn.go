@@ -829,25 +829,16 @@ func (c *Conn) handleBdat(arg string) error {
 
 	closed := false
 
-	size, last, err := bdatArg(arg)
+	data, err := textsmtp.NewBdatReader(arg, c.server.maxMessageBytes, c.text.R, func() (string, string, error) {
+		// if bdat is closed (error occurred)
+		if closed {
+			return "", "", io.EOF
+		}
+		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "Continue")
+		return c.nextCommand()
+	})
 	if err != nil {
 		return err
-	}
-
-	data := &bdat{
-		maxMessageBytes: c.server.maxMessageBytes,
-		size:            size,
-		last:            last,
-		bytesReceived:   0,
-		input:           c.text.R,
-		nextCommand: func() (string, string, error) {
-			// if bdat is closed (error occurred)
-			if closed {
-				return "", "", io.EOF
-			}
-			c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "Continue")
-			return c.nextCommand()
-		},
 	}
 
 	queueid, err := c.session.Data(c.ctx, func() io.Reader {
