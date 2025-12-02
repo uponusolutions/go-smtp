@@ -438,7 +438,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Content(size int) (IDataCloser, error) {
+func (c *Client) Content(size int) (*DataCloser, error) {
 	if _, ok := c.ext["CHUNKING"]; c.chunkingMaxSize >= 0 && ok {
 		return c.Bdat(size)
 	}
@@ -451,12 +451,12 @@ func (c *Client) Content(size int) (IDataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Data() (IDataCloser, error) {
+func (c *Client) Data() (*DataCloser, error) {
 	_, _, err := c.cmd(354, "DATA")
 	if err != nil {
 		return nil, err
 	}
-	return &DataCloser{c: c, WriteCloser: textsmtp.NewDotWriter(c.text.W)}, nil
+	return &DataCloser{c: c, writer: textsmtp.NewDotWriter(c.text.W)}, nil
 }
 
 // Bdat issues a BDAT command to the server and returns a writer that
@@ -465,7 +465,7 @@ func (c *Client) Data() (IDataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Bdat(size int) (IDataCloser, error) {
+func (c *Client) Bdat(size int) (*DataCloser, error) {
 	if c.chunkingMaxSize < 0 {
 		return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
 	}
@@ -484,13 +484,13 @@ func (c *Client) Bdat(size int) (IDataCloser, error) {
 			c.chunkingBuffer = make([]byte, bufferSize)
 		}
 
-		return &DataCloserReaderFrom{c: c, WriteCloserReaderFrom: textsmtp.NewBdatWriterBuffered(c.chunkingMaxSize, c.text.W, func() error {
+		return &DataCloser{c: c, writer: textsmtp.NewBdatWriterBuffered(c.chunkingMaxSize, c.text.W, func() error {
 			_, _, err := c.text.ReadResponse(250)
 			return err
 		}, size, c.chunkingBuffer[:bufferSize])}, nil
 	}
 
-	return &DataCloser{c: c, WriteCloser: textsmtp.NewBdatWriter(c.chunkingMaxSize, c.text.W, func() error {
+	return &DataCloser{c: c, writer: textsmtp.NewBdatWriter(c.chunkingMaxSize, c.text.W, func() error {
 		_, _, err := c.text.ReadResponse(250)
 		return err
 	}, size)}, nil

@@ -446,7 +446,7 @@ type Len interface {
 	Len() int
 }
 
-func (c *Client) prepare(ctx context.Context, from string, rcpt []string, size int) (IDataCloser, error) {
+func (c *Client) prepare(ctx context.Context, from string, rcpt []string, size int) (*DataCloser, error) {
 	if c.conn == nil {
 		err := c.Connect(ctx)
 		if err != nil {
@@ -510,7 +510,7 @@ func (c *Client) SendMail(ctx context.Context, from string, rcpt []string, in io
 		return 0, "", err
 	}
 
-	_, err = io.Copy(w, in)
+	_, err = io.Copy(w.Writer(), in)
 	if err != nil {
 		// if err isn't smtp.Status we are in an unknown state, close connection
 		if _, ok := err.(*smtp.Status); !ok {

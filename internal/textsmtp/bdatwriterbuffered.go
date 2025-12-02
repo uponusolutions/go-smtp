@@ -12,15 +12,9 @@ import (
 	"io"
 )
 
-// WriteCloserReaderFrom is an io.WriteCloser and io.ReaderFrom.
-type WriteCloserReaderFrom interface {
-	io.WriteCloser
-	io.ReaderFrom
-}
-
 // NewBdatWriterBuffered returns a writer that can be used to write bdat commands to w.
 // The caller should close the BdatWriter before the next call to a method on w.
-func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() error, size int, buffer []byte) WriteCloserReaderFrom {
+func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() error, size int, buffer []byte) io.WriteCloser {
 	return &bdatWriterBuffered{
 		writer: bdatWriter{
 			w:             writer,
