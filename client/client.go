@@ -514,7 +514,7 @@ func (c *Client) SendMail(ctx context.Context, from string, rcpt []string, in io
 	if err != nil {
 		// if err isn't smtp.Status we are in an unknown state, close connection
 		if _, ok := err.(*smtp.Status); !ok {
-			_ = c.Close()
+			err = errors.Join(err, c.Close())
 		}
 		return 0, "", err
 	}
@@ -523,7 +523,7 @@ func (c *Client) SendMail(ctx context.Context, from string, rcpt []string, in io
 
 	// if err isn't smtp.Status we are in an unknown state, close connection
 	if _, ok := err.(*smtp.Status); err != nil && !ok {
-		_ = c.Close()
+		err = errors.Join(err, c.Close())
 	}
 
 	return code, msg, err

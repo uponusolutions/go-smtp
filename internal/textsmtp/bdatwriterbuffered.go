@@ -12,7 +12,7 @@ import (
 	"io"
 )
 
-// WriteCloserReaderFrom is an io.WriteCloser and io.ReaderFrom
+// WriteCloserReaderFrom is an io.WriteCloser and io.ReaderFrom.
 type WriteCloserReaderFrom interface {
 	io.WriteCloser
 	io.ReaderFrom
@@ -40,6 +40,7 @@ type bdatWriterBuffered struct {
 	writer   bdatWriter
 }
 
+// ReadFrom implements io.ReadFrom.
 func (d *bdatWriterBuffered) ReadFrom(r io.Reader) (n int64, err error) {
 	var p int
 
@@ -54,6 +55,7 @@ func (d *bdatWriterBuffered) ReadFrom(r io.Reader) (n int64, err error) {
 		}
 	}
 
+	// io.EOF is not returned (see io.Copy)
 	if err == io.EOF {
 		return n, nil
 	}

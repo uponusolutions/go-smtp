@@ -168,10 +168,11 @@ func (d *bdatWriter) bdat(size int, last bool) (err error) {
 		if _, err = d.w.Write(lastcrlf); err != nil {
 			return err
 		}
-	} else {
-		if _, err = d.w.Write(crlf); err != nil {
-			return err
-		}
+		return nil
+	}
+
+	if _, err = d.w.Write(crlf); err != nil {
+		return err
 	}
 
 	return nil
