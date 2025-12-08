@@ -12,13 +12,9 @@ import (
 
 func ExampleDial() {
 	// Connect to the remote SMTP server.
+	c := client.NewBasic()
 
-	c := client.New(
-		client.WithServerAddresses("mail.example.com:25"),
-		client.WithSecurity(client.SecurityPlain),
-	)
-
-	err := c.Connect(context.Background())
+	err := c.Dial(context.Background(), "mail.example.com:25")
 	if err != nil {
 		log.Fatal(err)
 	}

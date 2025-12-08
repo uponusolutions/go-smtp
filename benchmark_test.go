@@ -149,7 +149,9 @@ func sendMail(addr string, data []byte, simplereader bool) error {
 	c := client.New(
 		client.WithServerAddresses(addr),
 		client.WithSecurity(client.SecurityPlain),
-		client.WithMailOptions(client.MailOptions{Size: int64(len(data))}),
+		client.WithBasic(
+			client.WithMailOptions(client.MailOptions{Size: int64(len(data))}),
+		),
 	)
 
 	err := c.Connect(context.Background())
@@ -162,7 +164,7 @@ func sendMail(addr string, data []byte, simplereader bool) error {
 		return nil
 	}
 
-	return c.Quit()
+	return c.Disconnect()
 }
 
 type testcase struct {
@@ -272,7 +274,9 @@ func s1(b *testing.B, t testcase) {
 		c := client.New(
 			client.WithServerAddresses(addr1),
 			client.WithSecurity(client.SecurityPlain),
-			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			client.WithBasic(
+				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			),
 		)
 		require.NotNil(b, c)
 		require.NoError(b, c.Connect(context.Background()))
@@ -281,7 +285,7 @@ func s1(b *testing.B, t testcase) {
 			_ = sendMailCon(c, t.eml, false)
 		}
 
-		err = c.Quit()
+		err = c.Disconnect()
 		require.NoError(b, err)
 	})
 
@@ -292,7 +296,9 @@ func s1(b *testing.B, t testcase) {
 		c := client.New(
 			client.WithServerAddresses(addr1),
 			client.WithSecurity(client.SecurityPlain),
-			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			client.WithBasic(
+				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			),
 		)
 		require.NotNil(b, c)
 		require.NoError(b, c.Connect(context.Background()))
@@ -301,7 +307,7 @@ func s1(b *testing.B, t testcase) {
 			_ = sendMailCon(c, t.eml, true)
 		}
 
-		err = c.Quit()
+		err = c.Disconnect()
 		require.NoError(b, err)
 	})
 
@@ -337,7 +343,9 @@ func s2(b *testing.B, t testcase) {
 		c := client.New(
 			client.WithServerAddresses(addr2),
 			client.WithSecurity(client.SecurityPlain),
-			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			client.WithBasic(
+				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			),
 		)
 		require.NotNil(b, c)
 
@@ -347,7 +355,7 @@ func s2(b *testing.B, t testcase) {
 			_ = sendMailCon(c, t.eml, false)
 		}
 
-		err = c.Quit()
+		err = c.Disconnect()
 		require.NoError(b, err)
 	})
 
@@ -358,7 +366,9 @@ func s2(b *testing.B, t testcase) {
 		c := client.New(
 			client.WithServerAddresses(addr2),
 			client.WithSecurity(client.SecurityPlain),
-			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			client.WithBasic(
+				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			),
 		)
 		require.NotNil(b, c)
 
@@ -368,7 +378,7 @@ func s2(b *testing.B, t testcase) {
 			_ = sendMailCon(c, t.eml, true)
 		}
 
-		err = c.Quit()
+		err = c.Disconnect()
 		require.NoError(b, err)
 	})
 

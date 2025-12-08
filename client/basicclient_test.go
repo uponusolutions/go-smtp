@@ -29,7 +29,7 @@ func TestClientAuthTrimSpace(t *testing.T) {
 
 	fake := tester.NewFakeConn(server, wrote)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 	require.Error(t, c.Auth(toServerNoRespAuth{}))
 	require.NoError(t, c.Close())
@@ -59,7 +59,7 @@ func TestBasic(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConn(server, cmdbuf)
 
-	c := &Client{text: textsmtp.NewTextproto(fake, 4096, 4096, 0), conn: fake, localName: "localhost"}
+	c := &BasicClient{conn: fake, cfg: basicConfig{text: textsmtp.NewTextproto(fake, 4096, 4096, 0), localName: "localhost"}}
 
 	if err := c.helo(); err != nil {
 		t.Fatalf("HELO failed: %s", err)
@@ -162,11 +162,11 @@ func TestBasic_smtp(t *testing.T) {
 	wrote := &bytes.Buffer{}
 	fake := tester.NewFakeConn(faultyServer, wrote)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 
 	require.NoError(t, c.greet())
-	require.NoError(t, c.hello())
+	require.NoError(t, c.Hello())
 
 	err := c.Mail("whatever", nil)
 	if err == nil {
@@ -240,11 +240,11 @@ func TestClient_TooLongLine(t *testing.T) {
 	wrote := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(pr, wrote)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 
 	require.NoError(t, c.greet())
-	require.NoError(t, c.hello())
+	require.NoError(t, c.Hello())
 
 	err := c.Mail("whatever", nil)
 	if err != textsmtp.ErrTooLongLine {
@@ -304,12 +304,12 @@ func TestNewClient(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
 	require.NoError(t, c.greet())
-	require.NoError(t, c.hello())
+	require.NoError(t, c.Hello())
 
 	if ok, args := c.Extension("aUtH"); !ok || args != "LOGIN PLAIN" {
 		t.Fatalf("Expected AUTH supported")
@@ -346,14 +346,14 @@ func TestNewClient2(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
 	err := c.greet()
 	require.NoError(t, err)
 
-	err = c.hello()
+	err = c.Hello()
 	require.NoError(t, err)
 
 	if ok, _ := c.Extension("DSN"); ok {
@@ -400,24 +400,24 @@ func HelloCase(t *testing.T, i int) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
-	c.localName = "customhost"
+	c.cfg.localName = "customhost"
 
 	require.NoError(t, c.greet())
 	if i > 0 {
-		require.NoError(t, c.hello())
+		require.NoError(t, c.Hello())
 	}
 
 	var err error
 	switch i {
 	case 0:
-		c.localName = "customhost"
-		err = c.hello()
+		c.cfg.localName = "customhost"
+		err = c.Hello()
 	case 1:
-		err = c.startTLS("fake.host")
+		err = c.StartTLS(nil, "fake.host")
 		if err.Error() == "SMTP error 502: Not implemented" {
 			err = nil
 		}
@@ -439,8 +439,8 @@ func HelloCase(t *testing.T, i int) {
 	case 8:
 		err = c.Verify("test@example.com", nil)
 		if err != nil {
-			c.localName = "customhost"
-			err = c.hello()
+			c.cfg.localName = "customhost"
+			err = c.Hello()
 			if err != nil {
 				t.Errorf("Want error, got none")
 			}
@@ -508,15 +508,15 @@ func TestHello_421Response(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
 	require.NoError(t, c.greet())
 
-	c.localName = "customhost"
+	c.cfg.localName = "customhost"
 
-	err := c.hello()
+	err := c.Hello()
 	if err == nil {
 		t.Errorf("Expected Hello to fail")
 	}
@@ -566,12 +566,12 @@ func TestAuthFailed(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), cmdbuf)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 	defer func() { _ = c.Close() }()
 
 	require.NoError(t, c.greet())
-	require.NoError(t, c.hello())
+	require.NoError(t, c.Hello())
 
 	err := c.Auth(sasl.NewPlainClient("", "user", "pass"))
 
@@ -621,16 +621,15 @@ func TestTLSConnState(t *testing.T) {
 		defer close(clientDone)
 		cfg := &tls.Config{ServerName: "example.com", RootCAs: testRootCAs}
 
-		c := New(
-			WithServerAddresses(ln.Addr().String()),
-			WithTLSConfig(cfg),
-			WithSecurity(SecurityStartTLS),
-		)
-		err := c.Connect(context.Background())
+		c := NewBasic()
+		err := c.Dial(context.Background(), ln.Addr().String())
 		if err != nil {
 			t.Errorf("Client dial: %v", err)
 			return
 		}
+
+		err = c.StartTLS(cfg, "")
+		require.NoError(t, err)
 
 		defer func() { require.NoError(t, c.Quit()) }()
 		cs, ok := c.TLSConnectionState()
@@ -781,7 +780,7 @@ func TestClientXtext(t *testing.T) {
 	wrote := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), wrote)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 
 	c.ext = map[string]string{"AUTH": "PLAIN", "DSN": ""}
@@ -823,7 +822,7 @@ func TestClientDSN(t *testing.T) {
 	wrote := &bytes.Buffer{}
 	fake := tester.NewFakeConnStream(strings.NewReader(server), wrote)
 
-	c := New()
+	c := NewBasic()
 	c.setConn(fake)
 
 	c.ext = map[string]string{"DSN": ""}

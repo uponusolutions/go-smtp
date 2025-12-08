@@ -53,28 +53,28 @@ func TestClient_ChunkingErrors(t *testing.T) {
 
 	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
-		assert.NoError(t, c.Close())
+		assert.NoError(t, c.Terminate())
 
 		// Calling again must be ok.
-		assert.NoError(t, c.Quit())
+		assert.NoError(t, c.Disconnect())
 	}()
 
 	// server doesn't support chunking
-	_, err := c.Bdat(0)
+	_, err := c.basic.Bdat(0)
 	require.ErrorContains(t, err, "doesn't support chunking")
 
-	assert.NoError(t, c.Quit())
+	assert.NoError(t, c.Disconnect())
 
-	c = New(WithServerAddresses(addr), WithChunkingMaxSize(-1))
+	c = New(WithServerAddresses(addr), WithBasic(WithChunkingMaxSize(-1)))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
 
 	// client chunking is disabled
-	_, err = c.Bdat(0)
+	_, err = c.basic.Bdat(0)
 	require.ErrorContains(t, err, "chunking is disabled")
 
-	assert.NoError(t, c.Quit())
+	assert.NoError(t, c.Disconnect())
 }
 
 func TestClient_SendMail(t *testing.T) {
@@ -83,10 +83,10 @@ func TestClient_SendMail(t *testing.T) {
 
 	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
-		assert.NoError(t, c.Close())
+		assert.NoError(t, c.Terminate())
 
 		// Calling again must be ok.
-		assert.NoError(t, c.Quit())
+		assert.NoError(t, c.Disconnect())
 	}()
 
 	data := []byte("Hello World!")
@@ -113,7 +113,7 @@ func TestClient_SendMail_MultipleAddresses(t *testing.T) {
 	require.NoError(t, c.Connect(context.Background()))
 	require.Equal(t, addr, c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
-	require.NoError(t, c.Close())
+	require.NoError(t, c.Terminate())
 	require.Equal(t, addr, c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
 
@@ -124,21 +124,21 @@ func TestClient_SendMail_MultipleAddresses(t *testing.T) {
 	require.NoError(t, c.Connect(context.Background()))
 	require.Equal(t, addr, c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
-	require.NoError(t, c.Close())
+	require.NoError(t, c.Terminate())
 	require.Equal(t, addr, c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
 }
 
 func TestClient_SendMailUTF8Force(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithMailOptions(MailOptions{UTF8: UTF8Force}))
+	c := New(WithServerAddresses(addr), WithBasic(WithMailOptions(MailOptions{UTF8: UTF8Force})))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
-		assert.NoError(t, c.Close())
+		assert.NoError(t, c.Terminate())
 
 		// Calling again must be ok.
-		assert.NoError(t, c.Quit())
+		assert.NoError(t, c.Disconnect())
 	}()
 
 	data := []byte("Hello World!")
@@ -151,7 +151,7 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 	require.ErrorContains(t, err, "server does not support SMTPUTF8")
 
 	// simulate from a client perspective that the server does support smtputf8
-	c.ext["SMTPUTF8"] = ""
+	c.basic.ext["SMTPUTF8"] = ""
 
 	_, _, err = c.SendMail(context.Background(), from, recipients, in)
 	require.ErrorContains(t, err, "504: SMTPUTF8 is not implemented")
@@ -163,32 +163,26 @@ func TestClient_VerifyUTF8Force(t *testing.T) {
 
 	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
-		assert.NoError(t, c.Close())
+		assert.NoError(t, c.Terminate())
 
 		// Calling again must be ok.
-		assert.NoError(t, c.Quit())
+		assert.NoError(t, c.Disconnect())
 	}()
 
 	err := c.Verify("Bob@external.com", &VrfyOptions{UTF8: UTF8Force})
 	require.ErrorContains(t, err, "server does not support SMTPUTF8")
 
 	// simulate from a client perspective that the server does support smtputf8
-	c.ext["SMTPUTF8"] = ""
+	c.basic.ext["SMTPUTF8"] = ""
 
 	err = c.Verify("Bob@external.com", &VrfyOptions{UTF8: UTF8Force})
 	require.ErrorContains(t, err, "504: SMTPUTF8 is not implemented")
 }
 
 func TestClient_InvalidLocalName(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n"))
+	c := New(WithServerAddresses(addr), WithBasic(WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n")))
 	require.NotNil(t, c)
 	require.ErrorContains(t, c.Connect(context.Background()), "smtp: the local name must not contain CR or LF")
-}
-
-func TestClient_ServerAddress(t *testing.T) {
-	c := New(WithServerAddresses("test"))
-	require.NotNil(t, c)
-	require.Equal(t, [][]string{{"test"}}, c.ServerAddresses())
 }
 
 func TestClient_Send(t *testing.T) {
@@ -197,10 +191,10 @@ func TestClient_Send(t *testing.T) {
 
 	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
-		assert.NoError(t, c.Close())
+		assert.NoError(t, c.Terminate())
 
 		// Calling again must be ok.
-		assert.NoError(t, c.Quit())
+		assert.NoError(t, c.Disconnect())
 	}()
 
 	data := []byte("All your base are belong to us.")
@@ -238,8 +232,8 @@ func TestClient_SendMicrosoft(t *testing.T) {
 
 	require.NoError(t, c.Connect(context.Background()))
 	defer func() {
-		assert.NoError(t, c.Close())
-		assert.NoError(t, c.Quit())
+		assert.NoError(t, c.Terminate())
+		assert.NoError(t, c.Disconnect())
 	}()
 
 	_, _, err = c.SendMail(context.Background(), from, recipients, bytes.NewBuffer([]byte(eml)))

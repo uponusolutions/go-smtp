@@ -11,7 +11,7 @@ import (
 // CloseWithResponse function.
 type DataCloser struct {
 	writer io.WriteCloser
-	c      *Client
+	c      *BasicClient
 	closed bool
 }
 
@@ -35,7 +35,7 @@ func (d *DataCloser) CloseWithResponse() (code int, msg string, err error) {
 		return 0, "", err
 	}
 
-	timeout := smtp.Timeout(d.c.conn, d.c.submissionTimeout)
+	timeout := smtp.Timeout(d.c.conn, d.c.cfg.submissionTimeout)
 	defer timeout()
 
 	code, msg, err = d.c.readResponse(250)

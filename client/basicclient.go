@@ -17,63 +17,161 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
-// dial returns a connection to an SMTP server at addr. The addr must
-// include a port, as in "mail.example.com:smtp".
-func (c *Client) dial(ctx context.Context, addr string) (net.Conn, error) {
-	dialer := net.Dialer{Timeout: c.dialTimeout}
-	return dialer.DialContext(ctx, "tcp", addr)
+// BasicClient implements a SMTP Client with .
+type BasicClient struct {
+	cfg basicConfig
+
+	// The buffer is used if chunking/bdat is used with buffering.
+	// It is created on first use and it's size is chunkingMaxSize.
+	chunkingBuffer []byte
+
+	ext map[string]string // supported extensions of the server after ehlo
+
+	// keep a reference to the connection so it can be used to create a TLS
+	// connection later
+	conn        net.Conn
+	connAddress string // Format address:port.
+	connName    string // server greet name
 }
 
-// dialTLS returns a connection to an SMTP server at addr via TLS.
+// NewBasic returns a new raw SMTP client.
+// When not set via options the address 127.0.0.1:25 is used.
+// When not set via options a default tls.Config is used.
+func NewBasic(opts ...BasicOption) *BasicClient {
+	c := defaultConfig.basic
+
+	for _, o := range opts {
+		o(&c)
+	}
+
+	return &BasicClient{
+		cfg: c,
+	}
+}
+
+// MailOptions contains parameters for the MAIL command.
+type MailOptions struct {
+	// Size of the body. Can be 0 if not specified by client.
+	Size int64
+
+	// TLS is required for the message transmission.
+	//
+	// The message should be rejected if it can't be transmitted
+	// with TLS.
+	RequireTLS bool
+
+	// The message envelope or message header contains UTF-8-encoded strings.
+	// This flag is set by SMTPUTF8-aware (RFC 6531) client.
+	UTF8 UTF8
+
+	// Value of RET= argument, FULL or HDRS.
+	Return smtp.DSNReturn
+
+	// Envelope identifier set by the client.
+	EnvelopeID string
+
+	// Accepted Domain from Exchange Online, e.g. from OutgoingConnector
+	XOORG *string
+
+	// The authorization identity asserted by the message sender in decoded
+	// form with angle brackets stripped.
+	//
+	// nil value indicates missing AUTH, non-nil empty string indicates
+	// AUTH=<>.
+	//
+	// Defined in RFC 4954.
+	Auth *string
+}
+
+// VrfyOptions contains parameters for the VRFY command.
+type VrfyOptions struct {
+	// The message envelope or message header contains UTF-8-encoded strings.
+	// This flag is set by SMTPUTF8-aware (RFC 6531) client.
+	UTF8 UTF8
+}
+
+// Dial returns a connection to an SMTP server at addr. The addr must
+// include a port, as in "mail.example.com:smtp".
+func (c *BasicClient) Dial(ctx context.Context, addr string) error {
+	dialer := net.Dialer{Timeout: c.cfg.dialTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	return c.initConn(conn, true)
+}
+
+// DialTLS returns a connection to an SMTP server at addr via TLS.
 // The addr must include a port, as in "mail.example.com:smtps".
 //
 // A nil tlsConfig is equivalent to a zero tls.Config.
-func (c *Client) dialTLS(ctx context.Context, addr string) (net.Conn, error) {
+func (c *BasicClient) DialTLS(ctx context.Context, config *tls.Config, addr string) error {
 	tlsDialer := tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: c.dialTimeout},
-		Config:    c.tlsConfig,
+		NetDialer: &net.Dialer{Timeout: c.cfg.dialTimeout},
+		Config:    config,
 	}
-	return tlsDialer.DialContext(ctx, "tcp", addr)
+	conn, err := tlsDialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	return c.initConn(conn, true)
+}
+
+// initConn sets the underlying network connection for the client,
+// expect greeting from the server if enabled and
+// calls hello to finish basic setup
+func (c *BasicClient) initConn(conn net.Conn, expectGreet bool) error {
+	c.setConn(conn)
+
+	if expectGreet {
+		if err := c.greet(); err != nil {
+			return err
+		}
+	}
+
+	return c.Hello()
 }
 
 // setConn sets the underlying network connection for the client.
-func (c *Client) setConn(conn net.Conn) {
+func (c *BasicClient) setConn(conn net.Conn) {
 	c.conn = conn
 
-	if c.debug != nil {
-		c.text = textsmtp.NewTextproto(struct {
+	if c.cfg.debug != nil {
+		c.cfg.text = textsmtp.NewTextproto(struct {
 			io.Reader
 			io.Writer
 			io.Closer
 		}{
-			io.TeeReader(c.conn, c.debug),
-			io.MultiWriter(c.conn, c.debug),
+			io.TeeReader(c.conn, c.cfg.debug),
+			io.MultiWriter(c.conn, c.cfg.debug),
 			c.conn,
-		}, c.readerSize, c.writerSize, c.maxLineLength)
+		}, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength)
 	}
-	if c.text != nil {
-		c.text.Replace(conn)
+	if c.cfg.text != nil {
+		c.cfg.text.Replace(conn)
 	} else {
-		c.text = textsmtp.NewTextproto(conn, c.readerSize, c.writerSize, c.maxLineLength)
+		c.cfg.text = textsmtp.NewTextproto(conn, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength)
 	}
 }
 
 // Close closes the connection.
-func (c *Client) Close() error {
+func (c *BasicClient) Close() error {
 	if c.conn == nil {
 		return nil
 	}
 
-	err := c.text.Close()
+	err := c.cfg.text.Close()
 	c.conn = nil
 	return err
 }
 
-// greet reads the greeting of the server
+// Greet reads the greeting of the server
 // if an error occurred the connection is closed
-func (c *Client) greet() error {
+func (c *BasicClient) greet() error {
 	// Initial greeting timeout. RFC 5321 recommends 5 minutes.
-	timeout := smtp.Timeout(c.conn, c.commandTimeout)
+	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
 	_, msg, err := c.readResponse(220)
@@ -90,9 +188,9 @@ func (c *Client) greet() error {
 	return err
 }
 
-// hello runs a hello exchange
+// Hello runs a hello exchange
 // if an error occurred the connection is closed
-func (c *Client) hello() error {
+func (c *BasicClient) Hello() error {
 	err := c.ehlo()
 
 	var smtp *smtp.Status
@@ -108,8 +206,8 @@ func (c *Client) hello() error {
 	return err
 }
 
-func (c *Client) readResponse(expectCode int) (int, string, error) {
-	code, msg, err := c.text.ReadResponse(expectCode)
+func (c *BasicClient) readResponse(expectCode int) (int, string, error) {
+	code, msg, err := c.cfg.text.ReadResponse(expectCode)
 	if protoErr, ok := err.(*textproto.Error); ok {
 		err = toSMTPErr(protoErr)
 	}
@@ -118,34 +216,34 @@ func (c *Client) readResponse(expectCode int) (int, string, error) {
 
 // cmd is a convenience function that sends a command and returns the response
 // textproto.Error returned by c.text.ReadResponse is converted into smtp.
-func (c *Client) cmd(expectCode int, format string, args ...any) (int, string, error) {
-	timeout := smtp.Timeout(c.conn, c.commandTimeout)
+func (c *BasicClient) cmd(expectCode int, format string, args ...any) (int, string, error) {
+	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	id, err := c.text.Cmd(format, args...)
+	id, err := c.cfg.text.Cmd(format, args...)
 	if err != nil {
 		return 0, "", err
 	}
-	c.text.StartResponse(id)
-	defer c.text.EndResponse(id)
+	c.cfg.text.StartResponse(id)
+	defer c.cfg.text.EndResponse(id)
 
 	return c.readResponse(expectCode)
 }
 
 // helo sends the HELO greeting to the server. It should be used only when the
 // server does not support ehlo.
-func (c *Client) helo() error {
+func (c *BasicClient) helo() error {
 	c.ext = nil
-	_, _, err := c.cmd(250, "HELO %s", c.localName)
+	_, _, err := c.cmd(250, "HELO %s", c.cfg.localName)
 	return err
 }
 
 // ehlo sends the EHLO (extended hello) greeting to the server. It
 // should be the preferred greeting for servers that support it.
-func (c *Client) ehlo() error {
+func (c *BasicClient) ehlo() error {
 	cmd := "EHLO"
 
-	_, msg, err := c.cmd(250, "%s %s", cmd, c.localName)
+	_, msg, err := c.cmd(250, "%s %s", cmd, c.cfg.localName)
 	if err != nil {
 		return err
 	}
@@ -166,21 +264,20 @@ func (c *Client) ehlo() error {
 	return err
 }
 
-// startTLS sends the STARTTLS command and encrypts all further communication.
+// StartTLS sends the STARTTLS command and encrypts all further communication.
 // Only servers that advertise the STARTTLS extension support this function.
 //
 // A nil config is equivalent to a zero tls.Config.
 //
 // If server returns an error, it will be of type *smtp.
 // if an error occurred the connection is closed
-func (c *Client) startTLS(serverName string) error {
+func (c *BasicClient) StartTLS(config *tls.Config, serverName string) error {
 	_, _, err := c.cmd(220, "STARTTLS")
 	if err != nil {
 		_ = c.Quit()
 		return err
 	}
 
-	config := c.tlsConfig
 	if config == nil {
 		config = &tls.Config{
 			ServerName: serverName,
@@ -193,7 +290,7 @@ func (c *Client) startTLS(serverName string) error {
 
 	conn := tls.Client(c.conn, config)
 
-	timeout := smtp.Timeout(conn, c.tlsHandshakeTimeout)
+	timeout := smtp.Timeout(conn, c.cfg.tlsHandshakeTimeout)
 	defer timeout()
 
 	err = conn.Handshake()
@@ -202,9 +299,7 @@ func (c *Client) startTLS(serverName string) error {
 		return err
 	}
 
-	c.setConn(conn)
-
-	err = c.hello()
+	err = c.initConn(conn, false)
 	if err != nil {
 		return err
 	}
@@ -215,7 +310,7 @@ func (c *Client) startTLS(serverName string) error {
 // TLSConnectionState returns the client's TLS connection state.
 // The return values are their zero values if STARTTLS did
 // not succeed.
-func (c *Client) TLSConnectionState() (tls.ConnectionState, bool) {
+func (c *BasicClient) TLSConnectionState() (tls.ConnectionState, bool) {
 	tc, ok := c.conn.(*tls.Conn)
 	if !ok {
 		return tls.ConnectionState{}, ok
@@ -229,7 +324,7 @@ func (c *Client) TLSConnectionState() (tls.ConnectionState, bool) {
 // will not verify addresses for security reasons.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Verify(addr string, opts *VrfyOptions) error {
+func (c *BasicClient) Verify(addr string, opts *VrfyOptions) error {
 	if err := validateLine(addr); err != nil {
 		return err
 	}
@@ -256,9 +351,13 @@ func (c *Client) Verify(addr string, opts *VrfyOptions) error {
 // Only servers that advertise the AUTH extension support this function.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Auth(a sasl.Client) error {
+func (c *BasicClient) Auth(saslClient sasl.Client) error {
+	if saslClient == nil {
+		return errors.New("smtp: SASL client is missing")
+	}
+
 	encoding := base64.StdEncoding
-	mech, resp, err := a.Start()
+	mech, resp, err := saslClient.Start()
 	if err != nil {
 		return err
 	}
@@ -283,7 +382,7 @@ func (c *Client) Auth(a sasl.Client) error {
 		}
 		if err == nil {
 			if code == 334 {
-				resp, err = a.Next(msg)
+				resp, err = saslClient.Next(msg)
 			} else {
 				resp = nil
 			}
@@ -312,7 +411,7 @@ func (c *Client) Auth(a sasl.Client) error {
 // to the command. Handling of unsupported options depends on the extension.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Mail(from string, opts *MailOptions) error {
+func (c *BasicClient) Mail(from string, opts *MailOptions) error {
 	if err := validateLine(from); err != nil {
 		return err
 	}
@@ -383,7 +482,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 // to the command. Handling of unsupported options depends on the extension.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
+func (c *BasicClient) Rcpt(to string, opts *smtp.RcptOptions) error {
 	if err := validateLine(to); err != nil {
 		return err
 	}
@@ -438,8 +537,8 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Content(size int) (*DataCloser, error) {
-	if _, ok := c.ext["CHUNKING"]; c.chunkingMaxSize >= 0 && ok {
+func (c *BasicClient) Content(size int) (*DataCloser, error) {
+	if _, ok := c.ext["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
 		return c.Bdat(size)
 	}
 	return c.Data()
@@ -451,12 +550,12 @@ func (c *Client) Content(size int) (*DataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Data() (*DataCloser, error) {
+func (c *BasicClient) Data() (*DataCloser, error) {
 	_, _, err := c.cmd(354, "DATA")
 	if err != nil {
 		return nil, err
 	}
-	return &DataCloser{c: c, writer: textsmtp.NewDotWriter(c.text.W)}, nil
+	return &DataCloser{c: c, writer: textsmtp.NewDotWriter(c.cfg.text.W)}, nil
 }
 
 // Bdat issues a BDAT command to the server and returns a writer that
@@ -465,8 +564,8 @@ func (c *Client) Data() (*DataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Bdat(size int) (*DataCloser, error) {
-	if c.chunkingMaxSize < 0 {
+func (c *BasicClient) Bdat(size int) (*DataCloser, error) {
+	if c.cfg.chunkingMaxSize < 0 {
 		return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
 	}
 	if _, ok := c.ext["CHUNKING"]; !ok {
@@ -474,24 +573,24 @@ func (c *Client) Bdat(size int) (*DataCloser, error) {
 	}
 
 	// if chunking max size is active but smaller than a typically []byte write call, the buffer is just overhead
-	if c.chunkingBufferEnabled && size == 0 && (c.chunkingMaxSize == 0 || c.chunkingMaxSize > 4096) {
+	if c.cfg.chunkingBufferEnabled && size == 0 && (c.cfg.chunkingMaxSize == 0 || c.cfg.chunkingMaxSize > 4096) {
 		// c.bdatBuffer is init on first use and always reuse it
 		bufferSize := defaultChunkingMaxSize
-		if c.chunkingMaxSize > 0 {
-			bufferSize = c.chunkingMaxSize
+		if c.cfg.chunkingMaxSize > 0 {
+			bufferSize = c.cfg.chunkingMaxSize
 		}
 		if len(c.chunkingBuffer) < bufferSize {
 			c.chunkingBuffer = make([]byte, bufferSize)
 		}
 
-		return &DataCloser{c: c, writer: textsmtp.NewBdatWriterBuffered(c.chunkingMaxSize, c.text.W, func() error {
-			_, _, err := c.text.ReadResponse(250)
+		return &DataCloser{c: c, writer: textsmtp.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
+			_, _, err := c.cfg.text.ReadResponse(250)
 			return err
 		}, size, c.chunkingBuffer[:bufferSize])}, nil
 	}
 
-	return &DataCloser{c: c, writer: textsmtp.NewBdatWriter(c.chunkingMaxSize, c.text.W, func() error {
-		_, _, err := c.text.ReadResponse(250)
+	return &DataCloser{c: c, writer: textsmtp.NewBdatWriter(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
+		_, _, err := c.cfg.text.ReadResponse(250)
 		return err
 	}, size)}, nil
 }
@@ -500,14 +599,14 @@ func (c *Client) Bdat(size int) (*DataCloser, error) {
 // The extension name is case-insensitive. If the extension is supported,
 // Extension also returns a string that contains any parameters the
 // server specifies for the extension.
-func (c *Client) Extension(ext string) (bool, string) {
+func (c *BasicClient) Extension(ext string) (bool, string) {
 	ext = strings.ToUpper(ext)
 	param, ok := c.ext[ext]
 	return ok, param
 }
 
 // SupportsAuth checks whether an authentication mechanism is supported.
-func (c *Client) SupportsAuth(mech string) bool {
+func (c *BasicClient) SupportsAuth(mech string) bool {
 	mechs, ok := c.ext["AUTH"]
 	if !ok {
 		return false
@@ -524,7 +623,7 @@ func (c *Client) SupportsAuth(mech string) bool {
 // 0 means unlimited.
 //
 // If the server doesn't convey this information, ok = false is returned.
-func (c *Client) MaxMessageSize() (size int, ok bool) {
+func (c *BasicClient) MaxMessageSize() (size int, ok bool) {
 	v := c.ext["SIZE"]
 	if v == "" {
 		return 0, false
@@ -538,7 +637,7 @@ func (c *Client) MaxMessageSize() (size int, ok bool) {
 
 // Reset sends the RSET command to the server, aborting the current mail
 // transaction.
-func (c *Client) Reset() error {
+func (c *BasicClient) Reset() error {
 	if _, _, err := c.cmd(250, "RSET"); err != nil {
 		return err
 	}
@@ -547,14 +646,14 @@ func (c *Client) Reset() error {
 
 // Noop sends the NOOP command to the server. It does nothing but check
 // that the connection to the server is okay.
-func (c *Client) Noop() error {
+func (c *BasicClient) Noop() error {
 	_, _, err := c.cmd(250, "NOOP")
 	return err
 }
 
 // Quit sends the QUIT command and closes the connection to the server.
 // If Quit fails the connection will still be closed.
-func (c *Client) Quit() error {
+func (c *BasicClient) Quit() error {
 	if c.conn == nil {
 		return nil
 	}
@@ -564,4 +663,14 @@ func (c *Client) Quit() error {
 		return err
 	}
 	return c.Close()
+}
+
+// ServerAddress returns the current server address.
+func (c *BasicClient) ServerAddress() string {
+	return c.connAddress
+}
+
+// ServerName returns the current server name.
+func (c *BasicClient) ServerName() string {
+	return c.connName
 }
