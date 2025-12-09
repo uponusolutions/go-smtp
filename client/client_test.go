@@ -221,7 +221,57 @@ func TestClient_TooLongLine(t *testing.T) {
 	faultyServer := []string{
 		"220 mx.google.com at your service\r\n",
 		"250 2.0.0 Kk\r\n",
-		"500 5.0.0 nU6XC5JJUfiuIkC7NhrxZz36Rl/rXpkfx9QdeZJ+rno6W5J9k9HvniyWXBBi1gOZ/CUXEI6K7Uony70eiVGGGkdFhP1rEvMGny1dqIRo3NM2NifrvvLIKGeX6HrYmkc7NMn9BwHyAnt5oLe5eNVDI+grwIikVPNVFZi0Dg4Xatdg5Cs8rH1x9BWhqyDoxosJst4wRoX4AymYygUcftM3y16nVg/qcb1GJwxSNbah7VjOiSrk6MlTdGR/2AwIIcSw7pZVJjGbCorniOTvKBcyut1YdbrX/4a/dBhvLfZtdSccqyMZAdZno+tGrnu+N2ghFvz6cx6bBab9Z4JJQMlkK/g1y7xjEPr6nKwruAf71NzOclPK5wzs2hY3Ku9xEjU0Cd+g/OjAzVsmeJk2U0q+vmACZsFAiOlRynXKFPLqMAg8skM5lioRTm05K/u3aBaUq0RKloeBHZ/zNp/kfHNp6TmJKAzvsXD3Xdo+PRAgCZRTRAl3ydGdrOOjxTULCVlgOL6xSAJdj9zGkzQoEW4tRmp1OiIab4GSxCtkIo7XnAowJ7EPUfDGTV3hhl5Qn7jvZjPCPlruRTtzVTho7D3HBEouWv1qDsqdED23myw0Ma9ZlobSf9eHqsSv1MxjKG2D5DdFBACu6pXGz3ceGreOHYWnI74TkoHtQ5oNuF6VUkGjGN+f4fOaiypQ54GJ8skTNoSCHLK4XF8ZutSxWzMR+LKoJBWMb6bdAiFNt+vXZOUiTgmTqs6Sw79JXqDX9YFxryJMKjHMiFkm+RZbaK5sIOXqyq+RNmOJ+G0unrQHQMCES476c7uvOlYrNoJtq+uox1qFdisIE/8vfSoKBlTtw+r2m87djIQh4ip/hVmalvtiF5fnVTxigbtwLWv8rAOCXKoktU0c2ie0a5hGtvZT0SXxwX8K2CeYXb81AFD2IaLt/p8Q4WuZ82eOCeXP72qP9yWYj6mIZdgyimm8wjrDowt2yPJU28ZD6k3Ei6C31OKgMpCf8+MW504/VCwld7czAIwjJiZe3DxtUdfM7Q565OzLiWQgI8fxjsvlCKMiOY7q42IGGsVxXJAFMtDKdchgqQA1PJR1vrw+SbI3Mh4AGnn8vKn+WTsieB3qkloo7MZlpMz/bwPXg7XadOVkUaVeHrZ5OsqDWhsWOLtPZLi5XdNazPzn9uxWbpelXEBKAjZzfoawSUgGT5vCYACNfz/yIw1DB067N+HN1KvVddI6TNBA32lpqkQ6VwdWztq6pREE51sNl9p7MUzr+ef0331N5DqQsy+epmRDwebosCx15l/rpvBc91OnxmMMXDNtmxSzVxaZjyGDmJ7RDdTy/Su76AlaMP1zxivxg2MU/9zyTzM16coIAMOd/6Uo9ezKgbZEPeMROKTzAld9BhK9BBPWofoQ0mBkVc7btnahQe3u8HoD6SKCkr9xcTcC9ZKpLkc4svrmxT9e0858pjhis9BbWD/owa6552n2+KwUMRyB8ys7rPL86hh9lBTS+05cVL+BmJfNHOA6ZizdGc3lpwIVbFmzMR5BM0HRf3OCntkWojgsdsP8BGZWHiCGGqA7YGa5AOleR887r8Zhyp47DT3Cn3Rg/icYurIx7Yh0p696gxfANo4jEkE2BOroIscDnhauwck5CCJMcabpTrGwzK8NJ+xZnCUplXnZiIaj85Uh9+yI670B4bybWlZoVmALUxxuQ8bSMAp7CAzMcMWbYJHwBqLF8V2qMj3/g81S3KOptn8b7Idh7IMzAkV8VxE3qAguzwS0zEu8l894sOFUPiJq2/llFeiHNOcEQUGJ+8ATJSAFOMDXAeQS2FoIDOYdesO6yacL0zUkvDydWbA84VXHW8DvdHPli/8hmc++dn5CXSDeBJfC/yypvrpLgkSilZMuHEYHEYHEYEHYEHEYEHEYEHEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYEYYEYEYEYEYEYEYEYYEYEYEYEYEYEYEYEY\r\n",
+		"500 5.0.0 nU6XC5JJUfiuIkC7NhrxZz36Rl/rX",
+		"pkfx9QdeZJ+rno6W5J9k9HvniyWXBBi1gOZ/CUX",
+		"EI6K7Uony70eiVGGGkdFhP1rEvMGny1dqIRo3NM",
+		"2NifrvvLIKGeX6HrYmkc7NMn9BwHyAnt5oLe5eN",
+		"VDI+grwIikVPNVFZi0Dg4Xatdg5Cs8rH1x9BWhqy",
+		"DoxosJst4wRoX4AymYygUcftM3y16nVg/qcb1GJw",
+		"xSNbah7VjOiSrk6MlTdGR/2AwIIcSw7pZVJjGbCo",
+		"rniOTvKBcyut1YdbrX/4a/dBhvLfZtdSccqyMZAd",
+		"Zno+tGrnu+N2ghFvz6cx6bBab9Z4JJQMlkK/g1y7",
+		"xjEPr6nKwruAf71NzOclPK5wzs2hY3Ku9xEjU0Cd",
+		"+g/OjAzVsmeJk2U0q+vmACZsFAiOlRynXKFPLqMA",
+		"g8skM5lioRTm05K/u3aBaUq0RKloeBHZ/zNp/kfH",
+		"Np6TmJKAzvsXD3Xdo+PRAgCZRTRAl3ydGdrOOjxT",
+		"ULCVlgOL6xSAJdj9zGkzQoEW4tRmp1OiIab4GSxC",
+		"tkIo7XnAowJ7EPUfDGTV3hhl5Qn7jvZjPCPlruRT",
+		"tzVTho7D3HBEouWv1qDsqdED23myw0Ma9ZlobSf9",
+		"eHqsSv1MxjKG2D5DdFBACu6pXGz3ceGreOHYWnI7",
+		"4TkoHtQ5oNuF6VUkGjGN+f4fOaiypQ54GJ8skTNo",
+		"SCHLK4XF8ZutSxWzMR+LKoJBWMb6bdAiFNt+vXZO",
+		"UiTgmTqs6Sw79JXqDX9YFxryJMKjHMiFkm+RZbaK",
+		"5sIOXqyq+RNmOJ+G0unrQHQMCES476c7uvOlYrNo",
+		"Jtq+uox1qFdisIE/8vfSoKBlTtw+r2m87djIQh4i",
+		"p/hVmalvtiF5fnVTxigbtwLWv8rAOCXKoktU0c2i",
+		"e0a5hGtvZT0SXxwX8K2CeYXb81AFD2IaLt/p8Q4W",
+		"uZ82eOCeXP72qP9yWYj6mIZdgyimm8wjrDowt2yP",
+		"JU28ZD6k3Ei6C31OKgMpCf8+MW504/VCwld7czAI",
+		"wjJiZe3DxtUdfM7Q565OzLiWQgI8fxjsvlCKMiOY",
+		"7q42IGGsVxXJAFMtDKdchgqQA1PJR1vrw+SbI3Mh",
+		"4AGnn8vKn+WTsieB3qkloo7MZlpMz/bwPXg7XadO",
+		"VkUaVeHrZ5OsqDWhsWOLtPZLi5XdNazPzn9uxWbp",
+		"elXEBKAjZzfoawSUgGT5vCYACNfz/yIw1DB067N+",
+		"HN1KvVddI6TNBA32lpqkQ6VwdWztq6pREE51sNl9",
+		"p7MUzr+ef0331N5DqQsy+epmRDwebosCx15l/rpv",
+		"Bc91OnxmMMXDNtmxSzVxaZjyGDmJ7RDdTy/Su76A",
+		"laMP1zxivxg2MU/9zyTzM16coIAMOd/6Uo9ezKgb",
+		"ZEPeMROKTzAld9BhK9BBPWofoQ0mBkVc7btnahQe",
+		"3u8HoD6SKCkr9xcTcC9ZKpLkc4svrmxT9e0858pj",
+		"his9BbWD/owa6552n2+KwUMRyB8ys7rPL86hh9lB",
+		"TS+05cVL+BmJfNHOA6ZizdGc3lpwIVbFmzMR5BM0",
+		"HRf3OCntkWojgsdsP8BGZWHiCGGqA7YGa5AOleR8",
+		"87r8Zhyp47DT3Cn3Rg/icYurIx7Yh0p696gxfANo",
+		"4jEkE2BOroIscDnhauwck5CCJMcabpTrGwzK8NJ+",
+		"xZnCUplXnZiIaj85Uh9+yI670B4bybWlZoVmALUx",
+		"xuQ8bSMAp7CAzMcMWbYJHwBqLF8V2qMj3/g81S3K",
+		"Optn8b7Idh7IMzAkV8VxE3qAguzwS0zEu8l894sO",
+		"FUPiJq2/llFeiHNOcEQUGJ+8ATJSAFOMDXAeQS2F",
+		"oIDOYdesO6yacL0zUkvDydWbA84VXHW8DvdHPli/",
+		"8hmc++dn5CXSDeBJfC/yypvrpLgkSilZMuHEYHEY",
+		"HEYEHYEHEYEHEYEHEYEYEYEYEYEYEYEYEYEYEYEY",
+		"EYEYEYEYEYEYEYYEYEYEYEYEYEYEYYEYEYEYEYEY",
+		"EYEYEY\r\n",
 		"250 2.0.0 Kk\r\n",
 	}
 
@@ -522,7 +572,8 @@ func TestHello_421Response(t *testing.T) {
 	}
 
 	var smtp *smtp.Status
-	if !errors.As(err, &smtp) || smtp.Code != 421 || smtp.Message != "Service not available, closing transmission channel" {
+	if !errors.As(err, &smtp) || smtp.Code != 421 ||
+		smtp.Message != "Service not available, closing transmission channel" {
 		t.Errorf("Expected error 421, got %v", err)
 	}
 
@@ -809,11 +860,11 @@ var dsnServer = `220 hello world
 250 ok
 `
 
-var dsnClient = `MAIL FROM:<e=mc2@example.com> RET=HDRS ENVID=e+3Dmc2
-RCPT TO:<e=mc2@example.com> NOTIFY=NEVER ORCPT=RFC822;e+3Dmc2@example.com
-RCPT TO:<e=mc2@example.com> NOTIFY=FAILURE,DELAY ORCPT=UTF-8;e\x{3D}mc2@\x{30C9}\x{30E1}\x{30A4}\x{30F3}\x{540D}\x{4F8B}.jp
-RCPT TO:<e=mc2@ドメイン名例.jp> ORCPT=UTF-8;e\x{3D}mc2@ドメイン名例.jp
-`
+var dsnClient = "MAIL FROM:<e=mc2@example.com> RET=HDRS ENVID=e+3Dmc2\n" +
+	"RCPT TO:<e=mc2@example.com> NOTIFY=NEVER ORCPT=RFC822;e+3Dmc2@example.com\n" +
+	"RCPT TO:<e=mc2@example.com> NOTIFY=FAILURE,DELAY ORCPT=UTF-8;e\\x{3D}mc2@" +
+	"\\x{30C9}\\x{30E1}\\x{30A4}\\x{30F3}\\x{540D}\\x{4F8B}.jp\n" +
+	"RCPT TO:<e=mc2@ドメイン名例.jp> ORCPT=UTF-8;e\\x{3D}mc2@ドメイン名例.jp\n"
 
 func TestClientDSN(t *testing.T) {
 	server := strings.Join(strings.Split(dsnServer, "\n"), "\r\n")

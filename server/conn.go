@@ -361,7 +361,8 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		}
 	} else if c.server.enforceAuthentication {
 		// without any auth mechanism, no authentication can happen => deadlock
-		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "No auth mechanism available but authentication enforced", err)
+		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0},
+			"No auth mechanism available but authentication enforced", err)
 	}
 
 	if c.server.enableSMTPUTF8 {
@@ -577,7 +578,9 @@ func (c *Conn) handleRcpt(arg string) error {
 	}
 
 	if c.server.maxRecipients > 0 && c.recipients >= c.server.maxRecipients {
-		return smtp.NewStatus(452, smtp.EnhancedCode{4, 5, 3}, fmt.Sprintf("Maximum limit of %v recipients reached", c.server.maxRecipients))
+		return smtp.NewStatus(452, smtp.EnhancedCode{4, 5, 3},
+			fmt.Sprintf("Maximum limit of %v recipients reached", c.server.maxRecipients),
+		)
 	}
 
 	args, err := parse.Args(p.S)

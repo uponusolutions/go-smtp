@@ -169,7 +169,9 @@ func TestClient_VerifyUTF8Force(t *testing.T) {
 }
 
 func TestClient_InvalidLocalName(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithBasic(client.WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n")))
+	c := New(WithServerAddresses(addr), WithBasic(
+		client.WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n")),
+	)
 	require.NotNil(t, c)
 	require.ErrorContains(t, c.Connect(context.Background()), "smtp: the local name must not contain CR or LF")
 }

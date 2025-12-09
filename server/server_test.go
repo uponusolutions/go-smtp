@@ -691,7 +691,10 @@ func TestServerPipeline(t *testing.T) {
 	defer func() { _ = s.Close() }()
 	defer func() { _ = c.Close() }()
 
-	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\nRCPT TO:<root@gchq.gov.uk>\r\nDATA\r\nFrom: root@nsa.gov\r\n\r\nHey\r <3\r\n..this dot is fine\r\n.\r\n")
+	_, _ = io.WriteString(c,
+		"MAIL FROM:<root@nsa.gov>\r\nRCPT TO:<root@gchq.gov.uk>\r\n"+
+			"DATA\r\nFrom: root@nsa.gov\r\n\r\nHey\r <3\r\n..this dot is fine\r\n.\r\n",
+	)
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "250 ") {
 		t.Fatal("Invalid MAIL response:", scanner.Text())
@@ -1439,7 +1442,10 @@ func TestServer_Chunking_tooLongMessage(t *testing.T) {
 }
 
 func TestServer_Chunking_Binarymime(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableBINARYMIME(true), server.WithEnableCHUNKING(true))
+	be, s, c, scanner := testServerAuthenticated(t, nil,
+		server.WithEnableBINARYMIME(true),
+		server.WithEnableCHUNKING(true),
+	)
 	defer func() { _ = s.Close() }()
 	defer func() { _ = c.Close() }()
 
@@ -1558,7 +1564,10 @@ func TestServerDSN(t *testing.T) {
 		t.Fatal("Invalid RCPT response:", scanner.Text())
 	}
 
-	_, _ = io.WriteString(c, "RCPT TO:<e=mc2@example.com> orcpt=Utf-8;e\\x{3D}mc2@\\x{30C9}\\x{30E1}\\x{30A4}\\x{30F3}\\x{540D}\\x{4F8B}.jp notify=failure,delay\r\n")
+	_, _ = io.WriteString(c,
+		"RCPT TO:<e=mc2@example.com> orcpt=Utf-8;e\\x{3D}mc2@\\x{30C9}\\x{30E1}\\x"+
+			"{30A4}\\x{30F3}\\x{540D}\\x{4F8B}.jp notify=failure,delay\r\n",
+	)
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "250 ") {
 		t.Fatal("Invalid RCPT response:", scanner.Text())
@@ -1608,7 +1617,8 @@ func TestServerDSN(t *testing.T) {
 	if val := opts[0].OriginalRecipient; val != dsnEmailRFC822 {
 		t.Fatal("Invalid ORCPT address:", val)
 	}
-	if val := opts[1].Notify; val == nil || len(val) != 2 || val[0] != smtp.DSNNotifyFailure || val[1] != smtp.DSNNotifyDelayed {
+	if val := opts[1].Notify; val == nil || len(val) != 2 ||
+		val[0] != smtp.DSNNotifyFailure || val[1] != smtp.DSNNotifyDelayed {
 		t.Fatal("Invalid NOTIFY parameter value:", val)
 	}
 	if val := opts[1].OriginalRecipientType; val != smtp.DSNAddressTypeUTF8 {
@@ -1661,7 +1671,10 @@ func TestServerDSNwithSMTPUTF8(t *testing.T) {
 		t.Fatal("Invalid RCPT response:", scanner.Text())
 	}
 
-	_, _ = io.WriteString(c, "RCPT TO:<e=mc2@ドメイン名例.jp> ORCPT=UTF-8;e\\x{3D}mc2@\\x{30C9}\\x{30E1}\\x{30A4}\\x{30F3}\\x{540D}\\x{4F8B}.jp NOTIFY=FAILURE,DELAY\r\n")
+	_, _ = io.WriteString(c,
+		"RCPT TO:<e=mc2@ドメイン名例.jp> ORCPT=UTF-8;e\\x{3D}mc2@\\x"+
+			"{30C9}\\x{30E1}\\x{30A4}\\x{30F3}\\x{540D}\\x{4F8B}.jp NOTIFY=FAILURE,DELAY\r\n",
+	)
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "250 ") {
 		t.Fatal("Invalid RCPT response:", scanner.Text())
@@ -1721,7 +1734,8 @@ func TestServerDSNwithSMTPUTF8(t *testing.T) {
 	if val := opts[0].OriginalRecipient; val != dsnEmailRFC822 {
 		t.Fatal("Invalid ORCPT address:", val)
 	}
-	if val := opts[1].Notify; val == nil || len(val) != 2 || val[0] != smtp.DSNNotifyFailure || val[1] != smtp.DSNNotifyDelayed {
+	if val := opts[1].Notify; val == nil || len(val) != 2 ||
+		val[0] != smtp.DSNNotifyFailure || val[1] != smtp.DSNNotifyDelayed {
 		t.Fatal("Invalid NOTIFY parameter value:", val)
 	}
 	if val := opts[1].OriginalRecipientType; val != smtp.DSNAddressTypeUTF8 {
