@@ -11,7 +11,7 @@ import (
 // CloseWithResponse function.
 type DataCloser struct {
 	writer io.WriteCloser
-	c      *BasicClient
+	c      *Client
 	closed bool
 }
 

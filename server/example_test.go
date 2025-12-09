@@ -8,11 +8,12 @@ import (
 
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp/client"
+	"github.com/uponusolutions/go-smtp/mailer"
 )
 
 func ExampleDial() {
 	// Connect to the remote SMTP server.
-	c := client.NewBasic()
+	c := client.New()
 
 	err := c.Dial(context.Background(), "mail.example.com:25")
 	if err != nil {
@@ -61,12 +62,12 @@ func Example_plainAuth() {
 	hostname := "mail.example.com"
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
-	c := client.New(
-		client.WithServerAddresses(hostname+":25"),
-		client.WithSASLClient(auth),
+	c := mailer.New(
+		mailer.WithServerAddresses(hostname+":25"),
+		mailer.WithSASLClient(auth),
 	)
 
-	_, _, err := c.SendMail(context.Background(), from, recipients, msg)
+	_, _, err := c.Send(context.Background(), from, recipients, msg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -84,12 +85,12 @@ func Example() {
 		"\r\n" +
 		"This is the email body.\r\n")
 
-	c := client.New(
-		client.WithServerAddresses("mail.example.com:25"),
-		client.WithSASLClient(auth),
+	c := mailer.New(
+		mailer.WithServerAddresses("mail.example.com:25"),
+		mailer.WithSASLClient(auth),
 	)
 
-	_, _, err := c.SendMail(context.Background(), "sender@example.org", to, msg)
+	_, _, err := c.Send(context.Background(), "sender@example.org", to, msg)
 	if err != nil {
 		log.Fatal(err)
 	}

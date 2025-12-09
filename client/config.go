@@ -1,22 +1,17 @@
 package client
 
 import (
-	"crypto/tls"
 	"io"
 	"time"
 
-	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
 const defaultChunkingMaxSize = 1048576 * 2
 
-var defaultConfig = config{
-	extra: extraConfig{
-		serverAddresses: [][]string{{"127.0.0.1:25"}},
-		security:        SecurityPreferStartTLS,
-	},
-	basic: basicConfig{
+// DefaultConfig returns the default configuration of a client.
+func DefaultConfig() Config {
+	return Config{
 		localName: "localhost",
 		// As recommended by RFC 5321. For DATA command reply (3xx one) RFC
 		// recommends a slightly shorter timeout but we do not bother
@@ -44,7 +39,7 @@ var defaultConfig = config{
 
 		// chunking buffer enabled by default
 		chunkingBufferEnabled: true,
-	},
+	}
 }
 
 // Security describes how the connection is etablished.
@@ -73,8 +68,8 @@ const (
 	UTF8Disabled UTF8 = 2
 )
 
-// basicConfig contains all configuration needed to configure a smtp client.
-type basicConfig struct {
+// Config contains all configuration needed to configure a smtp client.
+type Config struct {
 	text      *textsmtp.Textproto
 	localName string // the name to use in HELO/EHLO/LHLO
 
@@ -102,8 +97,6 @@ type basicConfig struct {
 	// Logger for all network activity.
 	debug io.Writer
 
-	mailOptions MailOptions
-
 	// Chunking max size
 	// A zero value disables chunk size limitation.
 	// A negative value disables chunking from the client.
@@ -116,123 +109,47 @@ type basicConfig struct {
 	chunkingBufferEnabled bool
 }
 
-// extraConfig contains all the extra configuration needed to define an smtp client.
-type extraConfig struct {
-	serverAddresses    [][]string  // Format address:port.
-	serverAddressIndex int         // first server address to try
-	saslClient         sasl.Client // support authentication
-	security           Security    // 	// Defines the connection is secured
-	tlsConfig          *tls.Config
-}
-
-// extraConfig contains all the extra configuration needed to define an smtp client.
-type config struct {
-	extra extraConfig
-	basic basicConfig
-}
-
 // Option defines a client option.
-type Option func(c *config)
-
-// WithBasic allows to set all settings of the basic smtp client.
-func WithBasic(opts ...BasicOption) Option {
-	return func(c *config) {
-		for _, e := range opts {
-			e(&c.basic)
-		}
-	}
-}
-
-// WithServerAddresses sets the SMTP servers address.
-func WithServerAddresses(addrs ...string) Option {
-	return func(c *config) {
-		c.extra.serverAddresses = [][]string{addrs}
-	}
-}
-
-// WithServerAddressesPrio sets the SMTP servers address.
-func WithServerAddressesPrio(addrs ...[]string) Option {
-	return func(c *config) {
-		c.extra.serverAddresses = addrs
-	}
-}
-
-// WithServerAddressIndex sets the SMTP server index.
-func WithServerAddressIndex(index int) Option {
-	return func(c *config) {
-		c.extra.serverAddressIndex = index
-	}
-}
-
-// WithSASLClient sets the SASL client.
-func WithSASLClient(cl sasl.Client) Option {
-	return func(c *config) {
-		c.extra.saslClient = cl
-	}
-}
-
-// WithSecurity sets the TLS config.
-func WithSecurity(security Security) Option {
-	return func(c *config) {
-		c.extra.security = security
-	}
-}
-
-// WithTLSConfig sets the TLS config.
-func WithTLSConfig(cfg *tls.Config) Option {
-	return func(c *config) {
-		c.extra.tlsConfig = cfg
-	}
-}
-
-// BasicOption defines a client option.
-type BasicOption func(c *basicConfig)
-
-// WithMailOptions sets the mail options.
-func WithMailOptions(mailOptions MailOptions) BasicOption {
-	return func(c *basicConfig) {
-		c.mailOptions = mailOptions
-	}
-}
+type Option func(c *Config)
 
 // WithSubmissionTimeout sets the submission timeout.
-func WithSubmissionTimeout(submissionTimeout time.Duration) BasicOption {
-	return func(c *basicConfig) {
+func WithSubmissionTimeout(submissionTimeout time.Duration) Option {
+	return func(c *Config) {
 		c.submissionTimeout = submissionTimeout
 	}
 }
 
 // WithCommandTimeout sets the command timeout.
-func WithCommandTimeout(commandTimeout time.Duration) BasicOption {
-	return func(c *basicConfig) {
+func WithCommandTimeout(commandTimeout time.Duration) Option {
+	return func(c *Config) {
 		c.commandTimeout = commandTimeout
 	}
 }
 
 // WithDialTimeout sets the dial timeout.
-func WithDialTimeout(dialTimeout time.Duration) BasicOption {
-	return func(c *basicConfig) {
+func WithDialTimeout(dialTimeout time.Duration) Option {
+	return func(c *Config) {
 		c.dialTimeout = dialTimeout
 	}
 }
 
 // WithTlsHandshakeTimeout sets tls handshake timeout.
-func WithTlsHandshakeTimeout(tlsHandshakeTimeout time.Duration) BasicOption {
-	return func(c *basicConfig) {
+func WithTlsHandshakeTimeout(tlsHandshakeTimeout time.Duration) Option {
+	return func(c *Config) {
 		c.tlsHandshakeTimeout = tlsHandshakeTimeout
 	}
 }
 
 // WithLocalName sets the HELO local name.
-func WithLocalName(localName string) BasicOption {
-	return func(c *basicConfig) {
+func WithLocalName(localName string) Option {
+	return func(c *Config) {
 		c.localName = localName
 	}
 }
 
 // WithMaxLineLength sets the max line length.
-func WithMaxLineLength(maxLineLength int) BasicOption {
-	return func(c *basicConfig) {
+func WithMaxLineLength(maxLineLength int) Option {
+	return func(c *Config) {
 		c.maxLineLength = maxLineLength
 	}
 }
@@ -240,8 +157,8 @@ func WithMaxLineLength(maxLineLength int) BasicOption {
 // WithChunkingMaxSize sets the chunking max size.
 // A zero value disables chunk size limitation.
 // A negative value disables chunking from the client.
-func WithChunkingMaxSize(chunkingMaxSize int) BasicOption {
-	return func(c *basicConfig) {
+func WithChunkingMaxSize(chunkingMaxSize int) Option {
+	return func(c *Config) {
 		c.chunkingMaxSize = chunkingMaxSize
 	}
 }
@@ -252,22 +169,22 @@ func WithChunkingMaxSize(chunkingMaxSize int) BasicOption {
 // If you guarantee that you reader has large enough chunks,
 // you can disable the chunking buffer here.
 // It is enabled by default.
-func WithChunkingBuffer(enabled bool) BasicOption {
-	return func(c *basicConfig) {
+func WithChunkingBuffer(enabled bool) Option {
+	return func(c *Config) {
 		c.chunkingBufferEnabled = enabled
 	}
 }
 
 // WithReaderSize sets the reader size.
-func WithReaderSize(readerSize int) BasicOption {
-	return func(c *basicConfig) {
+func WithReaderSize(readerSize int) Option {
+	return func(c *Config) {
 		c.readerSize = readerSize
 	}
 }
 
 // WithWriterSize sets the reader size.
-func WithWriterSize(writerSize int) BasicOption {
-	return func(c *basicConfig) {
+func WithWriterSize(writerSize int) Option {
+	return func(c *Config) {
 		c.writerSize = writerSize
 	}
 }

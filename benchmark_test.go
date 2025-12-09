@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/client"
+	"github.com/uponusolutions/go-smtp/mailer"
 	"github.com/uponusolutions/go-smtp/server"
 	"github.com/uponusolutions/go-smtp/tester"
 )
@@ -129,7 +129,7 @@ func testServer(bei *backend, opts ...server.Option) (be *backend, s *server.Ser
 	return be, s, l.Addr().String(), nil
 }
 
-func sendMailCon(c *client.Client, data []byte, simplereader bool) error {
+func sendMailCon(c *mailer.Mailer, data []byte, simplereader bool) error {
 	from := "alice@internal.com"
 	recipients := []string{"bob@external.com", "tim@external.com"}
 
@@ -141,17 +141,17 @@ func sendMailCon(c *client.Client, data []byte, simplereader bool) error {
 		in = bytes.NewBuffer(data)
 	}
 
-	_, _, err := c.SendMail(context.Background(), from, recipients, in)
+	_, _, err := c.Send(context.Background(), from, recipients, in)
 	return err
 }
 
 func sendMail(addr string, data []byte, simplereader bool) error {
-	c := client.New(
-		client.WithServerAddresses(addr),
-		client.WithSecurity(client.SecurityPlain),
-		client.WithBasic(
-			client.WithMailOptions(client.MailOptions{Size: int64(len(data))}),
-		),
+	c := mailer.New(
+		mailer.WithServerAddresses(addr),
+		mailer.WithSecurity(mailer.SecurityPlain),
+	//	mailer.WithBasic(
+	//		client.WithMailOptions(client.MailOptions{Size: int64(len(data))}),
+	//	),
 	)
 
 	err := c.Connect(context.Background())
@@ -271,12 +271,12 @@ func s1(b *testing.B, t testcase) {
 		if os.Getenv("SETBYTES") == "" {
 			b.SetBytes(int64(len(t.eml)))
 		}
-		c := client.New(
-			client.WithServerAddresses(addr1),
-			client.WithSecurity(client.SecurityPlain),
-			client.WithBasic(
-				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			),
+		c := mailer.New(
+			mailer.WithServerAddresses(addr1),
+			mailer.WithSecurity(mailer.SecurityPlain),
+			//mailer.WithBasic(
+			//	mailer.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			//),
 		)
 		require.NotNil(b, c)
 		require.NoError(b, c.Connect(context.Background()))
@@ -293,12 +293,12 @@ func s1(b *testing.B, t testcase) {
 		if os.Getenv("SETBYTES") == "" {
 			b.SetBytes(int64(len(t.eml)))
 		}
-		c := client.New(
-			client.WithServerAddresses(addr1),
-			client.WithSecurity(client.SecurityPlain),
-			client.WithBasic(
-				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			),
+		c := mailer.New(
+			mailer.WithServerAddresses(addr1),
+			mailer.WithSecurity(mailer.SecurityPlain),
+			//mailer.WithBasic(
+			//	client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			//),
 		)
 		require.NotNil(b, c)
 		require.NoError(b, c.Connect(context.Background()))
@@ -340,12 +340,12 @@ func s2(b *testing.B, t testcase) {
 		if os.Getenv("SETBYTES") == "" {
 			b.SetBytes(int64(len(t.eml)))
 		}
-		c := client.New(
-			client.WithServerAddresses(addr2),
-			client.WithSecurity(client.SecurityPlain),
-			client.WithBasic(
-				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			),
+		c := mailer.New(
+			mailer.WithServerAddresses(addr2),
+			mailer.WithSecurity(mailer.SecurityPlain),
+		//	mailer.WithBasic(
+		//		client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+		//	),
 		)
 		require.NotNil(b, c)
 
@@ -363,12 +363,12 @@ func s2(b *testing.B, t testcase) {
 		if os.Getenv("SETBYTES") == "" {
 			b.SetBytes(int64(len(t.eml)))
 		}
-		c := client.New(
-			client.WithServerAddresses(addr2),
-			client.WithSecurity(client.SecurityPlain),
-			client.WithBasic(
-				client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			),
+		c := mailer.New(
+			mailer.WithServerAddresses(addr2),
+			mailer.WithSecurity(mailer.SecurityPlain),
+			//mailer.WithBasic(
+			//	client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
+			//),
 		)
 		require.NotNil(b, c)
 

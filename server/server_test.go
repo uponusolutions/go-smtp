@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/server"
@@ -1616,6 +1617,22 @@ func TestServerDSN(t *testing.T) {
 	if val := opts[1].OriginalRecipient; val != dsnEmailUTF8 {
 		t.Fatal("Invalid ORCPT address:", val)
 	}
+}
+
+func TestSMTPUTF8Disabled(t *testing.T) {
+	_, s, c, scanner, _ := testServerEhlo(t, nil,
+		server.WithEnableSMTPUTF8(false),
+	)
+	defer func() { _ = s.Close() }()
+	defer func() { _ = c.Close() }()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<e=mc2@example.com> SMTPUTF8\r\n")
+	scanner.Scan()
+	require.Equal(t, "504 5.5.4 SMTPUTF8 is not implemented", scanner.Text())
+
+	_, _ = io.WriteString(c, "VRFY mc2@example.com SMTPUTF8\r\n")
+	scanner.Scan()
+	require.Equal(t, "504 5.5.4 SMTPUTF8 is not implemented", scanner.Text())
 }
 
 func TestServerDSNwithSMTPUTF8(t *testing.T) {
