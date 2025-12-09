@@ -8,9 +8,11 @@ An ESMTP client and server library written in Go.
 
 ## Documentation
 
-  - [Client](https://pkg.go.dev/github.com/uponusolutions/go-smtp/client)
-  - [Server](https://pkg.go.dev/github.com/uponusolutions/go-smtp/server)
-  - [Shared](https://pkg.go.dev/github.com/uponusolutions/go-smtp)
+  - [Mailer](https://pkg.go.dev/github.com/uponusolutions/go-smtp/mailer) - High-level SMTP
+  - [Client](https://pkg.go.dev/github.com/uponusolutions/go-smtp/client) - Low-level SMTP client
+  - [Server](https://pkg.go.dev/github.com/uponusolutions/go-smtp/server) - SMTP server
+  - [Shared](https://pkg.go.dev/github.com/uponusolutions/go-smtp) - Shared definitions e.g. SMTP status codes
+  - [Tester](https://pkg.go.dev/github.com/uponusolutions/go-smtp/tester) - Testing utilities e.g. server with mail map
 
 ## Pages
 
@@ -22,6 +24,10 @@ An ESMTP client and server library written in Go.
 * ESMTP client & server implementing [RFC 5321]
 * Support for additional SMTP extensions such as [AUTH] and [PIPELINING]
 * UTF-8 support for subject and message
+
+## Relationship with emersion/go-smtp
+
+This library is a fork of the great emersion/go-smtp. We try to modernize the api, the performance and supporting non standard extensions like XOORG. If you don't have performance issues or want something very stable, use upstream.
 
 ## Relationship with net/smtp
 
