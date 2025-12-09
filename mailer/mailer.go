@@ -118,7 +118,7 @@ type Len interface {
 }
 
 func (c *Mailer) prepare(ctx context.Context, from string, options *client.MailOptions, rcpt []string, size int) (*client.DataCloser, error) {
-	if c.client.Connected() {
+	if !c.client.Connected() {
 		err := c.Connect(ctx)
 		if err != nil {
 			return nil, err

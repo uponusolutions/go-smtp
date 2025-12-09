@@ -78,6 +78,33 @@ func TestClient_ChunkingErrors(t *testing.T) {
 	assert.NoError(t, c.Disconnect())
 }
 
+func TestClient_SendMailAutoconnect(t *testing.T) {
+	c := New(WithServerAddresses(addr))
+	require.NotNil(t, c)
+
+	defer func() {
+		assert.NoError(t, c.Terminate())
+
+		// Calling again must be ok.
+		assert.NoError(t, c.Disconnect())
+	}()
+
+	data := []byte("Hello World!")
+	from := "alice@internal.com"
+	recipients := []string{"Bob@external.com", "mal@external.com"}
+
+	in := bytes.NewBuffer(data)
+
+	_, _, err := c.Send(context.Background(), from, recipients, in)
+	require.NoError(t, err)
+
+	// Lookup email.
+	m, found := tester.GetBackend(s).Load(from, recipients)
+	assert.True(t, found)
+
+	t.Logf("Found %t, mail %+v\n", found, m)
+}
+
 func TestClient_SendMail(t *testing.T) {
 	c := New(WithServerAddresses(addr))
 	require.NotNil(t, c)

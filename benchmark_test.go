@@ -149,9 +149,6 @@ func sendMail(addr string, data []byte, simplereader bool) error {
 	c := mailer.New(
 		mailer.WithServerAddresses(addr),
 		mailer.WithSecurity(mailer.SecurityPlain),
-	//	mailer.WithBasic(
-	//		client.WithMailOptions(client.MailOptions{Size: int64(len(data))}),
-	//	),
 	)
 
 	err := c.Connect(context.Background())
