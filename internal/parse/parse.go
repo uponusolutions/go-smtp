@@ -194,6 +194,7 @@ func (p *Parser) localPart() (string, error) {
 				ch, ok = p.readByte()
 			case '"':
 				return sb.String(), nil
+			default:
 			}
 			if !ok {
 				return "", errors.New("malformed quoted-string")

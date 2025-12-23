@@ -65,36 +65,36 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("HELO failed: %s", err)
 	}
 	if err := c.ehlo(); err == nil {
-		t.Fatalf("Expected first EHLO to fail")
+		t.Fatal("Expected first EHLO to fail")
 	}
 	if err := c.ehlo(); err != nil {
 		t.Fatalf("Second EHLO failed: %s", err)
 	}
 
 	if ok, args := c.Extension("aUtH"); !ok || args != "LOGIN PLAIN" {
-		t.Fatalf("Expected AUTH supported")
+		t.Fatal("Expected AUTH supported")
 	}
 	if ok, _ := c.Extension("DSN"); ok {
-		t.Fatalf("Shouldn't support DSN")
+		t.Fatal("Shouldn't support DSN")
 	}
 	if !c.SupportsAuth("PLAIN") {
-		t.Errorf("Expected AUTH PLAIN supported")
+		t.Error("Expected AUTH PLAIN supported")
 	}
 	if size, ok := c.MaxMessageSize(); !ok {
-		t.Errorf("Expected SIZE supported")
+		t.Error("Expected SIZE supported")
 	} else if size != 35651584 {
 		t.Errorf("Expected SIZE=35651584, got %v", size)
 	}
 
 	if err := c.Mail("user@gmail.com", nil); err == nil {
-		t.Fatalf("MAIL should require authentication")
+		t.Fatal("MAIL should require authentication")
 	}
 
 	if err := c.Verify("user1@gmail.com", nil); err == nil {
-		t.Fatalf("First VRFY: expected no verification")
+		t.Fatal("First VRFY: expected no verification")
 	}
 	if err := c.Verify("user2@gmail.com>\r\nDATA\r\nAnother injected message body\r\n.\r\nQUIT\r\n", nil); err == nil {
-		t.Fatalf("VRFY should have failed due to a message injection attempt")
+		t.Fatal("VRFY should have failed due to a message injection attempt")
 	}
 	if err := c.Verify("user2@gmail.com", nil); err != nil {
 		t.Fatalf("Second VRFY: expected verification, got %s", err)
@@ -105,10 +105,10 @@ func TestBasic(t *testing.T) {
 	}
 
 	if err := c.Rcpt("golang-nuts@googlegroups.com>\r\nDATA\r\nInjected message body\r\n.\r\nQUIT\r\n", nil); err == nil {
-		t.Fatalf("RCPT should have failed due to a message injection attempt")
+		t.Fatal("RCPT should have failed due to a message injection attempt")
 	}
 	if err := c.Mail("user@gmail.com>\r\nDATA\r\nAnother injected message body\r\n.\r\nQUIT\r\n", nil); err == nil {
-		t.Fatalf("MAIL should have failed due to a message injection attempt")
+		t.Fatal("MAIL should have failed due to a message injection attempt")
 	}
 	if err := c.Mail("user@gmail.com", nil); err != nil {
 		t.Fatalf("MAIL failed: %s", err)
@@ -362,10 +362,10 @@ func TestNewClient(t *testing.T) {
 	require.NoError(t, c.Hello())
 
 	if ok, args := c.Extension("aUtH"); !ok || args != "LOGIN PLAIN" {
-		t.Fatalf("Expected AUTH supported")
+		t.Fatal("Expected AUTH supported")
 	}
 	if ok, _ := c.Extension("DSN"); ok {
-		t.Fatalf("Shouldn't support DSN")
+		t.Fatal("Shouldn't support DSN")
 	}
 	if err := c.Quit(); err != nil {
 		t.Fatalf("QUIT failed: %s", err)
@@ -407,7 +407,7 @@ func TestNewClient2(t *testing.T) {
 	require.NoError(t, err)
 
 	if ok, _ := c.Extension("DSN"); ok {
-		t.Fatalf("Shouldn't support DSN")
+		t.Fatal("Shouldn't support DSN")
 	}
 	if err := c.Quit(); err != nil {
 		t.Fatalf("QUIT failed: %s", err)
@@ -435,7 +435,7 @@ QUIT
 
 func TestHello(t *testing.T) {
 	if len(helloServer) != len(helloClient) {
-		t.Fatalf("Hello server and client size mismatch")
+		t.Fatal("Hello server and client size mismatch")
 	}
 
 	for i := range helloServer {
@@ -480,7 +480,7 @@ func HelloCase(t *testing.T, i int) {
 	case 5:
 		ok, _ := c.Extension("feature")
 		if ok {
-			t.Errorf("Expected FEATURE not to be supported")
+			t.Error("Expected FEATURE not to be supported")
 		}
 	case 6:
 		err = c.Reset()
@@ -492,13 +492,13 @@ func HelloCase(t *testing.T, i int) {
 			c.cfg.localName = "customhost"
 			err = c.Hello()
 			if err != nil {
-				t.Errorf("Want error, got none")
+				t.Error("Want error, got none")
 			}
 		}
 	case 9:
 		err = c.Noop()
 	default:
-		t.Fatalf("Unhandled command")
+		t.Fatal("Unhandled command")
 	}
 
 	if err != nil {
@@ -568,7 +568,7 @@ func TestHello_421Response(t *testing.T) {
 
 	err := c.Hello()
 	if err == nil {
-		t.Errorf("Expected Hello to fail")
+		t.Error("Expected Hello to fail")
 	}
 
 	var smtp *smtp.Status
@@ -685,7 +685,7 @@ func TestTLSConnState(t *testing.T) {
 		defer func() { require.NoError(t, c.Quit()) }()
 		cs, ok := c.TLSConnectionState()
 		if !ok {
-			t.Errorf("TLSConnectionState returned ok == false; want true")
+			t.Error("TLSConnectionState returned ok == false; want true")
 			return
 		}
 		if cs.Version == 0 || !cs.HandshakeComplete {
@@ -750,19 +750,12 @@ func serverHandleTLS(c net.Conn, t *testing.T) error {
 	s := bufio.NewScanner(c)
 	for s.Scan() {
 		switch s.Text() {
-		case "EHLO localhost":
-			send("250 Ok")
-		case "MAIL FROM:<joe1@example.com>":
-			send("250 Ok")
-		case "RCPT TO:<joe2@example.com>":
+		case "EHLO localhost", "MAIL FROM:<joe1@example.com>", "RCPT TO:<joe2@example.com>":
 			send("250 Ok")
 		case "DATA":
 			send("354 send the mail data, end with .")
 			send("250 Ok")
-		case "Subject: test":
-		case "":
-		case "howdy!":
-		case ".":
+		case "Subject: test", "", "howdy!", ".":
 		case "QUIT":
 			send("221 127.0.0.1 Service closing transmission channel")
 			return nil

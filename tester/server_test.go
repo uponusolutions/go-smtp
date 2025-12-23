@@ -34,13 +34,11 @@ func TestMain(m *testing.M) {
 		}
 	}()
 
-	exitVal := m.Run()
+	m.Run()
 
 	if err := srv.Close(); err != nil {
 		slog.Error("error closing server", slog.Any("error", err))
 	}
-
-	os.Exit(exitVal)
 }
 
 func TestBackend_AddLoad(t *testing.T) {

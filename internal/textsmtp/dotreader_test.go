@@ -106,6 +106,7 @@ func (r *dotReader) Read(b []byte) (n int, err error) {
 			if c == '\r' {
 				r.state = stateCR
 			}
+		default:
 		}
 		b[n] = c
 		n++

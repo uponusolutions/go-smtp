@@ -135,7 +135,7 @@ func TestReadMultiLineError(t *testing.T) {
 
 	code, msg, err := r.ReadResponse(250)
 	if err == nil {
-		t.Errorf("ReadResponse: no error, want error")
+		t.Error("ReadResponse: no error, want error")
 	}
 	if code != 550 {
 		t.Errorf("ReadResponse: code=%d, want %d", code, 550)

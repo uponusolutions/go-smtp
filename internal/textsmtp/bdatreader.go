@@ -78,10 +78,6 @@ func (d *bdatReader) Read(b []byte) (int, error) {
 		}
 
 		switch cmd {
-		case "RSET":
-			return 0, smtp.Reset
-		case "QUIT":
-			return 0, smtp.Quit
 		case "BDAT":
 			d.size, d.last, err = bdatArg(arg)
 			if err != nil {
@@ -91,13 +87,17 @@ func (d *bdatReader) Read(b []byte) (int, error) {
 			if d.last && d.size == 0 {
 				return 0, io.EOF
 			}
+		case "RSET":
+			return 0, smtp.Reset
+		case "QUIT":
+			return 0, smtp.Quit
 		default:
-			return 0, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "BDAT command expected")
+			return 0, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "BDAT, RSET or QUIT command expected")
 		}
 	}
 
 	if d.maxMessageBytes != 0 && d.bytesReceived+d.size > d.maxMessageBytes {
-		return 0, smtp.NewStatus(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
+		return 0, smtp.ErrDataTooLarge
 	}
 
 	if d.chunk == nil {
@@ -108,14 +108,9 @@ func (d *bdatReader) Read(b []byte) (int, error) {
 	d.bytesReceived += int64(n)
 	d.size -= int64(n)
 
-	// this isn't the end
-	if err == io.EOF && !d.last {
-		// stream broke in the middle
-		if d.size > 0 {
-			err = smtp.ErrConnection
-		} else {
-			err = nil
-		}
+	// the reader should never throw EOF
+	if err == io.EOF {
+		err = smtp.ErrConnection
 	}
 
 	return n, err

@@ -33,7 +33,7 @@ func ExampleDial() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_, err = fmt.Fprintf(wc, "This is the email body")
+	_, err = fmt.Fprint(wc, "This is the email body")
 	if err != nil {
 		log.Fatal(err)
 	}

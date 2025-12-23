@@ -6,9 +6,7 @@ import (
 	"crypto/tls"
 	"log"
 	"log/slog"
-	"os"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,12 +38,7 @@ func TestMain(m *testing.M) {
 		}
 	}()
 
-	// Wait a second to let the server come up.
-	time.Sleep(time.Second)
-
-	ret := m.Run()
-
-	os.Exit(ret)
+	m.Run()
 }
 
 func TestClient_ChunkingErrors(t *testing.T) {

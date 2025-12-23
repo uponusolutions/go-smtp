@@ -68,14 +68,12 @@ func (c *Mailer) connectAddress(ctx context.Context, addr string) error {
 	var err error
 
 	switch c.cfg.security {
-	case SecurityPlain:
-		fallthrough
-	case SecurityStartTLS:
-		fallthrough
-	case SecurityPreferStartTLS:
-		err = c.client.Dial(ctx, addr)
 	case SecurityTLS:
 		err = c.client.DialTLS(ctx, c.cfg.tlsConfig, addr)
+	case SecurityPlain, SecurityStartTLS, SecurityPreferStartTLS:
+		fallthrough
+	default:
+		err = c.client.Dial(ctx, addr)
 	}
 
 	if err != nil {

@@ -100,9 +100,7 @@ func (c *Conn) handle(cmd string, arg string) error {
 	cmd = strings.ToUpper(cmd)
 
 	switch c.state {
-	case stateInit:
-		fallthrough
-	case stateUpgrade:
+	case stateInit, stateUpgrade:
 		return c.handleStateInit(cmd, arg)
 	case stateEnforceSecureConnection:
 		return c.handleStateEnforceSecureConnection(cmd, arg)
@@ -112,9 +110,9 @@ func (c *Conn) handle(cmd string, arg string) error {
 		return c.handleStateGreeted(cmd, arg)
 	case stateMail:
 		return c.handleStateMail(cmd, arg)
+	default:
+		return fmt.Errorf("unsupported state %d, how?", c.state)
 	}
-
-	return fmt.Errorf("unsupported state %d, how?", c.state)
 }
 
 func (c *Conn) handleStateInit(cmd string, arg string) error {
@@ -471,7 +469,7 @@ func (c *Conn) handleMail(arg string) error {
 			}
 
 			if c.server.maxMessageBytes > 0 && int64(size) > c.server.maxMessageBytes {
-				return smtp.NewStatus(552, smtp.EnhancedCode{5, 3, 4}, "Max message size exceeded")
+				return smtp.ErrDataTooLarge
 			}
 
 			opts.Size = int64(size)

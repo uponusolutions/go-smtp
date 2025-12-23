@@ -162,14 +162,15 @@ func TestBdatWriterBuffered(t *testing.T) {
 
 		input1 := []byte("a")
 		n, err := d.Write(input1)
-		if n != len(input1) || err != nil {
-			t.Fatalf("Write: %d, %s", n, err)
-		}
+
+		require.NoError(t, err)
+		require.Equal(t, len(input1), n)
 
 		input2 := []byte("b")
-		if n != len(input2) || err != nil {
-			t.Fatalf("Write: %d, %s", n, err)
-		}
+		n, err = d.Write(input2)
+
+		require.NoError(t, err)
+		require.Equal(t, len(input2), n)
 
 		require.ErrorContains(t, d.Close(), "got less bytes")
 	})

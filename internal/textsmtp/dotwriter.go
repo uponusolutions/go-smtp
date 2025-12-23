@@ -111,6 +111,7 @@ func (d *dotWriter) Write(b []byte) (n int, err error) {
 
 func (d *dotWriter) Close() error {
 	bw := d.W
+	// nolint revive
 	switch d.state {
 	default:
 		if err := bw.WriteByte('\r'); err != nil {
