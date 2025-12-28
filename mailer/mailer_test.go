@@ -168,7 +168,14 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.SendAdvanced(context.Background(), from, &client.MailOptions{UTF8: client.UTF8Force}, recipients, in)
+	_, _, err := c.SendAdvanced(
+		context.Background(),
+		from,
+		&client.MailOptions{UTF8: client.UTF8Force},
+		recipients,
+		nil,
+		in,
+	)
 	require.ErrorContains(t, err, "server does not support SMTPUTF8")
 }
 

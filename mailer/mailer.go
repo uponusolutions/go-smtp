@@ -115,7 +115,7 @@ type Len interface {
 	Len() int
 }
 
-func (c *Mailer) prepare(ctx context.Context, from string, options *client.MailOptions, rcpt []string, size int) (*client.DataCloser, error) {
+func (c *Mailer) prepare(ctx context.Context, from string, mailOptions *client.MailOptions, rcpt []string, rcptsOptions []*smtp.RcptOptions, size int) (*client.DataCloser, error) {
 	if !c.client.Connected() {
 		err := c.Connect(ctx)
 		if err != nil {
@@ -127,20 +127,25 @@ func (c *Mailer) prepare(ctx context.Context, from string, options *client.MailO
 		return nil, errors.New("no recipients")
 	}
 
-	if options == nil && size > 0 {
-		options = &client.MailOptions{
+	if mailOptions == nil && size > 0 {
+		mailOptions = &client.MailOptions{
 			Size: int64(size),
 		}
 	}
 
 	// MAIL FROM:
-	if err := c.client.Mail(from, options); err != nil {
+	if err := c.client.Mail(from, mailOptions); err != nil {
 		return nil, err
 	}
 
 	// RCPT TO:
-	for _, addr := range rcpt {
-		if err := c.client.Rcpt(addr, &smtp.RcptOptions{}); err != nil {
+	for i, addr := range rcpt {
+		var rcptsOption *smtp.RcptOptions
+		if len(rcptsOptions) > i {
+			rcptsOption = rcptsOptions[i]
+		}
+
+		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
 			return nil, err
 		}
 	}
@@ -154,48 +159,45 @@ func (c *Mailer) prepare(ctx context.Context, from string, options *client.MailO
 }
 
 // Send send an email from
-// address from, to addresses to, with message r.
+// address from, to addresses to, with message stream in.
 //
 // It will use an existing connection if possible or create a new one otherwise.
 //
-// This function does not start TLS, nor does it perform authentication. Use
-// DialStartTLS and Auth before-hand if desirable.
+// The addresses in the rcpts parameter are the SMTP RCPT addresses.
 //
-// The addresses in the to parameter are the SMTP RCPT addresses.
-//
-// The r parameter should be an RFC 822-style email with headers
-// first, a blank line, and then the message body. The lines of r
-// should be CRLF terminated. The r headers should usually include
+// The in parameter should be a stream of an RFC 822-style email with headers
+// first, a blank line, and then the message body. The lines of in
+// should be CRLF terminated. The in headers should usually include
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
-// parameter but not including it in the r headers.
+// parameter but not including it in the in headers.
 func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, err error) {
-	return c.SendAdvanced(ctx, from, nil, rcpt, in)
+	return c.SendAdvanced(ctx, from, nil, rcpt, nil, in)
 }
 
 // SendAdvanced send an email from
-// address from, to addresses to, with message r.
+// address from, to addresses to, with message stream in.
 //
 // It will use an existing connection if possible or create a new one otherwise.
 //
-// This function does not start TLS, nor does it perform authentication. Use
-// DialStartTLS and Auth before-hand if desirable.
+// The addresses in the rcpts parameter are the SMTP RCPT addresses.
+// If mailOptions isn't set, default values are used (e.g. size determined from in)
+// If rcptsOptions isn't set for some rcpts (e.g. len(rcpts) > len(rcptsOptions)),
+// default values are used for these recipients.
 //
-// The addresses in the to parameter are the SMTP RCPT addresses.
-//
-// The r parameter should be an RFC 822-style email with headers
-// first, a blank line, and then the message body. The lines of r
-// should be CRLF terminated. The r headers should usually include
+// The in parameter should be a stream of an RFC 822-style email with headers
+// first, a blank line, and then the message body. The lines of in
+// should be CRLF terminated. The in headers should usually include
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
-// parameter but not including it in the r headers.
-func (c *Mailer) SendAdvanced(ctx context.Context, from string, options *client.MailOptions, rcpt []string, in io.Reader) (code int, msg string, err error) {
+// parameter but not including it in the in headers.
+func (c *Mailer) SendAdvanced(ctx context.Context, from string, mailOptions *client.MailOptions, rcpts []string, rcptsOptions []*smtp.RcptOptions, in io.Reader) (code int, msg string, err error) {
 	size := 0
 	if wt, ok := in.(Len); ok {
 		size = wt.Len()
 	}
 
-	w, err := c.prepare(ctx, from, options, rcpt, size)
+	w, err := c.prepare(ctx, from, mailOptions, rcpts, rcptsOptions, size)
 	if err != nil {
 		return 0, "", err
 	}
