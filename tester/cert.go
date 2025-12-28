@@ -18,9 +18,9 @@ func GenX509KeyPair(domain string) (tls.Certificate, error) {
 		SerialNumber: big.NewInt(now.Unix()),
 		Subject: pkix.Name{
 			CommonName:         domain,
-			Country:            []string{"Germany"},
-			Organization:       []string{"UPONU GmbH"},
-			OrganizationalUnit: []string{"mail:u secure"},
+			Country:            []string{"DE"},
+			Organization:       []string{"Testcompany"},
+			OrganizationalUnit: []string{"Development"},
 		},
 		NotBefore:             now.AddDate(0, 0, -1),
 		NotAfter:              now.AddDate(999, 0, 0),
