@@ -85,7 +85,7 @@
 				
 				<option value="file14">github.com/uponusolutions/go-smtp/mailer/config.go (37.5%)</option>
 				
-				<option value="file15">github.com/uponusolutions/go-smtp/mailer/mailer.go (74.3%)</option>
+				<option value="file15">github.com/uponusolutions/go-smtp/mailer/mailer.go (46.0%)</option>
 				
 				<option value="file16">github.com/uponusolutions/go-smtp/sender.go (88.9%)</option>
 				
@@ -103,7 +103,7 @@
 				
 				<option value="file23">github.com/uponusolutions/go-smtp/tester/cert.go (85.0%)</option>
 				
-				<option value="file24">github.com/uponusolutions/go-smtp/tester/compare.go (90.7%)</option>
+				<option value="file24">github.com/uponusolutions/go-smtp/tester/compare.go (97.3%)</option>
 				
 				<option value="file25">github.com/uponusolutions/go-smtp/tester/faker.go (60.0%)</option>
 				
@@ -2081,22 +2081,22 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span c
         <span class="cov6" title="4078">return dr</span>
 }
 
-func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="588954">{
-        if err == nil </span><span class="cov9" title="584899">{
+func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="588958">{
+        if err == nil </span><span class="cov9" title="584903">{
                 l := len(c)
 
-                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="5324">{
+                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="5327">{
                         // Ends with \r\n, write everything before.
                         return copy(b, c[:l-2])
                 }</span>
 
-                <span class="cov9" title="579575">if l &gt; 0 &amp;&amp; c[l-1] == '\r' </span><span class="cov5" title="1473">{
+                <span class="cov9" title="579576">if l &gt; 0 &amp;&amp; c[l-1] == '\r' </span><span class="cov5" title="1473">{
                         // Ends with \r, write everything before.
                         return copy(b, c[:l-1])
                 }</span>
         }
 
-        <span class="cov9" title="582157">return copy(b, c)</span>
+        <span class="cov9" title="582158">return copy(b, c)</span>
 }
 
 const (
@@ -2109,7 +2109,7 @@ const (
 // Run data through a simple state machine to
 // elide leading dots and detect End-of-Data
 // (&lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;) line.
-func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589165">{
+func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589169">{
         if r.limited </span><span class="cov2" title="13">{
                 if r.n &lt;= 0 </span><span class="cov1" title="2">{
                         return 0, smtp.ErrDataTooLarge
@@ -2120,17 +2120,17 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589165
                 }</span>
         }
 
-        <span class="cov9" title="589163">var n int       // Data written to b.
+        <span class="cov9" title="589167">var n int       // Data written to b.
         var skipped int // How many.
 
         // IMPORTANT: We cannot wait on read,
         // because no EOL returns.
-        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="518086">{
+        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="518090">{
                 _, _ = r.r.Peek(5)
         }</span>
 
         // min 5, max buffer size, default len(b)
-        <span class="cov9" title="589163">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+        <span class="cov9" title="589167">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
 
         // write \n
         if r.state == stateCR </span><span class="cov1" title="4">{
@@ -2147,12 +2147,12 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589165
                 }</span>
         }
 
-        <span class="cov9" title="589163">if r.state != stateEOF </span><span class="cov9" title="589160">{
-                for </span><span class="cov10" title="621545">{
+        <span class="cov9" title="589167">if r.state != stateEOF </span><span class="cov9" title="589164">{
+                for </span><span class="cov10" title="621549">{
                         i := bytes.Index(c, crlfdot)
 
                         // No full \r\n. found.
-                        if i == -1 </span><span class="cov9" title="588954">{
+                        if i == -1 </span><span class="cov9" title="588958">{
                                 n += noCrlfDotFound(err, b, c)
                                 break</span>
                         }
@@ -2200,19 +2200,19 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589165
 
         // n + skipped is always smaller then what was peeked,
         // so it is guaranteed to work
-        <span class="cov9" title="589163">_, _ = r.r.Discard(n + skipped)
+        <span class="cov9" title="589167">_, _ = r.r.Discard(n + skipped)
 
         if err == io.EOF &amp;&amp; r.state != stateEOF </span><span class="cov6" title="4055">{
                 err = io.ErrUnexpectedEOF
-        }</span> else<span class="cov9" title="585108"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov3" title="24">{
+        }</span> else<span class="cov9" title="585112"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov3" title="24">{
                 err = io.EOF
         }</span>
 
-        <span class="cov9" title="589163">if r.limited </span><span class="cov2" title="11">{
+        <span class="cov9" title="589167">if r.limited </span><span class="cov2" title="11">{
                 r.n -= int64(n)
         }</span>
 
-        <span class="cov9" title="589163">return n, err</span>
+        <span class="cov9" title="589167">return n, err</span>
 }
 </pre>
 		
@@ -2560,7 +2560,7 @@ func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="54
         <span class="cov9" title="546">var line []byte
         for </span><span class="cov9" title="546">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov6" title="57">{
+                if err != nil </span><span class="cov6" title="55">{
                         return nil, err
                 }</span>
 
@@ -2871,8 +2871,8 @@ type Len interface {
         Len() int
 }
 
-func (c *Mailer) prepare(ctx context.Context, from string, options *client.MailOptions, rcpt []string, size int) (*client.DataCloser, error) <span class="cov6" title="4">{
-        if !c.client.Connected() </span><span class="cov1" title="1">{
+func (c *Mailer) prepare(ctx context.Context, from string, mailOptions *client.MailOptions, rcpt []string, rcptsOptions []*smtp.RcptOptions, <span class="cov0" title="0">size int) (*client.DataCloser, error) {
+        if !c.client.Connected() </span></span><span class="cov1" title="1">{
                 err := c.Connect(ctx)
                 if err != nil </span><span class="cov0" title="0">{
                         return nil, err
@@ -2883,26 +2883,31 @@ func (c *Mailer) prepare(ctx context.Context, from string, options *client.MailO
                 return nil, errors.New("no recipients")
         }</span>
 
-        <span class="cov6" title="4">if options == nil &amp;&amp; size &gt; 0 </span><span class="cov4" title="3">{
-                options = &amp;client.MailOptions{
+        <span class="cov0" title="0">if mailOptions == nil &amp;&amp; size </span>&gt; 0 </span>{
+</span></span></span></span>                mailOptions = &amp;client.MailOptions{
                         Size: int64(size),
                 }
-        }</span>
+        }</span></span>
 
         // MAIL FROM:
-        <span class="cov6" title="4">if err := c.client.Mail(from, options); err != nil </span><span class="cov1" title="1">{
-                return nil, err
-        }</span>
+        <span class="cov0" title="0">if err := c.client.Mail(from, mailOptions); err != nil </span>{
+</span></span></span>                return nil, err
+        }</span></span>
 
         // RCPT TO:
-        <span class="cov4" title="3">for _, addr := range rcpt </span><span class="cov7" title="6">{
-                if err := c.client.Rcpt(addr, &amp;smtp.RcptOptions{}); err != nil </span><span class="cov0" title="0">{
+        <span class="cov4" title="3">for i, addr := range rcpt </span><span class="cov7" title="6">{
+                var rcptsOption *smtp.RcptOptions
+                if len(rcptsOptions) &gt; i </span></span></span></span></span></span></span>{
+                        </span>rcptsOption = rcptsOptions[i]
+                }</span>
+
+                <span class="cov7" title="6">if err := c.client.Rcpt(addr, rcptsOption); err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
-        }
+</span>        }
 
-        // DATA
-        <span class="cov4" title="3">w, err := c.client.Content(size)
+</span>        <span class="cov0" title="0">// DATA
+</span>        <span class="cov4" title="3">w, err := c.client.Content(size)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
@@ -2910,68 +2915,65 @@ func (c *Mailer) prepare(ctx context.Context, from string, options *client.MailO
 }
 
 // Send send an email from
-// address from, to addresses to, with message r.
+// address from, to addresses to, with message stream in.
 //
 // It will use an existing connection if possible or create a new one otherwise.
 //
-// This function does not start TLS, nor does it perform authentication. Use
-// DialStartTLS and Auth before-hand if desirable.
+// The addresses in the rcpts parameter are the SMTP RCPT addresses.
 //
-// The addresses in the to parameter are the SMTP RCPT addresses.
-//
-// The r parameter should be an RFC 822-style email with headers
-// first, a blank line, and then the message body. The lines of r
-// should be CRLF terminated. The r headers should usually include
+// The in parameter should be a stream of an RFC 822-style email with headers
+// first, a blank line, and then the message body. The lines of in
+// should be CRLF terminated. The in headers should usually include
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
-// parameter but not including it in the r headers.
-func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, err error) <span class="cov4" title="3">{
-        return c.SendAdvanced(ctx, from, nil, rcpt, in)
+// parameter but not including it in the in headers.
+f</span>unc (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, err error) <span class="cov4" title="3">{
+        return c.SendAdvanced(ctx, from, nil, rcpt, nil, in)
 }</span>
 
 // SendAdvanced send an email from
-// address from, to addresses to, with message r.
+// address from, to addresses to, with message stream in.
 //
 // It will use an existing connection if possible or create a new one otherwise.
 //
-// This function does not start TLS, nor does it perform authentication. Use
-// DialStartTLS and Auth before-hand if desirable.
+// The addresses in the rcpts parameter are the SMTP RCPT addresses.
+// If mailOptions isn't set, default values are used (e.g. size determined from in)
+// If rcptsOptions isn't set for some rcpts (e.g. len(rcpts) &gt; len(rcptsOptions)),
+// default values are used for these recipients.
 //
-// The addresses in the to parameter are the SMTP RCPT addresses.
-//
-// The r parameter should be an RFC 822-style email with headers
-// first, a blank line, and then the message body. The lines of r
-// should be CRLF terminated. The r headers should usually include
+// The in parameter should be a stream of an RFC 822-style email with headers
+// first, a blank line, and then the message body. The lines of in
+// should be CRLF terminated. The in headers should usually include
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
-// parameter but not including it in the r headers.
-func (c *Mailer) SendAdvanced(ctx context.Context, from string, options *client.MailOptions, rcpt []string, in io.Reader) (code int, msg string, err error) <span class="cov6" title="4">{
+// parameter but not including it in the in headers.
+func (c *Mailer) SendAdvanc</span><span class="cov0" title="0">ed(ctx context.Context, from string, mailOptions *client.MailOptions, rcpts []string, rcptsOptions []*smtp.RcptOptions, in io.Reader) (code int, msg string, err error) {
         size := 0
-        if wt, ok := in.(Len); ok </span><span class="cov6" title="4">{
+        i</span>f wt, ok := in.(Len); ok </span><span class="cov6" title="4">{
                 size = wt.Len()
         }</span>
 
-        <span class="cov6" title="4">w, err := c.prepare(ctx, from, options, rcpt, size)
-        if err != nil </span><span class="cov1" title="1">{
+</span>        w, err := c.prepare(ctx, from, mailOptions, rcpts, rcptsOptions, size)
+        i</span>f err != nil </span><span class="cov1" title="1">{
                 return 0, "", err
         }</span>
 
-        <span class="cov4" title="3">_, err = io.Copy(w.Writer(), in)
-        if err != nil </span><span class="cov0" title="0">{
-                // if err isn't smtp.Status we are in an unknown state, close connection
-                if _, ok := err.(*smtp.Status); !ok </span><span class="cov0" title="0">{
-                        err = errors.Join(err, c.client.Close())
-                }</span>
+</span>        _, err = io.Copy(w.Writer(), in)
+        if err != nil {
+</span></span>                // if err isn't smtp.Status we are in an unknown state, close connection
+                if _, ok := err.(*smtp.Status); !ok </span>{
+</span>                        err = errors.Join(err, c.client.Close())
+                }</span></span>
                 <span class="cov0" title="0">return 0, "", err</span>
-        }
+        <span class="cov0" title="0">}
 
-        <span class="cov4" title="3">code, msg, err = w.CloseWithResponse()
+        code, msg, err = w.CloseWithResponse()
 
-        // if err isn't smtp.Status we are in an unknown state, close connection
-        if _, ok := err.(*smtp.Status); err != nil &amp;&amp; !ok </span><span class="cov0" title="0">{
-                err = errors.Join(err, c.client.Close())
+</span>        // if err isn't smtp.Status we are in an unknown state, close connection
+        if _, ok := err.(*smtp.Status); err != nil &amp;&amp; !ok </span>{
+</span>                err = errors.Join(err, c.client.Close())
         }</span>
-
+</span>
         <span class="cov4" title="3">return code, msg, err</span>
 }
 
@@ -2981,32 +2983,32 @@ func (c *Mailer) SendAdvanced(ctx context.Context, from string, options *client.
 // will not verify addresses for security reasons.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Mailer) Verify(addr string, opts *client.VrfyOptions) error <span class="cov1" title="1">{
+f</span>unc (c *Mailer) Verify(addr string, opts *client.VrfyOptions) error <span class="cov1" title="1">{
         return c.client.Verify(addr, opts)
 }</span>
 
 // Disconnect ends current connection gracefully, if any exists.
-func (c *Mailer) Disconnect() error <span class="cov8" title="8">{
+f</span>unc (c *Mailer) Disconnect() error <span class="cov8" title="8">{
         return c.client.Quit()
 }</span>
 
 // Terminate ends current connection forcefully.
-func (c *Mailer) Terminate() error <span class="cov8" title="8">{
+f</span>unc (c *Mailer) Terminate() error <span class="cov8" title="8">{
         return c.client.Close()
 }</span>
 
 // Connected returns the current server name.
-func (c *Mailer) Connected() bool <span class="cov0" title="0">{
+f</span>unc (c *Mailer) Connected() bool <span class="cov0" title="0">{
         return c.client.Connected()
 }</span>
 
 // ServerAddress returns the current server address.
-func (c *Mailer) ServerAddress() string <span class="cov7" title="6">{
+f</span>unc (c *Mailer) ServerAddress() string <span class="cov7" title="6">{
         return c.client.ServerAddress()
 }</span>
 
 // ServerName returns the current server name.
-func (c *Mailer) ServerName() string <span class="cov6" title="4">{
+f</span>unc (c *Mailer) ServerName() string <span class="cov6" title="4">{
         return c.client.ServerName()
 }</span>
 </pre>
@@ -3205,7 +3207,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="65">{
 
         for </span><span class="cov8" title="295">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov6" title="58">{
+                if err != nil </span><span class="cov6" title="56">{
                         return err
                 }</span>
 
@@ -3231,7 +3233,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="65">{
 
 func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="301">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov6" title="56">{
+        if err != nil </span><span class="cov6" title="54">{
                 return "", "", err
         }</span>
         <span class="cov8" title="243">return parse.Cmd(line)</span>
@@ -3380,26 +3382,26 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov6" title="63">{
+func (c *Conn) Close(err error) <span class="cov6" title="61">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="25">{
+        if closeErr != nil </span><span class="cov5" title="22">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="25"> {
+                }</span> else<span class="cov5" title="22"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
 
-        <span class="cov6" title="63">if err != nil </span><span class="cov6" title="59">{
+        <span class="cov6" title="61">if err != nil </span><span class="cov6" title="57">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
-        <span class="cov6" title="63">if c.session != nil </span><span class="cov6" title="63">{
+        <span class="cov6" title="59">if c.session != nil </span><span class="cov6" title="59">{
                 c.session.Close(c.ctx, err)
                 c.session = nil
         }</span>
@@ -3536,8 +3538,8 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error <span class="cov6" t
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov6" title="62">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="54">{
+func (c *Conn) handleError(err error) <span class="cov6" title="60">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="52">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -3570,13 +3572,13 @@ func (c *Conn) handleError(err error) <span class="cov6" title="62">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="823">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="819">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="823">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="823">{
+        <span class="cov10" title="819">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="819">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -4101,7 +4103,7 @@ func (c *Conn) readLine() (string, error) <span class="cov8" title="333">{
         if err == nil </span><span class="cov8" title="275">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov8" title="331">return line, err</span>
+        <span class="cov8" title="329">return line, err</span>
 }
 
 func (c *Conn) reset() error <span class="cov5" title="29">{
@@ -4383,7 +4385,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
 
         var err error
 
-        defer func() </span><span class="cov8" title="63">{
+        defer func() </span><span class="cov8" title="59">{
                 if err := recover(); err != nil </span><span class="cov1" title="1">{
                         c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
                         stack := debug.Stack()
@@ -4396,7 +4398,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                         c.Close(errors.New("recovered from panic inside handleConn"))
                 }</span>
 
-                <span class="cov8" title="63">s.locker.Lock()
+                <span class="cov8" title="59">s.locker.Lock()
                 delete(s.conns, c)
                 s.locker.Unlock()
 
@@ -4517,7 +4519,7 @@ func (s *Server) Close() error <span class="cov8" title="44">{
                 }</span>
         }
 
-        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="31">{
+        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="26">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
@@ -4843,12 +4845,12 @@ type Buffer struct {
 }
 
 // empty reports whether the unread portion of the buffer is empty.
-func (b *Buffer) empty() bool <span class="cov10" title="4">{ return len(b.buf) &lt;= b.off }</span>
+func (b *Buffer) empty() bool <span class="cov10" title="7">{ return len(b.buf) &lt;= b.off }</span>
 
 // Reset resets the buffer to be empty,
 // but it retains the underlying storage for use by future writes.
 // Reset is the same as [Buffer.Truncate](0).
-func (b *Buffer) Reset() <span class="cov5" title="2">{
+func (b *Buffer) Reset() <span class="cov6" title="3">{
         b.buf = b.buf[:0]
         b.off = 0
 }</span>
@@ -4857,16 +4859,16 @@ func (b *Buffer) Reset() <span class="cov5" title="2">{
 // is drained. The return value n is the number of bytes read. If the
 // buffer has no data to return, err is [io.EOF] (unless len(p) is zero);
 // otherwise it is nil.
-func (b *Buffer) Read(p []byte) (n int, err error) <span class="cov10" title="4">{
-        if b.empty() </span><span class="cov5" title="2">{
+func (b *Buffer) Read(p []byte) (n int, err error) <span class="cov10" title="7">{
+        if b.empty() </span><span class="cov6" title="3">{
                 // Buffer is empty, reset to recover space.
                 b.Reset()
                 if len(p) == 0 </span><span class="cov0" title="0">{
                         return 0, nil
                 }</span>
-                <span class="cov5" title="2">return 0, io.EOF</span>
+                <span class="cov6" title="3">return 0, io.EOF</span>
         }
-        <span class="cov5" title="2">n = copy(p, b.buf[b.off:])
+        <span class="cov7" title="4">n = copy(p, b.buf[b.off:])
         b.off += n
         return n, nil</span>
 }
@@ -4880,7 +4882,7 @@ func (b *Buffer) Read(p []byte) (n int, err error) <span class="cov10" title="4"
 // sufficient to initialize a [Buffer].
 //
 // Buffer just implements a reader without any extra functionality.
-func NewBuffer(buf []byte) io.Reader <span class="cov5" title="2">{ return &amp;Buffer{buf: buf} }</span>
+func NewBuffer(buf []byte) io.Reader <span class="cov6" title="3">{ return &amp;Buffer{buf: buf} }</span>
 </pre>
 		
 		<pre class="file" id="file23" style="display: none">package tester
@@ -4897,15 +4899,15 @@ import (
 )
 
 // GenX509KeyPair generates a self signed smtp server certificate with the given domain.
-func GenX509KeyPair(domain string) (tls.Certificate, error) <span class="cov10" title="4">{
+func GenX509KeyPair(domain string) (tls.Certificate, error) <span class="cov10" title="5">{
         now := time.Now()
         template := &amp;x509.Certificate{
                 SerialNumber: big.NewInt(now.Unix()),
                 Subject: pkix.Name{
                         CommonName:         domain,
-                        Country:            []string{"Germany"},
-                        Organization:       []string{"UPONU GmbH"},
-                        OrganizationalUnit: []string{"mail:u secure"},
+                        Country:            []string{"DE"},
+                        Organization:       []string{"Testcompany"},
+                        OrganizationalUnit: []string{"Development"},
                 },
                 NotBefore:             now.AddDate(0, 0, -1),
                 NotAfter:              now.AddDate(999, 0, 0),
@@ -4926,20 +4928,20 @@ func GenX509KeyPair(domain string) (tls.Certificate, error) <span class="cov10" 
                 return tls.Certificate{}, err
         }</span>
 
-        <span class="cov10" title="4">template.ExtraExtensions = []pkix.Extension{extSubjectAltName}
+        <span class="cov10" title="5">template.ExtraExtensions = []pkix.Extension{extSubjectAltName}
 
         priv, err := rsa.GenerateKey(rand.Reader, 2048)
         if err != nil </span><span class="cov0" title="0">{
                 return tls.Certificate{}, err
         }</span>
 
-        <span class="cov10" title="4">cert, err := x509.CreateCertificate(rand.Reader, template, template,
+        <span class="cov10" title="5">cert, err := x509.CreateCertificate(rand.Reader, template, template,
                 priv.Public(), priv)
         if err != nil </span><span class="cov0" title="0">{
                 return tls.Certificate{}, err
         }</span>
 
-        <span class="cov10" title="4">var outCert tls.Certificate
+        <span class="cov10" title="5">var outCert tls.Certificate
         outCert.Certificate = append(outCert.Certificate, cert)
         outCert.PrivateKey = priv
 
@@ -4959,27 +4961,27 @@ import (
         "github.com/stretchr/testify/require"
 )
 
-func getAllFilenames(fs *embed.FS, path string) (out []string, err error) <span class="cov1" title="2">{
+func getAllFilenames(fs *embed.FS, path string) (out []string, err error) <span class="cov2" title="6">{
         if len(path) == 0 </span><span class="cov0" title="0">{
                 path = "."
         }</span>
-        <span class="cov1" title="2">entries, err := fs.ReadDir(path)
-        if err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="6">entries, err := fs.ReadDir(path)
+        if err != nil </span><span class="cov1" title="1">{
                 return nil, err
         }</span>
-        <span class="cov1" title="2">for _, entry := range entries </span><span class="cov1" title="3">{
+        <span class="cov2" title="5">for _, entry := range entries </span><span class="cov2" title="8">{
                 fp := filepath.Join(path, entry.Name())
-                if entry.IsDir() </span><span class="cov0" title="0">{
+                if entry.IsDir() </span><span class="cov1" title="1">{
                         res, err := getAllFilenames(fs, fp)
                         if err != nil </span><span class="cov0" title="0">{
                                 return nil, err
                         }</span>
-                        <span class="cov0" title="0">out = append(out, res...)
+                        <span class="cov1" title="1">out = append(out, res...)
                         continue</span>
                 }
-                <span class="cov1" title="3">out = append(out, fp)</span>
+                <span class="cov2" title="7">out = append(out, fp)</span>
         }
-        <span class="cov1" title="2">return out, err</span>
+        <span class="cov2" title="5">return out, err</span>
 }
 
 func chunkSlice(slice []byte, chunkSize int) [][]byte <span class="cov6" title="12141">{
@@ -5300,12 +5302,12 @@ func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) <s
 }</span>
 
 // Close implements the Close interface.
-func (s *Session) Close(_ context.Context, _ error) <span class="cov5" title="10">{
+func (s *Session) Close(_ context.Context, _ error) <span class="cov4" title="7">{
         s.mail = &amp;Mail{}
 }</span>
 
 // Logger implements the Logger interface.
-func (Session) Logger(_ context.Context) *slog.Logger <span class="cov10" title="99">{
+func (Session) Logger(_ context.Context) *slog.Logger <span class="cov10" title="97">{
         return nil
 }</span>
 
