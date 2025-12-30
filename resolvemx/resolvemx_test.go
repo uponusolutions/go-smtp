@@ -94,7 +94,7 @@ func TestMxResolve(t *testing.T) {
 
 func TestMxResolveFail(t *testing.T) {
 	resolveMx := New(nil)
-	res, err := resolveMx.Lookup(context.Background(), "notexisting.local")
+	res, err := resolveMx.Lookup(context.Background(), "notexisting.mx-record.de")
 	require.NoError(t, err)
 	require.Nil(t, res)
 }
@@ -118,6 +118,9 @@ func TestRecipients(t *testing.T) {
 	require.Equal(t, []string{"test@z.local", "test2@z.local"}, res.Failures[0].Rcpts)
 	require.ErrorContains(t, res.Failures[1].Error, "part of invalid")
 	require.Equal(t, []string{"invalid"}, res.Failures[1].Rcpts)
+
+	require.ErrorContains(t, res.Error(), "part of invalid")
+	require.ErrorContains(t, res.Error(), "no mx record found for z.local")
 
 	require.Equal(t, []Server{
 		{
