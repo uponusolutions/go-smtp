@@ -10,6 +10,7 @@ import (
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/client"
+	"github.com/uponusolutions/go-smtp/resolvemx"
 )
 
 // Mailer implements a smtp client with .
@@ -254,4 +255,55 @@ func (c *Mailer) ServerAddress() string {
 // ServerName returns the current server name.
 func (c *Mailer) ServerName() string {
 	return c.client.ServerName()
+}
+
+// Report contains responses and failures after sending a mail.
+type Report struct {
+	Responses []Response
+	Failures  []resolvemx.Failure
+}
+
+// Response contains the response of a smtp server for specific recipients.
+type Response struct {
+	Code  int
+	Msg   string
+	Rcpts []string
+}
+
+// Send just sends a mail.
+func Send(ctx context.Context, from string, rcpts []string, in io.Reader) (Report, error) {
+	r := resolvemx.New(nil)
+	mx, err := r.Recipients(context.Background(), rcpts)
+	if err != nil {
+		return Report{}, err
+	}
+
+	res := Report{
+		Failures: mx.Failures,
+	}
+
+	for _, server := range mx.Servers {
+		code, msg, err := send(ctx, server, from, in)
+
+		if err != nil {
+			res.Failures = append(res.Failures, resolvemx.Failure{
+				Rcpts: server.Rcpts,
+				Error: err,
+			})
+		} else {
+			res.Responses = append(res.Responses, Response{
+				Code:  code,
+				Msg:   msg,
+				Rcpts: server.Rcpts,
+			})
+		}
+	}
+
+	return res, nil
+}
+
+func send(ctx context.Context, server resolvemx.Server, from string, in io.Reader) (code int, msg string, err error) {
+	client := New(WithServerAddressesPrio(server.Addresses...))
+	defer func() { _ = client.Disconnect() }()
+	return client.Send(ctx, from, server.Rcpts, in)
 }
