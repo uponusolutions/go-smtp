@@ -7,6 +7,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -22,7 +23,7 @@ func main() {
 	recipientsRaw, _ := reader.ReadString('\n')
 	recipients := strings.Split(strings.Trim(recipientsRaw, "\n\r "), ",")
 
-	res, err := mailer.Send(context.Background(), recipients[0], recipients, strings.NewReader(eml))
+	res, err := mailer.Send(context.Background(), recipients[0], recipients, func() io.Reader { return strings.NewReader(eml) })
 	if err != nil {
 		panic(err)
 	}

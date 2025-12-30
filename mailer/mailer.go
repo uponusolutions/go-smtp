@@ -20,8 +20,8 @@ type Mailer struct {
 }
 
 // New returns a new smtp client.
-// When not set via options the address 127.0.0.1:25 is used.
-// When not set via options a default tls.Config is used.
+// When not set via options a default tls.Config and used an StartTLS is preferred but not enforced.
+// You need to set at least the server address to get a working mailer.
 func New(opts ...Option) *Mailer {
 	cfg := DefaultConfig()
 
@@ -297,19 +297,33 @@ type Response struct {
 }
 
 // Send just sends a mail.
-func Send(ctx context.Context, from string, rcpts []string, in io.Reader) (Report, error) {
+func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader, opts ...Option) (res Report, err error) {
 	r := resolvemx.New(nil)
-	mx, err := r.Recipients(context.Background(), rcpts)
-	if err != nil {
-		return Report{}, err
+
+	config := NewConfig(opts...)
+
+	var mx resolvemx.Result
+
+	if len(config.extra.serverAddresses) > 0 {
+		mx = resolvemx.Result{
+			Servers: []resolvemx.Server{
+				{
+					Rcpts:     rcpts,
+					Addresses: config.extra.serverAddresses,
+				},
+			},
+		}
+	} else {
+		mx, err = r.Recipients(context.Background(), rcpts)
+		if err != nil {
+			return Report{}, err
+		}
 	}
 
-	res := Report{
-		Failures: mx.Failures,
-	}
+	res.Failures = mx.Failures
 
 	for _, server := range mx.Servers {
-		code, msg, failures, err := send(ctx, server, from, in)
+		code, msg, failures, err := send(ctx, server, from, config, in())
 
 		if err != nil {
 			res.Failures = append(res.Failures, resolvemx.Failure{
@@ -346,8 +360,9 @@ func Send(ctx context.Context, from string, rcpts []string, in io.Reader) (Repor
 	return res, nil
 }
 
-func send(ctx context.Context, server resolvemx.Server, from string, in io.Reader) (code int, msg string, failures []resolvemx.Failure, err error) {
-	client := New(WithServerAddressesPrio(server.Addresses...))
+func send(ctx context.Context, server resolvemx.Server, from string, config Config, in io.Reader) (code int, msg string, failures []resolvemx.Failure, err error) {
+	config.extra.serverAddresses = server.Addresses
+	client := NewFromConfig(config)
 	defer func() { _ = client.Disconnect() }()
 	return client.Send(ctx, from, server.Rcpts, in)
 }

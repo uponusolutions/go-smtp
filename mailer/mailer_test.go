@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"io"
 	"log"
 	"log/slog"
 	"testing"
@@ -117,6 +118,27 @@ func TestClient_SendMail(t *testing.T) {
 	in := bytes.NewBuffer(data)
 
 	_, _, _, err := c.Send(context.Background(), from, recipients, in)
+	require.NoError(t, err)
+
+	// Lookup email.
+	m, found := tester.GetBackend(s).Load(from, recipients)
+	assert.True(t, found)
+
+	t.Logf("Found %t, mail %+v\n", found, m)
+}
+
+func TestClient_SendMailDirect(t *testing.T) {
+	data := []byte("Hello World!")
+	from := "alice@internal.com"
+	recipients := []string{"Bob@external.com", "mal@external.com"}
+
+	_, err := Send(
+		context.Background(),
+		from,
+		recipients,
+		func() io.Reader { return bytes.NewReader(data) },
+		WithServerAddresses(addr),
+	)
 	require.NoError(t, err)
 
 	// Lookup email.

@@ -11,11 +11,21 @@ import (
 func DefaultConfig() Config {
 	return Config{
 		extra: additionalConfig{
-			serverAddresses: [][]string{{"127.0.0.1:25"}},
-			security:        SecurityPreferStartTLS,
+			security: SecurityPreferStartTLS,
 		},
 		client: client.DefaultConfig(),
 	}
+}
+
+// NewConfig creates a new config with the given options.
+func NewConfig(opts ...Option) Config {
+	cfg := DefaultConfig()
+
+	for _, o := range opts {
+		o(&cfg)
+	}
+
+	return cfg
 }
 
 // Security describes how the connection is etablished.
