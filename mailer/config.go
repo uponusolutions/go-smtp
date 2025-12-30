@@ -49,7 +49,8 @@ type additionalConfig struct {
 	serverAddresses    [][]string  // Format address:port.
 	serverAddressIndex int         // first server address to try
 	saslClient         sasl.Client // support authentication
-	security           Security    // 	// Defines the connection is secured
+	security           Security    // Defines the connection is secured
+	noPartialSend      bool        // Send a mail even if some recipients aren't accepted
 	tlsConfig          *tls.Config
 }
 
@@ -110,5 +111,12 @@ func WithSecurity(security Security) Option {
 func WithTLSConfig(cfg *tls.Config) Option {
 	return func(c *Config) {
 		c.extra.tlsConfig = cfg
+	}
+}
+
+// WithNoPartialSend sets partial send.
+func WithNoPartialSend(noPartialSend bool) Option {
+	return func(c *Config) {
+		c.extra.noPartialSend = noPartialSend
 	}
 }

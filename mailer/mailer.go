@@ -116,16 +116,23 @@ type Len interface {
 	Len() int
 }
 
-func (c *Mailer) prepare(ctx context.Context, from string, mailOptions *client.MailOptions, rcpt []string, rcptsOptions []*smtp.RcptOptions, size int) (*client.DataCloser, error) {
+func (c *Mailer) prepare(
+	ctx context.Context,
+	from string,
+	mailOptions *client.MailOptions,
+	rcpt []string,
+	rcptsOptions []*smtp.RcptOptions,
+	size int,
+) (*client.DataCloser, []resolvemx.Failure, error) {
 	if !c.client.Connected() {
 		err := c.Connect(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if len(rcpt) < 1 {
-		return nil, errors.New("no recipients")
+		return nil, nil, errors.New("no recipients")
 	}
 
 	if mailOptions == nil && size > 0 {
@@ -136,8 +143,10 @@ func (c *Mailer) prepare(ctx context.Context, from string, mailOptions *client.M
 
 	// MAIL FROM:
 	if err := c.client.Mail(from, mailOptions); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	failures := []resolvemx.Failure{}
 
 	// RCPT TO:
 	for i, addr := range rcpt {
@@ -147,16 +156,26 @@ func (c *Mailer) prepare(ctx context.Context, from string, mailOptions *client.M
 		}
 
 		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
-			return nil, err
+			smtpErr := &smtp.Status{}
+
+			// continue sending if code is 550 Requested action not taken
+			if c.cfg.noPartialSend || !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
+				return nil, nil, err
+			}
+
+			failures = append(failures, resolvemx.Failure{
+				Rcpts: []string{addr},
+				Error: err,
+			})
 		}
 	}
 
 	// DATA
 	w, err := c.client.Content(size)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return w, nil
+	return w, failures, nil
 }
 
 // Send send an email from
@@ -172,7 +191,7 @@ func (c *Mailer) prepare(ctx context.Context, from string, mailOptions *client.M
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
 // parameter but not including it in the in headers.
-func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, err error) {
+func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, failures []resolvemx.Failure, err error) {
 	return c.SendAdvanced(ctx, from, nil, rcpt, nil, in)
 }
 
@@ -192,15 +211,22 @@ func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Rea
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
 // parameter but not including it in the in headers.
-func (c *Mailer) SendAdvanced(ctx context.Context, from string, mailOptions *client.MailOptions, rcpts []string, rcptsOptions []*smtp.RcptOptions, in io.Reader) (code int, msg string, err error) {
+func (c *Mailer) SendAdvanced(
+	ctx context.Context,
+	from string,
+	mailOptions *client.MailOptions,
+	rcpts []string,
+	rcptsOptions []*smtp.RcptOptions,
+	in io.Reader,
+) (code int, msg string, failures []resolvemx.Failure, err error) {
 	size := 0
 	if wt, ok := in.(Len); ok {
 		size = wt.Len()
 	}
 
-	w, err := c.prepare(ctx, from, mailOptions, rcpts, rcptsOptions, size)
+	w, failures, err := c.prepare(ctx, from, mailOptions, rcpts, rcptsOptions, size)
 	if err != nil {
-		return 0, "", err
+		return 0, "", failures, err
 	}
 
 	_, err = io.Copy(w.Writer(), in)
@@ -209,7 +235,7 @@ func (c *Mailer) SendAdvanced(ctx context.Context, from string, mailOptions *cli
 		if _, ok := err.(*smtp.Status); !ok {
 			err = errors.Join(err, c.client.Close())
 		}
-		return 0, "", err
+		return 0, "", failures, err
 	}
 
 	code, msg, err = w.CloseWithResponse()
@@ -219,7 +245,7 @@ func (c *Mailer) SendAdvanced(ctx context.Context, from string, mailOptions *cli
 		err = errors.Join(err, c.client.Close())
 	}
 
-	return code, msg, err
+	return code, msg, failures, err
 }
 
 // Verify checks the validity of an email address on the server.
@@ -283,7 +309,7 @@ func Send(ctx context.Context, from string, rcpts []string, in io.Reader) (Repor
 	}
 
 	for _, server := range mx.Servers {
-		code, msg, err := send(ctx, server, from, in)
+		code, msg, failures, err := send(ctx, server, from, in)
 
 		if err != nil {
 			res.Failures = append(res.Failures, resolvemx.Failure{
@@ -291,6 +317,24 @@ func Send(ctx context.Context, from string, rcpts []string, in io.Reader) (Repor
 				Error: err,
 			})
 		} else {
+			if len(failures) > 0 {
+				rcpts := []string{}
+
+			outer:
+				for _, rcpt := range server.Rcpts {
+					for _, fail := range failures {
+						for _, ircpt := range fail.Rcpts {
+							if rcpt == ircpt {
+								continue outer
+							}
+						}
+					}
+					rcpts = append(rcpts, rcpt)
+				}
+				server.Rcpts = rcpts
+				res.Failures = append(res.Failures, failures...)
+			}
+
 			res.Responses = append(res.Responses, Response{
 				Code:  code,
 				Msg:   msg,
@@ -302,7 +346,7 @@ func Send(ctx context.Context, from string, rcpts []string, in io.Reader) (Repor
 	return res, nil
 }
 
-func send(ctx context.Context, server resolvemx.Server, from string, in io.Reader) (code int, msg string, err error) {
+func send(ctx context.Context, server resolvemx.Server, from string, in io.Reader) (code int, msg string, failures []resolvemx.Failure, err error) {
 	client := New(WithServerAddressesPrio(server.Addresses...))
 	defer func() { _ = client.Disconnect() }()
 	return client.Send(ctx, from, server.Rcpts, in)

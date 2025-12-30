@@ -88,7 +88,7 @@ func TestClient_SendMailAutoconnect(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.Send(context.Background(), from, recipients, in)
+	_, _, _, err := c.Send(context.Background(), from, recipients, in)
 	require.NoError(t, err)
 
 	// Lookup email.
@@ -116,7 +116,7 @@ func TestClient_SendMail(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.Send(context.Background(), from, recipients, in)
+	_, _, _, err := c.Send(context.Background(), from, recipients, in)
 	require.NoError(t, err)
 
 	// Lookup email.
@@ -168,7 +168,7 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.SendAdvanced(
+	_, _, _, err := c.SendAdvanced(
 		context.Background(),
 		from,
 		&client.MailOptions{UTF8: client.UTF8Force},
@@ -219,7 +219,7 @@ func TestClient_Send(t *testing.T) {
 	from := "alice1@internal.com"
 	recipients := []string{"Bob1@external.com", "mal1@external.com"}
 
-	_, _, err := c.Send(context.Background(), from, recipients, bytes.NewBuffer(data))
+	_, _, _, err := c.Send(context.Background(), from, recipients, bytes.NewBuffer(data))
 	require.NoError(t, err)
 
 	// Lookup email.
@@ -254,6 +254,6 @@ func TestClient_SendMicrosoft(t *testing.T) {
 		assert.NoError(t, c.Disconnect())
 	}()
 
-	_, _, err = c.Send(context.Background(), from, recipients, bytes.NewBuffer([]byte(eml)))
+	_, _, _, err = c.Send(context.Background(), from, recipients, bytes.NewBuffer([]byte(eml)))
 	require.NoError(t, err)
 }
