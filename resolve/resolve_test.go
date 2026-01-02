@@ -1,4 +1,4 @@
-package resolvemx
+package resolve
 
 import (
 	"context"
@@ -63,29 +63,29 @@ func (*fakeResolver) LookupMX(_ context.Context, name string) ([]*net.MX, error)
 }
 
 func TestMxResolveError(t *testing.T) {
-	resolveMx := New(&fakeResolver{})
-	_, err := resolveMx.Lookup(context.Background(), "y.local")
+	resolve := New(&fakeResolver{})
+	_, err := resolve.Lookup(context.Background(), "y.local")
 	require.ErrorContains(t, err, "realerror")
 
-	_, err = resolveMx.Recipients(context.Background(), []string{"test@a.local", "test@y.local"})
+	_, err = resolve.Recipients(context.Background(), []string{"test@a.local", "test@y.local"})
 	require.ErrorContains(t, err, "realerror")
 
-	res, err := resolveMx.Lookup(context.Background(), "z.local")
+	res, err := resolve.Lookup(context.Background(), "z.local")
 	require.NoError(t, err)
 	require.True(t, res == nil)
 }
 
 func TestMxResolve(t *testing.T) {
-	resolveMx := New(&fakeResolver{})
-	res, err := resolveMx.Lookup(context.Background(), "a.local")
+	resolve := New(&fakeResolver{})
+	res, err := resolve.Lookup(context.Background(), "a.local")
 	require.NoError(t, err)
 	require.Equal(t, [][]string{{"smtpa.local:25"}}, res)
 
-	res, err = resolveMx.Lookup(context.Background(), "b.local")
+	res, err = resolve.Lookup(context.Background(), "b.local")
 	require.NoError(t, err)
 	require.Equal(t, [][]string{{"smtpa.local:25"}, {"smtpb.local:25"}}, res)
 
-	res, err = resolveMx.Lookup(context.Background(), "c.local")
+	res, err = resolve.Lookup(context.Background(), "c.local")
 	require.NoError(t, err)
 	require.Equal(t, [][]string{
 		{"smtpa.local:25", "smtpb.local:25"}, {"smtpc.local:25", "smtpd.local:25"}, {"smtpe.local:25"},
@@ -93,15 +93,15 @@ func TestMxResolve(t *testing.T) {
 }
 
 func TestMxResolveFail(t *testing.T) {
-	resolveMx := New(nil)
-	res, err := resolveMx.Lookup(context.Background(), "notexisting.mx-record.de")
+	resolve := New(nil)
+	res, err := resolve.Lookup(context.Background(), "notexisting.mx-record.de")
 	require.NoError(t, err)
 	require.Nil(t, res)
 }
 
 func TestRecipients(t *testing.T) {
-	resolveMx := New(&fakeResolver{})
-	res, err := resolveMx.Recipients(context.Background(), []string{
+	resolve := New(&fakeResolver{})
+	res, err := resolve.Recipients(context.Background(), []string{
 		"test@a.local",
 		"test@b.local",
 		"test@c.local",

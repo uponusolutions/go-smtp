@@ -10,7 +10,7 @@ import (
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/client"
-	"github.com/uponusolutions/go-smtp/resolvemx"
+	"github.com/uponusolutions/go-smtp/resolve"
 )
 
 // Mailer implements a smtp client with .
@@ -123,7 +123,7 @@ func (c *Mailer) prepare(
 	rcpt []string,
 	rcptsOptions []*smtp.RcptOptions,
 	size int,
-) (*client.DataCloser, []resolvemx.Failure, error) {
+) (*client.DataCloser, []resolve.Failure, error) {
 	if !c.client.Connected() {
 		err := c.Connect(ctx)
 		if err != nil {
@@ -146,7 +146,7 @@ func (c *Mailer) prepare(
 		return nil, nil, err
 	}
 
-	failures := []resolvemx.Failure{}
+	failures := []resolve.Failure{}
 
 	// RCPT TO:
 	for i, addr := range rcpt {
@@ -163,7 +163,7 @@ func (c *Mailer) prepare(
 				return nil, nil, err
 			}
 
-			failures = append(failures, resolvemx.Failure{
+			failures = append(failures, resolve.Failure{
 				Rcpts: []string{addr},
 				Error: err,
 			})
@@ -191,7 +191,7 @@ func (c *Mailer) prepare(
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
 // parameter but not including it in the in headers.
-func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, failures []resolvemx.Failure, err error) {
+func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, failures []resolve.Failure, err error) {
 	return c.SendAdvanced(ctx, from, nil, rcpt, nil, in)
 }
 
@@ -218,7 +218,7 @@ func (c *Mailer) SendAdvanced(
 	rcpts []string,
 	rcptsOptions []*smtp.RcptOptions,
 	in io.Reader,
-) (code int, msg string, failures []resolvemx.Failure, err error) {
+) (code int, msg string, failures []resolve.Failure, err error) {
 	size := 0
 	if wt, ok := in.(Len); ok {
 		size = wt.Len()
@@ -286,7 +286,7 @@ func (c *Mailer) ServerName() string {
 // Report contains responses and failures after sending a mail.
 type Report struct {
 	Responses []Response
-	Failures  []resolvemx.Failure
+	Failures  []resolve.Failure
 }
 
 // Response contains the response of a smtp server for specific recipients.
@@ -298,15 +298,15 @@ type Response struct {
 
 // Send just sends a mail.
 func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader, opts ...Option) (res Report, err error) {
-	r := resolvemx.New(nil)
+	r := resolve.New(nil)
 
 	config := NewConfig(opts...)
 
-	var mx resolvemx.Result
+	var mx resolve.Result
 
 	if len(config.extra.serverAddresses) > 0 {
-		mx = resolvemx.Result{
-			Servers: []resolvemx.Server{
+		mx = resolve.Result{
+			Servers: []resolve.Server{
 				{
 					Rcpts:     rcpts,
 					Addresses: config.extra.serverAddresses,
@@ -324,43 +324,42 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 
 	for _, server := range mx.Servers {
 		code, msg, failures, err := send(ctx, server, from, config, in())
-
 		if err != nil {
-			res.Failures = append(res.Failures, resolvemx.Failure{
+			res.Failures = append(res.Failures, resolve.Failure{
 				Rcpts: server.Rcpts,
 				Error: err,
 			})
-		} else {
-			if len(failures) > 0 {
-				rcpts := []string{}
+			continue
+		}
 
-			outer:
-				for _, rcpt := range server.Rcpts {
-					for _, fail := range failures {
-						for _, ircpt := range fail.Rcpts {
-							if rcpt == ircpt {
-								continue outer
-							}
+		if len(failures) > 0 {
+			rcpts := []string{}
+
+		outer:
+			for _, rcpt := range server.Rcpts {
+				for _, fail := range failures {
+					for _, ircpt := range fail.Rcpts {
+						if rcpt == ircpt {
+							continue outer
 						}
 					}
-					rcpts = append(rcpts, rcpt)
 				}
-				server.Rcpts = rcpts
-				res.Failures = append(res.Failures, failures...)
+				rcpts = append(rcpts, rcpt)
 			}
-
-			res.Responses = append(res.Responses, Response{
-				Code:  code,
-				Msg:   msg,
-				Rcpts: server.Rcpts,
-			})
+			server.Rcpts = rcpts
+			res.Failures = append(res.Failures, failures...)
 		}
-	}
 
+		res.Responses = append(res.Responses, Response{
+			Code:  code,
+			Msg:   msg,
+			Rcpts: server.Rcpts,
+		})
+	}
 	return res, nil
 }
 
-func send(ctx context.Context, server resolvemx.Server, from string, config Config, in io.Reader) (code int, msg string, failures []resolvemx.Failure, err error) {
+func send(ctx context.Context, server resolve.Server, from string, config Config, in io.Reader) (code int, msg string, failures []resolve.Failure, err error) {
 	config.extra.serverAddresses = server.Addresses
 	client := NewFromConfig(config)
 	defer func() { _ = client.Disconnect() }()

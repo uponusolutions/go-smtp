@@ -1,5 +1,5 @@
 // Package resolvermx implements a resolver to get prioritized server addresses for recipients.
-package resolvemx
+package resolve
 
 import (
 	"context"
@@ -10,18 +10,18 @@ import (
 	"strings"
 )
 
-// LookupMx describes the functions needed for a struct to be used as a resolver.
-type LookupMx interface {
+// LookupMX describes the functions needed for a struct to be used as a resolver.
+type LookupMX interface {
 	LookupMX(ctx context.Context, name string) ([]*net.MX, error)
 }
 
 // Resolver is
 type Resolver struct {
-	resolver LookupMx
+	resolver LookupMX
 }
 
 // New creates a new resolver. If nil is given the net.DefaultResolver is used.
-func New(resolver LookupMx) Resolver {
+func New(resolver LookupMX) Resolver {
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
@@ -77,13 +77,8 @@ func (r *Result) addServer(rcpt string, addresses [][]string) int {
 		}
 	}
 
-	if r.Servers == nil {
-		r.Servers = []Server{
-			{Rcpts: []string{rcpt}, Addresses: addresses},
-		}
-	} else {
-		r.Servers = append(r.Servers, Server{Rcpts: []string{rcpt}, Addresses: addresses})
-	}
+	r.Servers = append(r.Servers, Server{Rcpts: []string{rcpt}, Addresses: addresses})
+
 	return len(r.Servers) - 1
 }
 
