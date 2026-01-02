@@ -8,11 +8,14 @@ An ESMTP client and server library written in Go.
 
 ## Documentation
 
-  - [Mailer](https://pkg.go.dev/github.com/uponusolutions/go-smtp/mailer) - High-level SMTP
+  - [Mailer](https://pkg.go.dev/github.com/uponusolutions/go-smtp/mailer) - High-level SMTP client
   - [Client](https://pkg.go.dev/github.com/uponusolutions/go-smtp/client) - Low-level SMTP client
   - [Server](https://pkg.go.dev/github.com/uponusolutions/go-smtp/server) - SMTP server
+  - [Resolve](https://pkg.go.dev/github.com/uponusolutions/go-smtp/resolve) - MX-Record resolve
   - [Shared](https://pkg.go.dev/github.com/uponusolutions/go-smtp) - Shared definitions e.g. SMTP status codes
   - [Tester](https://pkg.go.dev/github.com/uponusolutions/go-smtp/tester) - Testing utilities e.g. server with mail map
+
+See [examples](https://github.com/uponusolutions/go-smtp/tree/main/examples) for more information.
 
 ## Pages
 

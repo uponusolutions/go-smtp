@@ -298,6 +298,7 @@ type Response struct {
 }
 
 // Send just sends a mail.
+// in is called multiple times if there are recipients from different servers.
 func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader, opts ...Option) (res Report, err error) {
 	r := resolve.New(nil)
 

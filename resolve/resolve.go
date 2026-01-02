@@ -1,4 +1,5 @@
-// Package resolvermx implements a resolver to get prioritized server addresses for recipients.
+// Package resolve implements a resolver to get prioritized server addresses for recipients.
+// Typically by retrieving mx records by dns.
 package resolve
 
 import (
