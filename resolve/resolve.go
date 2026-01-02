@@ -123,16 +123,18 @@ func (r *Resolver) Recipients(ctx context.Context, rcpts []string) (Result, erro
 		addresses, err := r.Lookup(ctx, domain)
 		if err != nil {
 			return res, err
-		} else if len(addresses) == 0 {
+		}
+
+		if len(addresses) == 0 {
 			err = fmt.Errorf("domain resolve failed, no mx record found for %s", domain)
 			domainToServer[domain] = cache{
 				index: res.addError(rcpt, err),
 				err:   err,
 			}
-		} else {
-			domainToServer[domain] = cache{
-				index: res.addServer(rcpt, addresses),
-			}
+			continue
+		}
+		domainToServer[domain] = cache{
+			index: res.addServer(rcpt, addresses),
 		}
 	}
 
@@ -163,12 +165,12 @@ func (r *Resolver) Lookup(ctx context.Context, domain string) ([][]string, error
 			res = append(res, []string{
 				host,
 			})
-		} else {
-			res[len(res)-1] = append(
-				res[len(res)-1],
-				host,
-			)
+			continue
 		}
+		res[len(res)-1] = append(
+			res[len(res)-1],
+			host,
+		)
 	}
 
 	return res, nil

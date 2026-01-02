@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"slices"
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/client"
@@ -338,10 +339,8 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 		outer:
 			for _, rcpt := range server.Rcpts {
 				for _, fail := range failures {
-					for _, ircpt := range fail.Rcpts {
-						if rcpt == ircpt {
-							continue outer
-						}
+					if slices.Contains(fail.Rcpts, rcpt) {
+						continue outer
 					}
 				}
 				rcpts = append(rcpts, rcpt)
