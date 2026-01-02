@@ -37,15 +37,15 @@ jobs:
 
       - name: download artifact (main.breakdown)
         id: download-main-breakdown
-        uses: dawidd6/action-download-artifact@v10
+        uses: dawidd6/action-download-artifact@v12
         with:
           branch: main
           workflow_conclusion: success
           name: main.breakdown
-          if_no_artifact_found: warn
 
       - name: check test coverage
         uses: vladopajic/go-test-coverage@v2
+        id: coverage
         with:
           config: ./.testcoverage.yml
           git-branch: badges
@@ -58,7 +58,7 @@ jobs:
           diff-base-breakdown-file-name: ${{ steps.download-main-breakdown.outputs.found_artifact == 'true' && 'main.breakdown' || '' }}
 
       - name: upload artifact (main.breakdown)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: github.ref_name == 'main'
         with:
           name: main.breakdown
