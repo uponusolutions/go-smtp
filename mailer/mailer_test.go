@@ -4,9 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"io"
 	"log"
 	"log/slog"
+	"sync"
 	"testing"
+
+	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/server"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,7 +19,19 @@ import (
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
-var s = tester.Standard()
+var backend = tester.Backend{
+	Mails: sync.Map{},
+	Rcpt: func(_ context.Context, to string, _ *smtp.RcptOptions) error {
+		if to == "notfound@external.com" {
+			return smtp.NewStatus(550, smtp.EnhancedCodeNotSet, "not found")
+		}
+		return nil
+	},
+}
+
+var s = tester.Standard(
+	server.WithBackend(&backend),
+)
 
 var addr string
 
@@ -88,7 +105,7 @@ func TestClient_SendMailAutoconnect(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.Send(context.Background(), from, recipients, in)
+	_, _, _, err := c.Send(context.Background(), from, recipients, in)
 	require.NoError(t, err)
 
 	// Lookup email.
@@ -116,11 +133,57 @@ func TestClient_SendMail(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.Send(context.Background(), from, recipients, in)
+	_, _, _, err := c.Send(context.Background(), from, recipients, in)
 	require.NoError(t, err)
 
 	// Lookup email.
 	m, found := tester.GetBackend(s).Load(from, recipients)
+	assert.True(t, found)
+
+	t.Logf("Found %t, mail %+v\n", found, m)
+}
+
+func TestClient_SendMailDirect(t *testing.T) {
+	data := []byte("Hello World!")
+	from := "alice@internal.com"
+	recipients := []string{"Bob@external.com", "mal@external.com"}
+
+	_, err := Send(
+		context.Background(),
+		from,
+		recipients,
+		func() io.Reader { return bytes.NewReader(data) },
+		WithServerAddresses(addr),
+	)
+	require.NoError(t, err)
+
+	// Lookup email.
+	m, found := tester.GetBackend(s).Load(from, recipients)
+	assert.True(t, found)
+
+	t.Logf("Found %t, mail %+v\n", found, m)
+}
+
+func TestClient_SendMailDirectFail(t *testing.T) {
+	data := []byte("Hello World!")
+	from := "alice@internal.com"
+	recipients := []string{"Bob@external.com", "notfound@external.com"}
+
+	rec, err := Send(
+		context.Background(),
+		from,
+		recipients,
+		func() io.Reader { return bytes.NewReader(data) },
+		WithServerAddresses(addr),
+	)
+	require.Equal(t, 1, len(rec.Failures))
+	require.Equal(t, []string{"notfound@external.com"}, rec.Failures[0].Rcpts)
+	require.ErrorContains(t, rec.Failures[0].Error, "550")
+
+	require.NoError(t, err)
+
+	// Lookup email.
+	m, found := tester.GetBackend(s).Load(from, []string{"Bob@external.com"})
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -168,7 +231,7 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.SendAdvanced(
+	_, _, _, err := c.SendAdvanced(
 		context.Background(),
 		from,
 		&client.MailOptions{UTF8: client.UTF8Force},
@@ -219,7 +282,7 @@ func TestClient_Send(t *testing.T) {
 	from := "alice1@internal.com"
 	recipients := []string{"Bob1@external.com", "mal1@external.com"}
 
-	_, _, err := c.Send(context.Background(), from, recipients, bytes.NewBuffer(data))
+	_, _, _, err := c.Send(context.Background(), from, recipients, bytes.NewBuffer(data))
 	require.NoError(t, err)
 
 	// Lookup email.
@@ -230,7 +293,7 @@ func TestClient_Send(t *testing.T) {
 }
 
 var (
-	server     = "" // ends with .mail.protection.outlook.com:25
+	address    = "" // ends with .mail.protection.outlook.com:25
 	priv       = ``
 	certs      = ``
 	eml        = ``
@@ -243,7 +306,7 @@ func TestClient_SendMicrosoft(t *testing.T) {
 	cert, err := tls.X509KeyPair([]byte(certs), []byte(priv))
 	require.NoError(t, err)
 
-	c := New(WithServerAddresses(server), WithTLSConfig(&tls.Config{
+	c := New(WithServerAddresses(address), WithTLSConfig(&tls.Config{
 		Certificates: []tls.Certificate{cert},
 	}), WithSecurity(SecurityTLS))
 	require.NotNil(t, c)
@@ -254,6 +317,6 @@ func TestClient_SendMicrosoft(t *testing.T) {
 		assert.NoError(t, c.Disconnect())
 	}()
 
-	_, _, err = c.Send(context.Background(), from, recipients, bytes.NewBuffer([]byte(eml)))
+	_, _, _, err = c.Send(context.Background(), from, recipients, bytes.NewBuffer([]byte(eml)))
 	require.NoError(t, err)
 }

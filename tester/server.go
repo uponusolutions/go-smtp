@@ -45,6 +45,8 @@ func Standard(opts ...server.Option) *server.Server {
 // It contains a sync.Map with all mails received.
 type Backend struct {
 	Mails sync.Map
+	Mail  func(ctx context.Context, from string, options *smtp.MailOptions) error
+	Rcpt  func(ctx context.Context, to string, options *smtp.RcptOptions) error
 }
 
 // NewBackend returns a new Backend with an empty (not nil) Mails map.
@@ -127,14 +129,26 @@ func (Session) Verify(_ context.Context, _ string, _ *smtp.VrfyOptions) error {
 }
 
 // Mail implements the Mail interface.
-func (s *Session) Mail(_ context.Context, from string, _ *smtp.MailOptions) error {
+func (s *Session) Mail(ctx context.Context, from string, options *smtp.MailOptions) error {
+	if s.backend.Mail != nil {
+		if err := s.backend.Mail(ctx, from, options); err != nil {
+			return err
+		}
+	}
+
 	s.mail.From = from
 
 	return nil
 }
 
 // Rcpt implements the Rcpt interface.
-func (s *Session) Rcpt(_ context.Context, to string, _ *smtp.RcptOptions) error {
+func (s *Session) Rcpt(ctx context.Context, to string, options *smtp.RcptOptions) error {
+	if s.backend.Rcpt != nil {
+		if err := s.backend.Rcpt(ctx, to, options); err != nil {
+			return err
+		}
+	}
+
 	s.mail.Recipients = append(s.mail.Recipients, to)
 
 	return nil

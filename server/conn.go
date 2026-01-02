@@ -595,7 +595,7 @@ func (c *Conn) handleRcpt(arg string) error {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
 			}
 			notify := []smtp.DSNNotify{}
-			for _, val := range strings.Split(value, ",") {
+			for val := range strings.SplitSeq(value, ",") {
 				notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
 			}
 			if err := textsmtp.CheckNotifySet(notify); err != nil {
