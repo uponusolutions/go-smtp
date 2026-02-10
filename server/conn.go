@@ -322,7 +322,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 
 	if c.server.enforceSecureConnection && !c.IsTLS() {
 		c.state = stateEnforceSecureConnection
-	} else if c.server.enforceAuthentication {
+	} else if c.server.enforceAuthentication && !c.didAuth {
 		c.state = stateEnforceAuthentication
 	} else {
 		c.state = stateGreeted
