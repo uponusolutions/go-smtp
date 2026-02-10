@@ -18,7 +18,7 @@ import (
 type Backend struct{}
 
 // NewSession is called after client greeting (EHLO, HELO).
-func (bkd *Backend) NewSession(ctx context.Context, c *server.Conn) (context.Context, server.Session, error) {
+func (*Backend) NewSession(ctx context.Context, _ *server.Conn) (context.Context, server.Session, error) {
 	return ctx, &Session{}, nil
 }
 
@@ -27,19 +27,20 @@ type Session struct {
 	auth bool
 }
 
-func (s *Session) Logger(ctx context.Context) *slog.Logger {
+// Logger returns nil.
+func (*Session) Logger(_ context.Context) *slog.Logger {
 	return nil
 }
 
 // AuthMechanisms returns a slice of available auth mechanisms; only PLAIN is
 // supported in this example.
-func (s *Session) AuthMechanisms(ctx context.Context) []string {
+func (*Session) AuthMechanisms(_ context.Context) []string {
 	return []string{sasl.Plain}
 }
 
 // Auth is the handler for supported authenticators.
-func (s *Session) Auth(ctx context.Context, mech string) (sasl.Server, error) {
-	return sasl.NewPlainServer(func(identity, username, password string) error {
+func (s *Session) Auth(_ context.Context, _ string) (sasl.Server, error) {
+	return sasl.NewPlainServer(func(_, username, password string) error {
 		if username != "username" || password != "password" {
 			return errors.New("Invalid username or password")
 		}
@@ -48,7 +49,7 @@ func (s *Session) Auth(ctx context.Context, mech string) (sasl.Server, error) {
 	}), nil
 }
 
-func (s *Session) Mail(ctx context.Context, from string, opts *smtp.MailOptions) error {
+func (s *Session) Mail(_ context.Context, from string, _ *smtp.MailOptions) error {
 	if !s.auth {
 		return smtp.ErrAuthRequired
 	}
@@ -56,11 +57,11 @@ func (s *Session) Mail(ctx context.Context, from string, opts *smtp.MailOptions)
 	return nil
 }
 
-func (s *Session) Verify(ctx context.Context, addr string, opts *smtp.VrfyOptions) error {
+func (*Session) Verify(_ context.Context, _ string, _ *smtp.VrfyOptions) error {
 	return nil
 }
 
-func (s *Session) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) error {
+func (s *Session) Rcpt(_ context.Context, to string, _ *smtp.RcptOptions) error {
 	if !s.auth {
 		return smtp.ErrAuthRequired
 	}
@@ -68,27 +69,28 @@ func (s *Session) Rcpt(ctx context.Context, to string, opts *smtp.RcptOptions) e
 	return nil
 }
 
-func (s *Session) STARTTLS(ctx context.Context, tls *tls.Config) (*tls.Config, error) {
+func (*Session) STARTTLS(_ context.Context, tls *tls.Config) (*tls.Config, error) {
 	return tls, nil
 }
 
-func (s *Session) Data(ctx context.Context, r func() io.Reader) (string, error) {
+func (s *Session) Data(_ context.Context, r func() io.Reader) (string, error) {
 	if !s.auth {
 		return "", smtp.ErrAuthRequired
 	}
-	if b, err := io.ReadAll(r()); err != nil {
+
+	b, err := io.ReadAll(r())
+	if err != nil {
 		return "", err
-	} else {
-		log.Println("Data:", string(b))
 	}
+	log.Println("Data:", string(b))
 	return "", nil
 }
 
-func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) {
+func (*Session) Reset(ctx context.Context, _ bool) (context.Context, error) {
 	return ctx, nil
 }
 
-func (s *Session) Close(ctx context.Context, err error) {
+func (*Session) Close(_ context.Context, _ error) {
 }
 
 // ExampleServer runs an example SMTP server.
@@ -108,7 +110,7 @@ func ExampleServer() {
 	be := &Backend{}
 	addr := "localhost:1025"
 
-	s := server.NewServer(
+	s := server.New(
 		server.WithBackend(be),
 		server.WithAddr(addr),
 		server.WithHostname("localhost"),

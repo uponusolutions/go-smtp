@@ -1,21 +1,21 @@
-// Copyright 2013 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package server_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/uponusolutions/go-sasl"
-	"github.com/uponusolutions/go-smtp/internal/client"
+	"github.com/uponusolutions/go-smtp/client"
+	"github.com/uponusolutions/go-smtp/mailer"
 )
 
 func ExampleDial() {
 	// Connect to the remote SMTP server.
-	c, err := client.Dial("mail.example.com:25")
+	c := client.New()
+
+	err := c.Dial(context.Background(), "mail.example.com:25")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func ExampleDial() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_, err = fmt.Fprintf(wc, "This is the email body")
+	_, err = fmt.Fprint(wc, "This is the email body")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,18 +57,23 @@ var (
 	recipients = []string{"foo@example.com"}
 )
 
-func ExampleSendMail_plainAuth() {
+func Example_plainAuth() {
 	// hostname is used by PlainAuth to validate the TLS certificate.
 	hostname := "mail.example.com"
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
-	err := client.SendMail(hostname+":25", auth, from, recipients, msg)
+	c := mailer.New(
+		mailer.WithServerAddresses(hostname+":25"),
+		mailer.WithSASLClient(auth),
+	)
+
+	_, _, _, err := c.Send(context.Background(), from, recipients, msg)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func ExampleSendMail() {
+func Example() {
 	// Set up authentication information.
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
@@ -79,7 +84,13 @@ func ExampleSendMail() {
 		"Subject: discount Gophers!\r\n" +
 		"\r\n" +
 		"This is the email body.\r\n")
-	err := client.SendMail("mail.example.com:25", auth, "sender@example.org", to, msg)
+
+	c := mailer.New(
+		mailer.WithServerAddresses("mail.example.com:25"),
+		mailer.WithSASLClient(auth),
+	)
+
+	_, _, _, err := c.Send(context.Background(), "sender@example.org", to, msg)
 	if err != nil {
 		log.Fatal(err)
 	}

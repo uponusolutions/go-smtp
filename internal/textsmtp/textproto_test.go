@@ -1,8 +1,4 @@
-// Copyright 2010 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-package textsmtp
+package textsmtp_test
 
 import (
 	"bytes"
@@ -10,17 +6,18 @@ import (
 	"net/textproto"
 	"testing"
 
+	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
-func reader(in string, out *bytes.Buffer) *Conn {
-	return NewConn(tester.NewConn(in, out), 4096, 4096, 0)
+func reader(in string, out *bytes.Buffer) *textsmtp.Textproto {
+	return textsmtp.NewTextproto(tester.NewFakeConn(in, out), 4096, 4096, 0)
 }
 
 func TestPrintfLine(t *testing.T) {
 	buf := &bytes.Buffer{}
 	w := reader("", buf)
-	err := w.PrintfLine("foo %d", 123)
+	err := w.PrintfLineAndFlush("foo %d", 123)
 	if s := buf.String(); s != "foo 123\r\n" || err != nil {
 		t.Fatalf("s=%q; err=%s", s, err)
 	}
@@ -73,27 +70,31 @@ type readResponseTest struct {
 }
 
 var readResponseTests = []readResponseTest{
-	{"230-Anonymous access granted, restrictions apply\n" +
-		"Read the file README.txt,\n" +
-		"230  please",
+	{
+		"230-Anonymous access granted, restrictions apply\n" +
+			"Read the file README.txt,\n" +
+			"230  please",
 		23,
 		230,
 		"Anonymous access granted, restrictions apply\nRead the file README.txt,\n please",
 	},
 
-	{"230 Anonymous access granted, restrictions apply\n",
+	{
+		"230 Anonymous access granted, restrictions apply\n",
 		23,
 		230,
 		"Anonymous access granted, restrictions apply",
 	},
 
-	{"400-A\n400-B\n400 C",
+	{
+		"400-A\n400-B\n400 C",
 		4,
 		400,
 		"A\nB\nC",
 	},
 
-	{"400-A\r\n400-B\r\n400 C\r\n",
+	{
+		"400-A\r\n400-B\r\n400 C\r\n",
 		4,
 		400,
 		"A\nB\nC",
@@ -134,7 +135,7 @@ func TestReadMultiLineError(t *testing.T) {
 
 	code, msg, err := r.ReadResponse(250)
 	if err == nil {
-		t.Errorf("ReadResponse: no error, want error")
+		t.Error("ReadResponse: no error, want error")
 	}
 	if code != 550 {
 		t.Errorf("ReadResponse: code=%d, want %d", code, 550)

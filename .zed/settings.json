@@ -1,0 +1,25 @@
+{
+  "lsp": {
+    "golangci-lint": {
+      "initialization_options": {
+        "command": [
+          "go",
+          "tool",
+          "-modfile=go.tool.mod",
+          "golangci-lint",
+          "run",
+          "--output.json.path",
+          "stdout",
+          "--show-stats=false",
+          "--output.text.path="
+        ]
+      }
+    }
+  },
+  "languages": {
+    "Go": {
+      "tab_size": 8,
+      "language_servers": ["gopls", "golangci-lint"]
+    }
+  }
+}

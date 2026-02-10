@@ -8,12 +8,14 @@ import (
 	"time"
 )
 
-type Conn struct {
+// FakeConn fakes a conn for testing.
+type FakeConn struct {
 	io.ReadWriter
 	RemoteAddrReturn net.Addr
 }
 
-func NewConnStream(in io.Reader, out *bytes.Buffer) *Conn {
+// NewFakeConnStream creates a new FakeConn with a stream as a input.
+func NewFakeConnStream(in io.Reader, out *bytes.Buffer) *FakeConn {
 	rw := struct {
 		io.Reader
 		io.Writer
@@ -22,12 +24,13 @@ func NewConnStream(in io.Reader, out *bytes.Buffer) *Conn {
 		Writer: out,
 	}
 
-	return &Conn{
+	return &FakeConn{
 		ReadWriter: rw,
 	}
 }
 
-func NewConn(in string, out *bytes.Buffer) *Conn {
+// NewFakeConn creates a new FakeConn with a string as a input.
+func NewFakeConn(in string, out *bytes.Buffer) *FakeConn {
 	rw := struct {
 		io.Reader
 		io.Writer
@@ -36,14 +39,25 @@ func NewConn(in string, out *bytes.Buffer) *Conn {
 		Writer: out,
 	}
 
-	return &Conn{
+	return &FakeConn{
 		ReadWriter: rw,
 	}
 }
 
-func (f Conn) Close() error                     { return nil }
-func (f Conn) LocalAddr() net.Addr              { return nil }
-func (f Conn) RemoteAddr() net.Addr             { return f.RemoteAddrReturn }
-func (f Conn) SetDeadline(time.Time) error      { return nil }
-func (f Conn) SetReadDeadline(time.Time) error  { return nil }
-func (f Conn) SetWriteDeadline(time.Time) error { return nil }
+// Close always returns nil.
+func (FakeConn) Close() error { return nil }
+
+// LocalAddr always returns nil.
+func (FakeConn) LocalAddr() net.Addr { return nil }
+
+// RemoteAddr always returns RemoteAddrReturn.
+func (f FakeConn) RemoteAddr() net.Addr { return f.RemoteAddrReturn }
+
+// SetDeadline always returns nil and does nothing.
+func (FakeConn) SetDeadline(time.Time) error { return nil }
+
+// SetReadDeadline always returns nil and does nothing.
+func (FakeConn) SetReadDeadline(time.Time) error { return nil }
+
+// SetWriteDeadline always returns nil and does nothing.
+func (FakeConn) SetWriteDeadline(time.Time) error { return nil }

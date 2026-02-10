@@ -1,0 +1,31 @@
+name: Benchmark
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "stable"
+      - name: Run benchmark
+        run: export SETBYTES=NO && go test ./... -bench . -benchtime=10s -run ^$ | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt  && sed -i 's/BenchmarkDotReader\//BenchmarkDotReader/g' output.txt  && sed -i 's/BenchmarkDotWriter\//BenchmarkDotWriter/g' output.txt
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: "go"
+          output-file-path: output.txt
+          fail-on-alert: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          comment-on-alert: true
+          alert-comment-cc-users: "@ml1nk"
