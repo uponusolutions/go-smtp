@@ -443,7 +443,41 @@ func TestServerAuthEnforced(t *testing.T) {
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
 	scanner.Scan()
 	if !strings.HasPrefix(scanner.Text(), "250 ") {
-		t.Fatal("Should require authentication:", scanner.Text())
+		t.Fatal("Should accept mail after authentication:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "RSET\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Should accept rset:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Should still accept mail after rset:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "EHLO Test\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250-") {
+		t.Fatal("Should accept ehlo:", scanner.Text())
+	}
+
+	// ignore capabilities, already checked
+	for scanner.Scan() {
+		s := scanner.Text()
+		if _, ok := strings.CutPrefix(s, "250 "); ok {
+			break
+		}
+	}
+
+	// https://datatracker.ietf.org/doc/html/rfc5321#section-4.1.1.5
+	// EHLO should behave like RSET and does not reset AUTH in any way.
+	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Should still accept mail after ehlo:", scanner.Text())
 	}
 }
 
