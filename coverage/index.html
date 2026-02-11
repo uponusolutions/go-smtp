@@ -87,33 +87,35 @@
 				
 				<option value="file15">github.com/uponusolutions/go-smtp/mailer/mailer.go (77.5%)</option>
 				
-				<option value="file16">github.com/uponusolutions/go-smtp/resolve/resolve.go (100.0%)</option>
+				<option value="file16">github.com/uponusolutions/go-smtp/mailer/multireader.go (100.0%)</option>
 				
-				<option value="file17">github.com/uponusolutions/go-smtp/sender.go (88.9%)</option>
+				<option value="file17">github.com/uponusolutions/go-smtp/resolve/resolve.go (100.0%)</option>
 				
-				<option value="file18">github.com/uponusolutions/go-smtp/server/backend.go (0.0%)</option>
+				<option value="file18">github.com/uponusolutions/go-smtp/sender.go (88.9%)</option>
 				
-				<option value="file19">github.com/uponusolutions/go-smtp/server/conn.go (77.9%)</option>
+				<option value="file19">github.com/uponusolutions/go-smtp/server/backend.go (0.0%)</option>
 				
-				<option value="file20">github.com/uponusolutions/go-smtp/server/encode.go (57.8%)</option>
+				<option value="file20">github.com/uponusolutions/go-smtp/server/conn.go (77.9%)</option>
 				
-				<option value="file21">github.com/uponusolutions/go-smtp/server/server.go (74.5%)</option>
+				<option value="file21">github.com/uponusolutions/go-smtp/server/encode.go (57.8%)</option>
 				
-				<option value="file22">github.com/uponusolutions/go-smtp/server/server_options.go (84.3%)</option>
+				<option value="file22">github.com/uponusolutions/go-smtp/server/server.go (74.5%)</option>
 				
-				<option value="file23">github.com/uponusolutions/go-smtp/tester/buffer.go (91.7%)</option>
+				<option value="file23">github.com/uponusolutions/go-smtp/server/server_options.go (84.3%)</option>
 				
-				<option value="file24">github.com/uponusolutions/go-smtp/tester/cert.go (85.0%)</option>
+				<option value="file24">github.com/uponusolutions/go-smtp/tester/buffer.go (91.7%)</option>
 				
-				<option value="file25">github.com/uponusolutions/go-smtp/tester/compare.go (97.3%)</option>
+				<option value="file25">github.com/uponusolutions/go-smtp/tester/cert.go (85.0%)</option>
 				
-				<option value="file26">github.com/uponusolutions/go-smtp/tester/faker.go (60.0%)</option>
+				<option value="file26">github.com/uponusolutions/go-smtp/tester/compare.go (97.3%)</option>
 				
-				<option value="file27">github.com/uponusolutions/go-smtp/tester/mail.go (100.0%)</option>
+				<option value="file27">github.com/uponusolutions/go-smtp/tester/faker.go (60.0%)</option>
 				
-				<option value="file28">github.com/uponusolutions/go-smtp/tester/server.go (76.9%)</option>
+				<option value="file28">github.com/uponusolutions/go-smtp/tester/mail.go (100.0%)</option>
 				
-				<option value="file29">github.com/uponusolutions/go-smtp/timeout.go (100.0%)</option>
+				<option value="file29">github.com/uponusolutions/go-smtp/tester/server.go (76.9%)</option>
+				
+				<option value="file30">github.com/uponusolutions/go-smtp/timeout.go (100.0%)</option>
 				
 				</select>
 			</div>
@@ -1696,7 +1698,7 @@ func NewBdatReader(arg string, maxMessageBytes int64, input io.Reader, nextComma
         }, nil</span>
 }
 
-func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">{
+func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="52">{
         if d.size == 0 </span><span class="cov8" title="25">{
                 if d.last </span><span class="cov5" title="7">{
                         return 0, io.EOF
@@ -1713,7 +1715,7 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">
                 }
 
                 <span class="cov6" title="12">switch cmd </span>{
-                case "BDAT":<span class="cov5" title="9">
+                case "BDAT":<span class="cov6" title="9">
                         d.size, d.last, err = bdatArg(arg)
                         if err != nil </span><span class="cov1" title="1">{
                                 return 0, err
@@ -1731,15 +1733,15 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">
                 }
         }
 
-        <span class="cov9" title="35">if d.maxMessageBytes != 0 &amp;&amp; d.bytesReceived+d.size &gt; d.maxMessageBytes </span><span class="cov3" title="3">{
+        <span class="cov9" title="34">if d.maxMessageBytes != 0 &amp;&amp; d.bytesReceived+d.size &gt; d.maxMessageBytes </span><span class="cov3" title="3">{
                 return 0, smtp.ErrDataTooLarge
         }</span>
 
-        <span class="cov8" title="32">if d.chunk == nil </span><span class="cov8" title="22">{
+        <span class="cov8" title="31">if d.chunk == nil </span><span class="cov8" title="22">{
                 d.chunk = io.LimitReader(d.input, int64(d.size))
         }</span>
 
-        <span class="cov8" title="32">n, err := d.chunk.Read(b)
+        <span class="cov8" title="31">n, err := d.chunk.Read(b)
         d.bytesReceived += int64(n)
         d.size -= int64(n)
 
@@ -1748,7 +1750,7 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">
                 err = smtp.ErrConnection
         }</span>
 
-        <span class="cov8" title="32">return n, err</span>
+        <span class="cov8" title="31">return n, err</span>
 }
 </pre>
 		
@@ -2562,7 +2564,7 @@ func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="58
         <span class="cov9" title="588">var line []byte
         for </span><span class="cov9" title="588">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov6" title="54">{
+                if err != nil </span><span class="cov6" title="55">{
                         return nil, err
                 }</span>
 
@@ -3143,7 +3145,46 @@ func send(ctx context.Context, server resolve.Server, from string, config Config
 }
 </pre>
 		
-		<pre class="file" id="file16" style="display: none">// Package resolve implements a resolver to get prioritized server addresses for recipients.
+		<pre class="file" id="file16" style="display: none">package mailer
+
+import "io"
+
+// ReaderLen extends io.Reader with Len.
+type ReaderLen interface {
+        io.Reader
+        Len() int
+}
+
+type multiReader struct {
+        io.Reader
+        readers []ReaderLen
+}
+
+func (mr *multiReader) Len() int <span class="cov6" title="5">{
+        length := 0
+        for _, r := range mr.readers </span><span class="cov10" title="15">{
+                length += r.Len()
+        }</span>
+        <span class="cov6" title="5">return length</span>
+}
+
+// MultiReader is essentially io.MultiReader but requires and provides Len.
+func MultiReader(readers ...ReaderLen) ReaderLen <span class="cov1" title="1">{
+        ioReaders := make([]io.Reader, len(readers))
+        for i, r := range readers </span><span class="cov4" title="3">{
+                ioReaders[i] = r
+        }</span>
+
+        <span class="cov1" title="1">log := &amp;multiReader{
+                Reader:  io.MultiReader(ioReaders...),
+                readers: readers,
+        }
+
+        return log</span>
+}
+</pre>
+		
+		<pre class="file" id="file17" style="display: none">// Package resolve implements a resolver to get prioritized server addresses for recipients.
 // Typically by retrieving mx records by dns.
 package resolve
 
@@ -3343,7 +3384,7 @@ func sliceEqual(a [][]string, b [][]string) bool <span class="cov7" title="9">{
 }
 </pre>
 		
-		<pre class="file" id="file17" style="display: none">package smtp
+		<pre class="file" id="file18" style="display: none">package smtp
 
 import (
         "regexp"
@@ -3398,7 +3439,7 @@ func ParseSender(src string) string <span class="cov0" title="0">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file18" style="display: none">package server
+		<pre class="file" id="file19" style="display: none">package server
 
 import (
         "context"
@@ -3475,7 +3516,7 @@ type Session interface {
 }
 </pre>
 		
-		<pre class="file" id="file19" style="display: none">package server
+		<pre class="file" id="file20" style="display: none">package server
 
 import (
         "context"
@@ -3537,7 +3578,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="67">{
 
         for </span><span class="cov8" title="311">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov6" title="55">{
+                if err != nil </span><span class="cov6" title="56">{
                         return err
                 }</span>
 
@@ -3563,7 +3604,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="67">{
 
 func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="317">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov6" title="53">{
+        if err != nil </span><span class="cov6" title="54">{
                 return "", "", err
         }</span>
         <span class="cov8" title="259">return parse.Cmd(line)</span>
@@ -3712,26 +3753,26 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov6" title="62">{
+func (c *Conn) Close(err error) <span class="cov6" title="63">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="30">{
+        if closeErr != nil </span><span class="cov5" title="24">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="30"> {
+                }</span> else<span class="cov5" title="24"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
 
-        <span class="cov6" title="62">if err != nil </span><span class="cov6" title="56">{
+        <span class="cov6" title="63">if err != nil </span><span class="cov6" title="57">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
-        <span class="cov6" title="62">if c.session != nil </span><span class="cov6" title="62">{
+        <span class="cov6" title="63">if c.session != nil </span><span class="cov6" title="63">{
                 c.session.Close(c.ctx, err)
                 c.session = nil
         }</span>
@@ -3868,8 +3909,8 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error <span class="cov6" t
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov6" title="61">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="51">{
+func (c *Conn) handleError(err error) <span class="cov6" title="62">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="52">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -3902,13 +3943,13 @@ func (c *Conn) handleError(err error) <span class="cov6" title="61">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="857">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="859">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="857">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="857">{
+        <span class="cov10" title="859">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="859">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -4411,7 +4452,7 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) <
         // PIPELINE support
         // If there is something buffered in c.text.R then we can assume another command is following.
         // This means the client is doing pipelining and we don't need to respond just now.
-        <span class="cov8" title="380">if c.text.R.Buffered() == 0 </span><span class="cov8" title="371">{
+        <span class="cov8" title="380">if c.text.R.Buffered() == 0 </span><span class="cov8" title="372">{
                 _ = c.text.W.Flush()
         }</span>
 }
@@ -4433,7 +4474,7 @@ func (c *Conn) readLine() (string, error) <span class="cov8" title="349">{
         if err == nil </span><span class="cov8" title="291">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov8" title="344">return line, err</span>
+        <span class="cov8" title="345">return line, err</span>
 }
 
 func (c *Conn) reset() error <span class="cov5" title="33">{
@@ -4456,7 +4497,7 @@ func (c *Conn) reset() error <span class="cov5" title="33">{
 }
 </pre>
 		
-		<pre class="file" id="file20" style="display: none">package server
+		<pre class="file" id="file21" style="display: none">package server
 
 import (
         "encoding/base64"
@@ -4625,7 +4666,7 @@ func decodeTypedAddress(val string) (smtp.DSNAddressType, string, error) <span c
 }
 </pre>
 		
-		<pre class="file" id="file21" style="display: none">// Package smtp implements the server of the Simple Mail Transfer Protocol as defined in RFC 5321.
+		<pre class="file" id="file22" style="display: none">// Package smtp implements the server of the Simple Mail Transfer Protocol as defined in RFC 5321.
 //
 // It also implements the following extensions:
 //
@@ -4715,7 +4756,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
 
         var err error
 
-        defer func() </span><span class="cov8" title="62">{
+        defer func() </span><span class="cov8" title="63">{
                 if err := recover(); err != nil </span><span class="cov1" title="1">{
                         c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
                         stack := debug.Stack()
@@ -4728,7 +4769,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                         c.Close(errors.New("recovered from panic inside handleConn"))
                 }</span>
 
-                <span class="cov8" title="62">s.locker.Lock()
+                <span class="cov8" title="63">s.locker.Lock()
                 delete(s.conns, c)
                 s.locker.Unlock()
 
@@ -4849,7 +4890,7 @@ func (s *Server) Close() error <span class="cov8" title="44">{
                 }</span>
         }
 
-        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="36">{
+        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="38">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
@@ -4897,7 +4938,7 @@ func (s *Server) Shutdown(ctx context.Context) error <span class="cov2" title="2
 }
 </pre>
 		
-		<pre class="file" id="file22" style="display: none">package server
+		<pre class="file" id="file23" style="display: none">package server
 
 import (
         "crypto/tls"
@@ -5161,7 +5202,7 @@ func WithWriterSize(writerSize int) Option <span class="cov0" title="0">{
 }
 </pre>
 		
-		<pre class="file" id="file23" style="display: none">package tester
+		<pre class="file" id="file24" style="display: none">package tester
 
 import (
         "io"
@@ -5215,7 +5256,7 @@ func (b *Buffer) Read(p []byte) (n int, err error) <span class="cov10" title="7"
 func NewBuffer(buf []byte) io.Reader <span class="cov6" title="3">{ return &amp;Buffer{buf: buf} }</span>
 </pre>
 		
-		<pre class="file" id="file24" style="display: none">package tester
+		<pre class="file" id="file25" style="display: none">package tester
 
 import (
         "crypto/rand"
@@ -5279,7 +5320,7 @@ func GenX509KeyPair(domain string) (tls.Certificate, error) <span class="cov10" 
 }
 </pre>
 		
-		<pre class="file" id="file25" style="display: none">package tester
+		<pre class="file" id="file26" style="display: none">package tester
 
 import (
         "bytes"
@@ -5429,7 +5470,7 @@ func ReaderCompareTest(t *testing.T, fs *embed.FS, path string, expected func(io
 }
 </pre>
 		
-		<pre class="file" id="file26" style="display: none">package tester
+		<pre class="file" id="file27" style="display: none">package tester
 
 import (
         "bytes"
@@ -5494,7 +5535,7 @@ func (FakeConn) SetReadDeadline(time.Time) error <span class="cov0" title="0">{ 
 func (FakeConn) SetWriteDeadline(time.Time) error <span class="cov0" title="0">{ return nil }</span>
 </pre>
 		
-		<pre class="file" id="file27" style="display: none">package tester
+		<pre class="file" id="file28" style="display: none">package tester
 
 import "strings"
 
@@ -5518,7 +5559,7 @@ func LookupKey(f string, r []string) string <span class="cov8" title="7">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file28" style="display: none">// Package smtptester implements a simple SMTP server for testing. All
+		<pre class="file" id="file29" style="display: none">// Package smtptester implements a simple SMTP server for testing. All
 // received mails are saved in a sync.Map with a key:
 //
 //        From+Recipient1+Recipient2
@@ -5634,12 +5675,12 @@ func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) <s
 }</span>
 
 // Close implements the Close interface.
-func (s *Session) Close(_ context.Context, _ error) <span class="cov5" title="11">{
+func (s *Session) Close(_ context.Context, _ error) <span class="cov5" title="12">{
         s.mail = &amp;Mail{}
 }</span>
 
 // Logger implements the Logger interface.
-func (Session) Logger(_ context.Context) *slog.Logger <span class="cov10" title="129">{
+func (Session) Logger(_ context.Context) *slog.Logger <span class="cov10" title="131">{
         return nil
 }</span>
 
@@ -5703,7 +5744,7 @@ func (Session) STARTTLS(_ context.Context, config *tls.Config) (*tls.Config, err
 }</span>
 </pre>
 		
-		<pre class="file" id="file29" style="display: none">package smtp
+		<pre class="file" id="file30" style="display: none">package smtp
 
 import (
         "net"
