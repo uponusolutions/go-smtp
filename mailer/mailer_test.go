@@ -266,6 +266,12 @@ func TestClient_InvalidLocalName(t *testing.T) {
 	require.ErrorContains(t, c.Connect(context.Background()), "smtp: the local name must not contain CR or LF")
 }
 
+func TestClient_Client(t *testing.T) {
+	c := New(WithServerAddresses(addr))
+	require.NotNil(t, c)
+	require.NotNil(t, c.Client())
+}
+
 func TestClient_Send(t *testing.T) {
 	c := New(WithServerAddresses(addr))
 	require.NotNil(t, c)

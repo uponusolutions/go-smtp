@@ -41,6 +41,11 @@ func NewFromConfig(cfg Config) *Mailer {
 	}
 }
 
+// Client returns the inner smtp client. Use with caution.
+func (c *Mailer) Client() *client.Client {
+	return c.client
+}
+
 // Connect connects to one of the available smtp server.
 // When server supports auth and clients SaslClient is set, auth is called.
 // Security is enforced like configured (Plain, TLS, StartTLS or PreferStartTLS)
