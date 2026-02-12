@@ -2085,22 +2085,22 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span c
         <span class="cov6" title="4080">return dr</span>
 }
 
-func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="588959">{
-        if err == nil </span><span class="cov9" title="584904">{
+func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="588951">{
+        if err == nil </span><span class="cov9" title="584896">{
                 l := len(c)
 
-                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="5328">{
+                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="5321">{
                         // Ends with \r\n, write everything before.
                         return copy(b, c[:l-2])
                 }</span>
 
-                <span class="cov9" title="579576">if l &gt; 0 &amp;&amp; c[l-1] == '\r' </span><span class="cov5" title="1473">{
+                <span class="cov9" title="579575">if l &gt; 0 &amp;&amp; c[l-1] == '\r' </span><span class="cov5" title="1473">{
                         // Ends with \r, write everything before.
                         return copy(b, c[:l-1])
                 }</span>
         }
 
-        <span class="cov9" title="582158">return copy(b, c)</span>
+        <span class="cov9" title="582157">return copy(b, c)</span>
 }
 
 const (
@@ -2113,7 +2113,7 @@ const (
 // Run data through a simple state machine to
 // elide leading dots and detect End-of-Data
 // (&lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;) line.
-func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589172">{
+func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589164">{
         if r.limited </span><span class="cov2" title="15">{
                 if r.n &lt;= 0 </span><span class="cov1" title="2">{
                         return 0, smtp.ErrDataTooLarge
@@ -2124,17 +2124,17 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589172
                 }</span>
         }
 
-        <span class="cov9" title="589170">var n int       // Data written to b.
+        <span class="cov9" title="589162">var n int       // Data written to b.
         var skipped int // How many.
 
         // IMPORTANT: We cannot wait on read,
         // because no EOL returns.
-        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="518093">{
+        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="518085">{
                 _, _ = r.r.Peek(5)
         }</span>
 
         // min 5, max buffer size, default len(b)
-        <span class="cov9" title="589170">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+        <span class="cov9" title="589162">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
 
         // write \n
         if r.state == stateCR </span><span class="cov1" title="4">{
@@ -2151,12 +2151,12 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589172
                 }</span>
         }
 
-        <span class="cov9" title="589170">if r.state != stateEOF </span><span class="cov9" title="589167">{
-                for </span><span class="cov10" title="621552">{
+        <span class="cov9" title="589162">if r.state != stateEOF </span><span class="cov9" title="589159">{
+                for </span><span class="cov10" title="621544">{
                         i := bytes.Index(c, crlfdot)
 
                         // No full \r\n. found.
-                        if i == -1 </span><span class="cov9" title="588959">{
+                        if i == -1 </span><span class="cov9" title="588951">{
                                 n += noCrlfDotFound(err, b, c)
                                 break</span>
                         }
@@ -2204,19 +2204,19 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="589172
 
         // n + skipped is always smaller then what was peeked,
         // so it is guaranteed to work
-        <span class="cov9" title="589170">_, _ = r.r.Discard(n + skipped)
+        <span class="cov9" title="589162">_, _ = r.r.Discard(n + skipped)
 
         if err == io.EOF &amp;&amp; r.state != stateEOF </span><span class="cov6" title="4055">{
                 err = io.ErrUnexpectedEOF
-        }</span> else<span class="cov9" title="585115"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov3" title="26">{
+        }</span> else<span class="cov9" title="585107"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov3" title="26">{
                 err = io.EOF
         }</span>
 
-        <span class="cov9" title="589170">if r.limited </span><span class="cov2" title="13">{
+        <span class="cov9" title="589162">if r.limited </span><span class="cov2" title="13">{
                 r.n -= int64(n)
         }</span>
 
-        <span class="cov9" title="589170">return n, err</span>
+        <span class="cov9" title="589162">return n, err</span>
 }
 </pre>
 		
@@ -2704,7 +2704,7 @@ type additionalConfig struct {
         serverAddressIndex int         // first server address to try
         saslClient         sasl.Client // support authentication
         security           Security    // Defines the connection is secured
-        noPartialSend      bool        // Send a mail even if some recipients aren't accepted
+        abortOnRcptReject  bool        // Send a mail even if some recipients aren't accepted
         tlsConfig          *tls.Config
 }
 
@@ -2768,10 +2768,10 @@ func WithTLSConfig(cfg *tls.Config) Option <span class="cov0" title="0">{
         }</span>
 }
 
-// WithNoPartialSend sets partial send.
-func WithNoPartialSend(noPartialSend bool) Option <span class="cov0" title="0">{
+// WithAbortOnRcptReject aborts sending if at last one recipient is rejected by the server.
+func WithAbortOnRcptReject(abortOnRcptReject bool) Option <span class="cov0" title="0">{
         return func(c *Config) </span><span class="cov0" title="0">{
-                c.extra.noPartialSend = noPartialSend
+                c.extra.abortOnRcptReject = abortOnRcptReject
         }</span>
 }
 </pre>
@@ -2942,8 +2942,8 @@ func (c *Mailer) prepare(
                 <span class="cov9" title="10">if err := c.client.Rcpt(addr, rcptsOption); err != nil </span><span class="cov1" title="1">{
                         smtpErr := &amp;smtp.Status{}
 
-                        // continue sending if code is 550 Requested action not taken
-                        if c.cfg.noPartialSend || !errors.As(err, &amp;smtpErr) || smtpErr.Code != 550 </span><span class="cov0" title="0">{
+                        // continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
+                        if c.cfg.abortOnRcptReject || !errors.As(err, &amp;smtpErr) || smtpErr.Code != 550 </span><span class="cov0" title="0">{
                                 return nil, nil, err
                         }</span>
 
@@ -3765,10 +3765,10 @@ func (c *Conn) Close(err error) <span class="cov6" title="63">{
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="25">{
+        if closeErr != nil </span><span class="cov5" title="32">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="25"> {
+                }</span> else<span class="cov5" title="32"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
@@ -4895,7 +4895,7 @@ func (s *Server) Close() error <span class="cov8" title="44">{
                 }</span>
         }
 
-        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="33">{
+        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="37">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
@@ -5680,7 +5680,7 @@ func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) <s
 }</span>
 
 // Close implements the Close interface.
-func (s *Session) Close(_ context.Context, _ error) <span class="cov5" title="11">{
+func (s *Session) Close(_ context.Context, _ error) <span class="cov5" title="12">{
         s.mail = &amp;Mail{}
 }</span>
 
