@@ -60,7 +60,7 @@ type additionalConfig struct {
 	serverAddressIndex int         // first server address to try
 	saslClient         sasl.Client // support authentication
 	security           Security    // Defines the connection is secured
-	noPartialSend      bool        // Send a mail even if some recipients aren't accepted
+	abortOnRcptReject  bool        // Send a mail even if some recipients aren't accepted
 	tlsConfig          *tls.Config
 }
 
@@ -124,9 +124,9 @@ func WithTLSConfig(cfg *tls.Config) Option {
 	}
 }
 
-// WithNoPartialSend sets partial send.
-func WithNoPartialSend(noPartialSend bool) Option {
+// WithAbortOnRcptReject aborts sending if at last one recipient is rejected by the server.
+func WithAbortOnRcptReject(abortOnRcptReject bool) Option {
 	return func(c *Config) {
-		c.extra.noPartialSend = noPartialSend
+		c.extra.abortOnRcptReject = abortOnRcptReject
 	}
 }

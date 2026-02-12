@@ -164,8 +164,8 @@ func (c *Mailer) prepare(
 		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
 			smtpErr := &smtp.Status{}
 
-			// continue sending if code is 550 Requested action not taken
-			if c.cfg.noPartialSend || !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
+			// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
+			if c.cfg.abortOnRcptReject || !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
 				return nil, nil, err
 			}
 
