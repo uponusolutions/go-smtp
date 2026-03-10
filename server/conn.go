@@ -763,8 +763,8 @@ func (c *Conn) handleStartTLS() error {
 	tlsConn := tls.Server(c.conn, tlsConfig)
 
 	if err := tlsConn.HandshakeContext(c.ctx); err != nil {
-		c.logger().ErrorContext(c.ctx, "handleStartTLS", slog.Any("err", err))
-		return smtp.NewStatus(550, smtp.EnhancedCode{5, 0, 0}, "Handshake error")
+		// err is not a smtp error and will terminate the connection
+		return err
 	}
 
 	c.conn = tlsConn
