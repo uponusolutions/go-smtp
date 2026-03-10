@@ -98,7 +98,14 @@ func (c *Mailer) connectAddress(ctx context.Context, addr string) error {
 
 			err = c.client.StartTLS(c.cfg.tlsConfig, serverName)
 			if err != nil {
-				return err
+				if c.cfg.security != SecurityPreferStartTLS {
+					return err
+				}
+				// recover from failure if prefer start tls --- switch to plain
+				err = c.client.Dial(ctx, addr)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
