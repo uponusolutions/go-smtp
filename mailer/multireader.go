@@ -111,6 +111,9 @@ func (mrf *MultiReaderFactory) Create() ReaderWriteToLen {
 		reader = MultiReader(mrf.readers...)
 	}
 
+	// reset state
+	mrf.readers = nil
+
 	return reader
 }
 
