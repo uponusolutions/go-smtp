@@ -13,10 +13,10 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -37,7 +37,7 @@ jobs:
 
       - name: download artifact (main.breakdown)
         id: download-main-breakdown
-        uses: dawidd6/action-download-artifact@v12
+        uses: dawidd6/action-download-artifact@v21
         with:
           branch: main
           workflow_conclusion: success
@@ -58,7 +58,7 @@ jobs:
           diff-base-breakdown-file-name: ${{ steps.download-main-breakdown.outputs.found_artifact == 'true' && 'main.breakdown' || '' }}
 
       - name: upload artifact (main.breakdown)
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         if: github.ref_name == 'main'
         with:
           name: main.breakdown
