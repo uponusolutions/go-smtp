@@ -32,7 +32,8 @@ func NewConfig(opts ...Option) Config {
 type Security int32
 
 const (
-	// SecurityPreferStartTLS tries to use StartTls but fallbacks to plain.
+	// SecurityPreferStartTLS tries to use StartTLS but fallbacks to plain if
+	// StartTLS is not available or TLS Handshake failed.
 	SecurityPreferStartTLS Security = 0
 	// SecurityPlain is always just a plain connection.
 	SecurityPlain Security = 1
