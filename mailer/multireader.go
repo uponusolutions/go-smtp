@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"bytes"
 	"io"
 )
 
@@ -82,10 +83,18 @@ type MultiReaderFactory struct {
 	readers []ReaderWriteToLen
 }
 
-// Add adds the next readers to the factory.
+// AddReader adds the next readers to the factory.
 // The new [MultiReaderFactory] takes ownership of the Readers,
-func (mrf *MultiReaderFactory) Add(readers ...ReaderWriteToLen) {
+func (mrf *MultiReaderFactory) AddReader(readers ...ReaderWriteToLen) {
 	mrf.readers = append(mrf.readers, readers...)
+}
+
+// AddBytes adds the multiple byte slices to the factory.
+// The new [MultiReaderFactory] takes ownership of the bytes,
+func (mrf *MultiReaderFactory) AddBytes(arrbytes ...[]byte) {
+	for _, reader := range arrbytes {
+		mrf.readers = append(mrf.readers, bytes.NewBuffer(reader))
+	}
 }
 
 // Create creates a MultiReader from all added readers.
