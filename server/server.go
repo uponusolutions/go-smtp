@@ -268,3 +268,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return err
 	}
 }
+
+// Hostname returns the configured hostname used in ehlo/helo
+func (s *Server) Hostname() string {
+	return s.hostname
+}

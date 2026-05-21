@@ -44,6 +44,7 @@ type Conn struct {
 	session    Session
 	binarymime bool
 
+	esmtp      bool     // set in helo / ehlo
 	helo       string   // set in helo / ehlo
 	mechanisms []string // seh in helo / ehlo
 	recipients int      // count recipients
@@ -281,6 +282,11 @@ func (c *Conn) Hostname() string {
 	return c.helo
 }
 
+// Esmtp returns true if esmtp was used (helo instead of ehlo).
+func (c *Conn) Esmtp() bool {
+	return c.esmtp
+}
+
 // Mechanisms returns the allowed auth mechanism for this connection.
 func (c *Conn) Mechanisms() []string {
 	return c.mechanisms
@@ -301,11 +307,16 @@ func (c *Conn) handleRSET() error {
 }
 
 // GREET state -> waiting for HELO
-func (c *Conn) handleGreet(enhanced bool, arg string) error {
+func (c *Conn) handleGreet(esmtp bool, arg string) error {
 	domain, err := parse.HelloArgument(arg)
 	if err != nil {
 		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Domain/address argument required for HELO")
 	}
+
+	// c.helo is populated before NewSession so
+	// NewSession can access it via Conn.Esmtp.
+	c.esmtp = esmtp
+
 	// c.helo is populated before NewSession so
 	// NewSession can access it via Conn.Hostname.
 	c.helo = domain
@@ -328,7 +339,7 @@ func (c *Conn) handleGreet(enhanced bool, arg string) error {
 		c.state = stateGreeted
 	}
 
-	if !enhanced {
+	if !esmtp {
 		return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Hello %s", domain))
 	}
 
