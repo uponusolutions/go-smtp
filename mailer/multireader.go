@@ -90,8 +90,18 @@ func (mrf *MultiReaderFactory) Add(readers ...ReaderWriteToLen) {
 
 // Create creates a MultiReader from all added readers.
 func (mrf *MultiReaderFactory) Create() ReaderWriteToLen {
-	reader := MultiReader(mrf.readers...)
-	mrf.readers = nil
+	if len(mrf.readers) == 0 {
+		return eofReader{}
+	}
+
+	var reader ReaderWriteToLen
+
+	if len(mrf.readers) == 1 {
+		reader = mrf.readers[0]
+	} else {
+		reader = MultiReader(mrf.readers...)
+	}
+
 	return reader
 }
 
