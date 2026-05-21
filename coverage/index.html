@@ -87,7 +87,7 @@
 				
 				<option value="file15">github.com/uponusolutions/go-smtp/mailer/mailer.go (75.0%)</option>
 				
-				<option value="file16">github.com/uponusolutions/go-smtp/mailer/multireader.go (44.9%)</option>
+				<option value="file16">github.com/uponusolutions/go-smtp/mailer/multireader.go (55.0%)</option>
 				
 				<option value="file17">github.com/uponusolutions/go-smtp/resolve/resolve.go (100.0%)</option>
 				
@@ -3176,24 +3176,24 @@ type ReaderWriteToLen interface {
 type multiReader struct {
         readers []ReaderWriteToLen
 }
-</span>
-ty</span>pe eofReader struct{}
 
-</span>func (eofReader) Read([]byte) (int, error) <span class="cov0" title="0">{
+type eofReader struct{}
+
+func (eofReader) Read([]byte) (int, error) <span class="cov0" title="0">{
         return 0, io.EOF
 }</span>
 
-func (eofReader) Len() int {
+func (eofReader) Len() int <span class="cov0" title="0">{
         return 0
-</span>}</span>
+}</span>
 
-</span>func (eofReader) WriteTo(_ io.Writer) (sum int64, err error) <span class="cov0" title="0">{
+func (eofReader) WriteTo(_ io.Writer) (sum int64, err error) <span class="cov0" title="0">{
         return 0, nil
 }</span>
 
-func (mr *multiReader) Read(p []byte) (n int, err error) {
-        for len(mr.readers) &gt; 0 {
-                // Optimi</span></span>zation to flatten nested multiReaders (Issue 13558).
+func (mr *multiReader) Read(p []byte) (n int, err error) <span class="cov8" title="13">{
+        for len(mr.readers) &gt; 0 </span><span class="cov10" title="19">{
+                // Optimization to flatten nested multiReaders (Issue 13558).
                 if len(mr.readers) == 1 </span><span class="cov6" title="6">{
                         if r, ok := mr.readers[0].(*multiReader); ok </span><span class="cov0" title="0">{
                                 mr.readers = r.readers
@@ -3864,10 +3864,10 @@ func (c *Conn) Close(err error) <span class="cov6" title="63">{
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="30">{
+        if closeErr != nil </span><span class="cov5" title="29">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="30"> {
+                }</span> else<span class="cov5" title="29"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
@@ -5004,7 +5004,7 @@ func (s *Server) Close() error <span class="cov8" title="44">{
                 }</span>
         }
 
-        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="37">{
+        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="34">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
