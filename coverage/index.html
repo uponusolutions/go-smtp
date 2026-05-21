@@ -87,7 +87,7 @@
 				
 				<option value="file15">github.com/uponusolutions/go-smtp/mailer/mailer.go (75.0%)</option>
 				
-				<option value="file16">github.com/uponusolutions/go-smtp/mailer/multireader.go (47.8%)</option>
+				<option value="file16">github.com/uponusolutions/go-smtp/mailer/multireader.go (45.8%)</option>
 				
 				<option value="file17">github.com/uponusolutions/go-smtp/resolve/resolve.go (100.0%)</option>
 				
@@ -3161,6 +3161,7 @@ func send(ctx context.Context, server resolve.Server, from string, config Config
 		<pre class="file" id="file16" style="display: none">package mailer
 
 import (
+        "bytes"
         "io"
 )
 
@@ -3175,25 +3176,25 @@ type ReaderWriteToLen interface {
 type multiReader struct {
         readers []ReaderWriteToLen
 }
+</span>
+ty</span>pe eofReader struct{}
 
-</span>type eofReader struct{}
-
-</span>f<span class="cov0" title="0">unc (eofReade</span>r) Read([]byte) (int, error) <span class="cov0" title="0">{
+</span>func (eofReader) Read([]byte) (int, error) <span class="cov0" title="0">{
         return 0, io.EOF
 }</span>
 
-func (eofReader) Len() int <span class="cov0" title="0">{
+func (eofReader) Len() int {
         return 0
-}</span>
-</span>
-fu</span>nc (eofReader) WriteTo(_ io.Writer) (sum int64, err error) <span class="cov0" title="0">{
+</span>}</span>
+
+</span>func (eofReader) WriteTo(_ io.Writer) (sum int64, err error) <span class="cov0" title="0">{
         return 0, nil
-}</span><span class="cov0" title="0">
+}</span>
 
 func (mr *multiReader) Read(p []byte) (n int, err error) {
         for len(mr.readers) &gt; 0 {
-                // Optimization to flatten nested multiReaders (Issue 13558).
-                if len(mr</span></span>.readers) == 1 </span><span class="cov6" title="6">{
+                // Optimi</span></span>zation to flatten nested multiReaders (Issue 13558).
+                if len(mr.readers) == 1 </span><span class="cov6" title="6">{
                         if r, ok := mr.readers[0].(*multiReader); ok </span><span class="cov0" title="0">{
                                 mr.readers = r.readers
                                 continue</span>
@@ -3242,11 +3243,19 @@ type MultiReaderFactory struct {
         readers []ReaderWriteToLen
 }
 
-// Add adds the next readers to the factory.
+// AddReader adds the next readers to the factory.
 // The new [MultiReaderFactory] takes ownership of the Readers,
-func (mrf *MultiReaderFactory) Add(readers ...ReaderWriteToLen) <span class="cov0" title="0">{
+func (mrf *MultiReaderFactory) AddReader(readers ...ReaderWriteToLen) <span class="cov0" title="0">{
         mrf.readers = append(mrf.readers, readers...)
 }</span>
+
+// AddBytes adds the multiple byte slices to the factory.
+// The new [MultiReaderFactory] takes ownership of the bytes,
+func (mrf *MultiReaderFactory) AddBytes(arrbytes ...[]byte) <span class="cov0" title="0">{
+        for _, reader := range arrbytes </span><span class="cov0" title="0">{
+                mrf.readers = append(mrf.readers, bytes.NewBuffer(reader))
+        }</span>
+}
 
 // Create creates a MultiReader from all added readers.
 func (mrf *MultiReaderFactory) Create() ReaderWriteToLen <span class="cov0" title="0">{
