@@ -1,5 +1,7 @@
 package mailer
 
+// Copied from golang/go and modified see multiReader
+
 import (
 	"bytes"
 	"io"
@@ -78,27 +80,27 @@ func (mr *multiReader) Len() int {
 	return length
 }
 
-// MultiReaderFactory is a utility struct to ease MultiReader creation.
-type MultiReaderFactory struct {
+// MultiReader is a utility struct to ease MultiReader creation.
+type MultiReader struct {
 	readers []ReaderWriteToLen
 }
 
 // AddReader adds the next readers to the factory.
-// The new [MultiReaderFactory] takes ownership of the Readers,
-func (mrf *MultiReaderFactory) AddReader(readers ...ReaderWriteToLen) {
+// The new [MultiReader] takes ownership of the Readers,
+func (mrf *MultiReader) AddReader(readers ...ReaderWriteToLen) {
 	mrf.readers = append(mrf.readers, readers...)
 }
 
 // AddBytes adds the multiple byte slices to the factory.
-// The new [MultiReaderFactory] takes ownership of the bytes,
-func (mrf *MultiReaderFactory) AddBytes(arrbytes ...[]byte) {
+// The new [MultiReader] takes ownership of the bytes,
+func (mrf *MultiReader) AddBytes(arrbytes ...[]byte) {
 	for _, reader := range arrbytes {
 		mrf.readers = append(mrf.readers, bytes.NewBuffer(reader))
 	}
 }
 
-// Create creates a MultiReader from all added readers.
-func (mrf *MultiReaderFactory) Create() ReaderWriteToLen {
+// Reader creates a MultiReader from all added readers.
+func (mrf *MultiReader) Reader() ReaderWriteToLen {
 	if len(mrf.readers) == 0 {
 		return eofReader{}
 	}
@@ -108,7 +110,7 @@ func (mrf *MultiReaderFactory) Create() ReaderWriteToLen {
 	if len(mrf.readers) == 1 {
 		reader = mrf.readers[0]
 	} else {
-		reader = MultiReader(mrf.readers...)
+		reader = NewMultiReader(mrf.readers...)
 	}
 
 	// reset state
@@ -117,11 +119,11 @@ func (mrf *MultiReaderFactory) Create() ReaderWriteToLen {
 	return reader
 }
 
-// MultiReader returns a Reader that's the logical concatenation of
+// NewMultiReader returns a Reader that's the logical concatenation of
 // the provided input readers. They're read sequentially. Once all
 // inputs have returned EOF, Read will return EOF.  If any of the readers
 // return a non-nil, non-EOF error, Read will return that error.
 // The new [Reader] takes ownership of the Readers,
-func MultiReader(readers ...ReaderWriteToLen) ReaderWriteToLen {
+func NewMultiReader(readers ...ReaderWriteToLen) ReaderWriteToLen {
 	return &multiReader{readers}
 }

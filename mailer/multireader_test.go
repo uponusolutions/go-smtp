@@ -15,7 +15,7 @@ func TestClient_Multireader(t *testing.T) {
 	b := bytes.NewBuffer([]byte{'c'})
 	c := bytes.NewBuffer([]byte{'d'})
 
-	res := mailer.MultiReader(a, b, c)
+	res := mailer.NewMultiReader(a, b, c)
 
 	require.Equal(t, 4, res.Len())
 
@@ -54,7 +54,7 @@ func TestMultiReader(t *testing.T) {
 		r1 := strings.NewReader("foo ")
 		r2 := strings.NewReader("")
 		r3 := strings.NewReader("bar")
-		mr = mailer.MultiReader(r1, r2, r3)
+		mr = mailer.NewMultiReader(r1, r2, r3)
 		buf = make([]byte, 20)
 		tests()
 	}
@@ -95,9 +95,9 @@ func TestMultiReader(t *testing.T) {
 
 // Test taken from https://github.com/golang/go/blob/master/src/io/multi_test.go
 func TestMultiReaderAsWriterTo(t *testing.T) {
-	mr := mailer.MultiReader(
+	mr := mailer.NewMultiReader(
 		strings.NewReader("foo "),
-		mailer.MultiReader(
+		mailer.NewMultiReader(
 			strings.NewReader(""),
 			strings.NewReader("bar"),
 		),
