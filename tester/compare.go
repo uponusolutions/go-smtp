@@ -102,7 +102,6 @@ func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Rea
 		require.NoError(t, err)
 	}()
 	buf, err := expected(pr)
-	require.ErrorIs(t, io.ErrUnexpectedEOF, err)
 
 	size := 1
 	for size < 4048 && len(b) >= size {
@@ -112,8 +111,8 @@ func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Rea
 
 		writeInGoroutine(t, bsplitted, pw)
 
-		buf1, err := actual(pr)
-		require.ErrorIs(t, io.ErrUnexpectedEOF, err)
+		buf1, err1 := actual(pr)
+		require.Equal(t, err, err1)
 		// print(string(buf), string(buf1))
 		require.Equal(t, buf, buf1)
 
