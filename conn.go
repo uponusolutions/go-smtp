@@ -1341,6 +1341,9 @@ func (c *Conn) reset() {
 	c.bdatStatus = nil
 	c.bytesReceived = 0
 
+	// BDAT disables the line limit while reading a chunk, the transaction is over now.
+	c.lineLimitReader.LineLimit = c.server.MaxLineLength
+
 	if c.session != nil {
 		c.session.Reset()
 	}

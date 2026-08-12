@@ -1228,6 +1228,38 @@ func TestServer_Chunking_tooLongMessage(t *testing.T) {
 	}
 }
 
+func TestServer_Chunking_lineLimitRestoredAfterReset(t *testing.T) {
+	_, s, c, scanner := testServerAuthenticated(t)
+	defer s.Close()
+	defer c.Close()
+
+	io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanner.Scan()
+	io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanner.Scan()
+
+	io.WriteString(c, "BDAT 8\r\n")
+	io.WriteString(c, "Hey <3\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid BDAT response:", scanner.Text())
+	}
+
+	// The client gives up on the message instead of sending the last chunk.
+	io.WriteString(c, "RSET\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RSET response:", scanner.Text())
+	}
+
+	// The transfer is over, so MaxLineLength should be enforced again.
+	io.WriteString(c, "NOOP "+strings.Repeat("x", s.MaxLineLength)+"\r\n")
+	scanner.Scan()
+	if !strings.HasPrefix(scanner.Text(), "500 ") {
+		t.Fatal("Invalid response to an over-long line:", scanner.Text())
+	}
+}
+
 func TestServer_Chunking_Binarymime(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t)
 	defer s.Close()
