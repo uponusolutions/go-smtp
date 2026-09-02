@@ -129,21 +129,31 @@ func (t *Textproto) WriteLineFlush(line string) error {
 func (t *Textproto) ReadResponse(expectCode int) (code int, message string, err error) {
 	code, continued, message, err := t.readCodeLine(expectCode)
 	multi := continued
-	for continued {
-		line, err := t.ReadLine()
-		if err != nil {
-			return 0, "", err
-		}
+	if continued {
+		var sb strings.Builder
+		sb.WriteString(message)
+		for continued {
+			line, rerr := t.ReadLine()
+			if rerr != nil {
+				return 0, "", rerr
+			}
 
-		var code2 int
-		var moreMessage string
-		code2, continued, moreMessage, err = parseCodeLine(line, 0)
-		if err != nil || code2 != code {
-			message += "\n" + strings.TrimRight(line, "\r\n")
-			continued = true
-			continue
+			// err keeps the status of the first line,
+			// a parse error here only affects how the line is appended.
+			var code2 int
+			var moreMessage string
+			var perr error
+			code2, continued, moreMessage, perr = parseCodeLine(line, 0)
+			if perr != nil || code2 != code {
+				sb.WriteByte('\n')
+				sb.WriteString(strings.TrimRight(line, "\r\n"))
+				continued = true
+				continue
+			}
+			sb.WriteByte('\n')
+			sb.WriteString(moreMessage)
 		}
-		message += "\n" + moreMessage
+		message = sb.String()
 	}
 	if err != nil && multi && message != "" {
 		// replace one line error message with all lines (full message)
