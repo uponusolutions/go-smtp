@@ -60,6 +60,11 @@ const (
 // elide leading dots and detect End-of-Data
 // (<CR><LF>.<CR><LF>) line.
 func (r *dotReader) Read(b []byte) (int, error) {
+	// The end marker was already reached, don't wait for more data.
+	if r.state == stateEOF {
+		return 0, io.EOF
+	}
+
 	if r.limited {
 		if r.n <= 0 {
 			return 0, smtp.ErrDataTooLarge
