@@ -242,11 +242,11 @@ func (c *Client) readResponse(expectCode int) (int, string, error) {
 
 // cmd is a convenience function that sends a command and returns the response
 // textproto.Error returned by c.text.ReadResponse is converted into smtp.
-func (c *Client) cmd(expectCode int, format string, args ...any) (int, string, error) {
+func (c *Client) cmd(expectCode int, line string) (int, string, error) {
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	id, err := c.cfg.text.Cmd(format, args...)
+	id, err := c.cfg.text.Cmd(line)
 	if err != nil {
 		return 0, "", err
 	}
@@ -260,16 +260,14 @@ func (c *Client) cmd(expectCode int, format string, args ...any) (int, string, e
 // server does not support ehlo.
 func (c *Client) helo() error {
 	c.ext = nil
-	_, _, err := c.cmd(250, "HELO %s", c.cfg.localName)
+	_, _, err := c.cmd(250, "HELO "+c.cfg.localName)
 	return err
 }
 
 // ehlo sends the EHLO (extended hello) greeting to the server. It
 // should be the preferred greeting for servers that support it.
 func (c *Client) ehlo() error {
-	cmd := "EHLO"
-
-	_, msg, err := c.cmd(250, "%s %s", cmd, c.cfg.localName)
+	_, msg, err := c.cmd(250, "EHLO "+c.cfg.localName)
 	if err != nil {
 		return err
 	}
@@ -369,7 +367,7 @@ func (c *Client) Verify(addr string, opts *VrfyOptions) error {
 		}
 	}
 
-	_, _, err := c.cmd(250, "%s", sb.String())
+	_, _, err := c.cmd(250, sb.String())
 	return err
 }
 
@@ -394,7 +392,11 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 	} else if resp != nil {
 		resp64 = []byte{'='}
 	}
-	code, msg64, err := c.cmd(0, "%s", strings.TrimSpace(fmt.Sprintf("AUTH %s %s", mech, resp64)))
+	authCmd := "AUTH " + mech
+	if len(resp64) > 0 {
+		authCmd += " " + string(resp64)
+	}
+	code, msg64, err := c.cmd(0, authCmd)
 	for err == nil {
 		var msg []byte
 		switch code {
@@ -423,7 +425,7 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 		}
 		resp64 = make([]byte, encoding.EncodedLen(len(resp)))
 		encoding.Encode(resp64, resp)
-		code, msg64, err = c.cmd(0, "%s", string(resp64))
+		code, msg64, err = c.cmd(0, string(resp64))
 	}
 	return err
 }
@@ -496,7 +498,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		// We can safely discard parameter if server does not support AUTH.
 	}
 
-	_, _, err := c.cmd(250, "%s", sb.String())
+	_, _, err := c.cmd(250, sb.String())
 	return err
 }
 
@@ -550,7 +552,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 			fmt.Fprintf(&sb, " ORCPT=%s;%s", string(opts.OriginalRecipientType), enc)
 		}
 	}
-	if _, _, err := c.cmd(25, "%s", sb.String()); err != nil {
+	if _, _, err := c.cmd(25, sb.String()); err != nil {
 		return err
 	}
 	return nil

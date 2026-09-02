@@ -3,7 +3,6 @@ package textsmtp
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"net/textproto"
 	"strconv"
@@ -47,9 +46,9 @@ func NewTextproto(
 // ErrTooLongLine occurs if the smtp line is too long.
 var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
 
-// Cmd is a convenience method that sends a command after
-// waiting its turn in the pipeline. The command text is the
-// result of formatting format with args and appending \r\n.
+// Cmd is a convenience method that sends a command line after
+// waiting its turn in the pipeline. "\r\n" is appended to line and
+// the writer is flushed.
 // Cmd returns the id of the command, for use with StartResponse and EndResponse.
 //
 // For example, a client might run a HELP command that returns a dot-body
@@ -71,10 +70,10 @@ var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
 //		return nil, err
 //	}
 //	return c.ReadCodeLine(250)
-func (t *Textproto) Cmd(format string, args ...any) (id uint, err error) {
+func (t *Textproto) Cmd(line string) (id uint, err error) {
 	id = t.Next()
 	t.StartRequest(id)
-	err = t.PrintfLineAndFlush(format, args...)
+	err = t.WriteLineFlush(line)
 	t.EndRequest(id)
 	if err != nil {
 		return 0, err
@@ -82,9 +81,9 @@ func (t *Textproto) Cmd(format string, args ...any) (id uint, err error) {
 	return id, nil
 }
 
-// PrintfLine writes the formatted output followed by \r\n.
-func (t *Textproto) PrintfLine(format string, args ...any) error {
-	if _, err := fmt.Fprintf(t.W, format, args...); err != nil {
+// WriteLine writes line followed by \r\n without flushing.
+func (t *Textproto) WriteLine(line string) error {
+	if _, err := t.W.WriteString(line); err != nil {
 		return err
 	}
 
@@ -92,9 +91,9 @@ func (t *Textproto) PrintfLine(format string, args ...any) error {
 	return err
 }
 
-// PrintfLineAndFlush writes the formatted output followed by \r\n anf flushes.
-func (t *Textproto) PrintfLineAndFlush(format string, args ...any) error {
-	err := t.PrintfLine(format, args...)
+// WriteLineFlush writes line followed by \r\n and flushes.
+func (t *Textproto) WriteLineFlush(line string) error {
+	err := t.WriteLine(line)
 	if err == nil {
 		err = t.W.Flush()
 	}
