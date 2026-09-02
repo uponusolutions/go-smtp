@@ -21,7 +21,6 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/textproto"
@@ -367,8 +366,9 @@ func (c *Client) Verify(addr string, opts *VrfyOptions) error {
 
 	var sb strings.Builder
 
-	sb.Grow(2048)
-	fmt.Fprintf(&sb, "VRFY %s", addr)
+	sb.Grow(256)
+	sb.WriteString("VRFY ")
+	sb.WriteString(addr)
 
 	// By default utf8 is preferred
 	if opts == nil || opts.UTF8 != UTF8Disabled {
@@ -457,14 +457,16 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 	}
 
 	var sb strings.Builder
-	// A high enough power of 2 than 510+14+26+11+9+9+39+500
-	sb.Grow(2048)
-	fmt.Fprintf(&sb, "MAIL FROM:<%s>", from)
+	sb.Grow(256)
+	sb.WriteString("MAIL FROM:<")
+	sb.WriteString(from)
+	sb.WriteByte('>')
 	if _, ok := c.ext["8BITMIME"]; ok {
 		sb.WriteString(" BODY=8BITMIME")
 	}
 	if _, ok := c.ext["SIZE"]; ok && opts != nil && opts.Size != 0 {
-		fmt.Fprintf(&sb, " SIZE=%v", opts.Size)
+		sb.WriteString(" SIZE=")
+		sb.WriteString(strconv.FormatInt(opts.Size, 10))
 	}
 	if opts != nil && opts.RequireTLS {
 		if _, ok := c.ext["REQUIRETLS"]; !ok {
@@ -483,7 +485,8 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
 		switch opts.Return {
 		case smtp.DSNReturnFull, smtp.DSNReturnHeaders:
-			fmt.Fprintf(&sb, " RET=%s", string(opts.Return))
+			sb.WriteString(" RET=")
+			sb.WriteString(string(opts.Return))
 		case "":
 			// This space is intentionally left blank
 		default:
@@ -493,19 +496,22 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 			if !textsmtp.IsPrintableASCII(opts.EnvelopeID) {
 				return errors.New("smtp: Malformed ENVID parameter value")
 			}
-			fmt.Fprintf(&sb, " ENVID=%s", encodeXtext(opts.EnvelopeID))
+			sb.WriteString(" ENVID=")
+			sb.WriteString(encodeXtext(opts.EnvelopeID))
 		}
 	}
 	if opts != nil && opts.Auth != nil {
 		if _, ok := c.ext["AUTH"]; ok {
-			fmt.Fprintf(&sb, " AUTH=%s", encodeXtext(*opts.Auth))
+			sb.WriteString(" AUTH=")
+			sb.WriteString(encodeXtext(*opts.Auth))
 		}
 		// We can safely discard parameter if server does not support AUTH.
 	}
 
 	if opts != nil && opts.XOORG != nil {
 		if _, ok := c.ext["XOORG"]; ok {
-			fmt.Fprintf(&sb, " XOORG=%s", encodeXtext(*opts.XOORG))
+			sb.WriteString(" XOORG=")
+			sb.WriteString(encodeXtext(*opts.XOORG))
 		}
 		// We can safely discard parameter if server does not support AUTH.
 	}
@@ -528,9 +534,10 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	}
 
 	var sb strings.Builder
-	// A high enough power of 2 than 510+29+501
-	sb.Grow(2048)
-	fmt.Fprintf(&sb, "RCPT TO:<%s>", to)
+	sb.Grow(256)
+	sb.WriteString("RCPT TO:<")
+	sb.WriteString(to)
+	sb.WriteByte('>')
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
 		if len(opts.Notify) != 0 {
 			sb.WriteString(" NOTIFY=")
@@ -561,7 +568,10 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 			default:
 				return errors.New("smtp: Unknown address type")
 			}
-			fmt.Fprintf(&sb, " ORCPT=%s;%s", string(opts.OriginalRecipientType), enc)
+			sb.WriteString(" ORCPT=")
+			sb.WriteString(string(opts.OriginalRecipientType))
+			sb.WriteByte(';')
+			sb.WriteString(enc)
 		}
 	}
 	if _, _, err := c.cmd(25, sb.String()); err != nil {
