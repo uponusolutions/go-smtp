@@ -205,6 +205,26 @@ func TestDotReader(t *testing.T) {
 		require.Equal(t, []byte("anot.her\n"), b)
 	})
 
+	t.Run("LeadingDotAndEmpty", func(t *testing.T) {
+		// end marker at the very start (empty message)
+		r := textsmtp.NewDotReader(bufio.NewReader(strings.NewReader(".\r\n")), 0)
+		b, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.Empty(t, b)
+
+		// leading dot on the first line is unstuffed
+		r = textsmtp.NewDotReader(bufio.NewReader(strings.NewReader("..foo\r\nbar\r\n.\r\n")), 0)
+		b, err = io.ReadAll(r)
+		require.NoError(t, err)
+		require.Equal(t, []byte(".foo\r\nbar\r\n"), b)
+
+		// a first line starting with a single dot is unstuffed to empty
+		r = textsmtp.NewDotReader(bufio.NewReader(strings.NewReader(".foo\r\n.\r\n")), 0)
+		b, err = io.ReadAll(r)
+		require.NoError(t, err)
+		require.Equal(t, []byte("foo\r\n"), b)
+	})
+
 	t.Run("Limit", func(t *testing.T) {
 		input := "dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n"
 

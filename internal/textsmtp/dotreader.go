@@ -13,6 +13,7 @@ var crlfdot = []byte{'\r', '\n', '.'}
 type dotReader struct {
 	r       *bufio.Reader
 	state   int
+	begun   bool // whether the first line has been handled.
 	limited bool
 	n       int64 // Maximum bytes remaining.
 }
@@ -86,6 +87,31 @@ func (r *dotReader) Read(b []byte) (int, error) {
 
 	// min 5, max buffer size, default len(b)
 	c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+
+	// The very first line is not preceded by \r\n, so a leading dot
+	// (dot-stuffing or the ".\r\n" end marker) would be missed by the
+	// crlfdot scan below. Handle it once here, mirroring the reference
+	// state machine (a leading dot, and a following \r, are elided).
+	if !r.begun {
+		r.begun = true
+		if len(c) > 0 && c[0] == '.' {
+			_, _ = r.r.Discard(1) // drop the stuffing dot
+			if len(c) >= 2 && c[1] == '\r' {
+				_, _ = r.r.Discard(1) // drop the dot-CR
+				if len(c) >= 3 && c[2] == '\n' {
+					// ".\r\n" at stream start is the end marker.
+					_, _ = r.r.Discard(1)
+					r.state = stateEOF
+					return 0, io.EOF
+				}
+			}
+			// re-peek so the scan below sees the unstuffed content
+			if r.r.Buffered() < 5 {
+				_, _ = r.r.Peek(5)
+			}
+			c, err = r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+		}
+	}
 
 	// write \n
 	if r.state == stateCR {
