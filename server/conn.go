@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -907,6 +908,31 @@ func (c *Conn) writeStatus(status *smtp.Status) {
 	c.writeResponse(status.Code, status.EnhancedCode, status.Message)
 }
 
+var crlf = []byte{'\r', '\n'}
+
+// writeCode writes a three digit status code without allocating.
+func writeCode(w *bufio.Writer, code int) {
+	if code >= 100 && code < 1000 {
+		_ = w.WriteByte(byte('0' + code/100))
+		_ = w.WriteByte(byte('0' + code/10%10))
+		_ = w.WriteByte(byte('0' + code%10))
+		return
+	}
+	var buf [20]byte
+	_, _ = w.Write(strconv.AppendInt(buf[:0], int64(code), 10))
+}
+
+// writeEnhCodePart writes a single part of an enhanced code without
+// allocating for the common single digit case.
+func writeEnhCodePart(w *bufio.Writer, n int) {
+	if n >= 0 && n < 10 {
+		_ = w.WriteByte(byte('0' + n))
+		return
+	}
+	var buf [20]byte
+	_, _ = w.Write(strconv.AppendInt(buf[:0], int64(n), 10))
+}
+
 func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	if logger := c.logger(); logger.Enabled(c.ctx, slog.LevelDebug) {
 		logger.DebugContext(c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", text))
@@ -929,6 +955,8 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 		}
 	}
 
+	w := c.text.W
+
 	p := 0
 	for {
 		i := strings.IndexByte(text[p:], '\n')
@@ -936,15 +964,25 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 			break
 		}
 
-		_ = c.text.PrintfLine("%d-%v", code, text[p:p+i])
+		writeCode(w, code)
+		_ = w.WriteByte('-')
+		_, _ = w.WriteString(text[p : p+i])
+		_, _ = w.Write(crlf)
 		p += i + 1
 	}
 
-	if enhCode == smtp.NoEnhancedCode {
-		_ = c.text.PrintfLine("%d %v", code, text[p:])
-	} else {
-		_ = c.text.PrintfLine("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[p:])
+	writeCode(w, code)
+	_ = w.WriteByte(' ')
+	if enhCode != smtp.NoEnhancedCode {
+		writeEnhCodePart(w, enhCode[0])
+		_ = w.WriteByte('.')
+		writeEnhCodePart(w, enhCode[1])
+		_ = w.WriteByte('.')
+		writeEnhCodePart(w, enhCode[2])
+		_ = w.WriteByte(' ')
 	}
+	_, _ = w.WriteString(text[p:])
+	_, _ = w.Write(crlf)
 
 	// PIPELINE support
 	// If there is something buffered in c.text.R then we can assume another command is following.
