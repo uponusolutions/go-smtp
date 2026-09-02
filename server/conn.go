@@ -471,7 +471,8 @@ func (c *Conn) handleMail(arg string) error {
 	c.binarymime = false
 	// This is where the Conn may put BODY=8BITMIME, but we already
 	// read the DATA as bytes, so it does not effect our processing.
-	for key, value := range args {
+	for _, arg := range args {
+		key, value := arg.Key, arg.Value
 		switch key {
 		case "SIZE":
 			size, err := strconv.ParseUint(value, 10, 32)
@@ -599,7 +600,8 @@ func (c *Conn) handleRcpt(arg string) error {
 
 	opts := &smtp.RcptOptions{}
 
-	for key, value := range args {
+	for _, arg := range args {
+		key, value := arg.Key, arg.Value
 		switch key {
 		case "NOTIFY":
 			if !c.server.enableDSN {
@@ -656,8 +658,8 @@ func (c *Conn) handleVrfy(arg string) error {
 
 	opts := &smtp.VrfyOptions{}
 
-	for key := range args {
-		if key == "SMTPUTF8" {
+	for _, arg := range args {
+		if arg.Key == "SMTPUTF8" {
 			if !c.server.enableSMTPUTF8 {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
 			}
