@@ -906,7 +906,9 @@ func (c *Conn) writeStatus(status *smtp.Status) {
 }
 
 func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
-	c.logger().DebugContext(c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", text))
+	if logger := c.logger(); logger.Enabled(c.ctx, slog.LevelDebug) {
+		logger.DebugContext(c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", text))
+	}
 
 	// TODO: error handling
 	if c.server.writeTimeout != 0 {
@@ -965,7 +967,9 @@ func (c *Conn) readLine() (string, error) {
 	}
 	line, err := c.text.ReadLine()
 	if err == nil {
-		c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
+		if logger := c.logger(); logger.Enabled(c.ctx, slog.LevelDebug) {
+			logger.DebugContext(c.ctx, "read", slog.String("line", line))
+		}
 	}
 	return line, err
 }
