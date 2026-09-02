@@ -98,8 +98,8 @@ func (c *Conn) handle(cmd string, arg string) error {
 	if cmd == "" {
 		return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
 	}
-	cmd = strings.ToUpper(cmd)
 
+	// cmd is already uppercased by parse.Cmd
 	switch c.state {
 	case stateInit, stateUpgrade:
 		return c.handleStateInit(cmd, arg)
