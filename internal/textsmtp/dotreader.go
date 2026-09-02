@@ -89,6 +89,14 @@ func (r *dotReader) Read(b []byte) (int, error) {
 
 	// write \n
 	if r.state == stateCR {
+		if len(c) < 5 {
+			// The stream ended inside the \r\n.\r\n end marker detection,
+			// there is not enough data left to decide.
+			if err == nil || err == io.EOF {
+				err = io.ErrUnexpectedEOF
+			}
+			return 0, err
+		}
 		b[0] = '\n'
 		n++
 		skipped += 2
