@@ -808,7 +808,7 @@ func (c *Conn) handleData(arg string) error {
 		// We have recipients, go to accept data
 		c.writeResponse(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>")
 
-		r := textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
+		r = textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
 		return r
 	}
 
