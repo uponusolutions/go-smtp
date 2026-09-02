@@ -20,6 +20,12 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
 
+// Statuses for the accepted MAIL and RCPT commands, allocated once.
+var (
+	statusMailAccepted = smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "Roger, accepting mail")
+	statusRcptAccepted = smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "I'll make sure it gets delivered")
+)
+
 type state int32
 
 const (
@@ -572,7 +578,7 @@ func (c *Conn) handleMail(arg string) error {
 	}
 
 	c.state = stateMail
-	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
+	return statusMailAccepted
 }
 
 // MAIL state -> waiting for RCPTs followed by DATA
@@ -643,7 +649,7 @@ func (c *Conn) handleRcpt(arg string) error {
 	}
 
 	c.recipients++
-	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
+	return statusRcptAccepted
 }
 
 func (c *Conn) handleVrfy(arg string) error {
