@@ -452,8 +452,19 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Mail(from string, opts *MailOptions) error {
-	if err := validateLine(from); err != nil {
+	line, err := c.buildMail(from, opts)
+	if err != nil {
 		return err
+	}
+
+	_, _, err = c.cmd(250, line)
+	return err
+}
+
+// buildMail builds the MAIL command line for from and opts.
+func (c *Client) buildMail(from string, opts *MailOptions) (string, error) {
+	if err := validateLine(from); err != nil {
+		return "", err
 	}
 
 	var sb strings.Builder
@@ -470,7 +481,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 	}
 	if opts != nil && opts.RequireTLS {
 		if _, ok := c.ext["REQUIRETLS"]; !ok {
-			return errors.New("smtp: server does not support REQUIRETLS")
+			return "", errors.New("smtp: server does not support REQUIRETLS")
 		}
 		sb.WriteString(" REQUIRETLS")
 	}
@@ -479,7 +490,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		if _, ok := c.ext["SMTPUTF8"]; ok {
 			sb.WriteString(" SMTPUTF8")
 		} else if opts != nil && opts.UTF8 == UTF8Force {
-			return errors.New("smtp: server does not support SMTPUTF8")
+			return "", errors.New("smtp: server does not support SMTPUTF8")
 		}
 	}
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
@@ -490,11 +501,11 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		case "":
 			// This space is intentionally left blank
 		default:
-			return errors.New("smtp: Unknown RET parameter value")
+			return "", errors.New("smtp: Unknown RET parameter value")
 		}
 		if opts.EnvelopeID != "" {
 			if !textsmtp.IsPrintableASCII(opts.EnvelopeID) {
-				return errors.New("smtp: Malformed ENVID parameter value")
+				return "", errors.New("smtp: Malformed ENVID parameter value")
 			}
 			sb.WriteString(" ENVID=")
 			sb.WriteString(encodeXtext(opts.EnvelopeID))
@@ -516,8 +527,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		// We can safely discard parameter if server does not support AUTH.
 	}
 
-	_, _, err := c.cmd(250, sb.String())
-	return err
+	return sb.String(), nil
 }
 
 // Rcpt issues a RCPT command to the server using the provided email address.
@@ -529,8 +539,21 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
-	if err := validateLine(to); err != nil {
+	line, err := c.buildRcpt(to, opts)
+	if err != nil {
 		return err
+	}
+
+	if _, _, err := c.cmd(25, line); err != nil {
+		return err
+	}
+	return nil
+}
+
+// buildRcpt builds the RCPT command line for to and opts.
+func (c *Client) buildRcpt(to string, opts *smtp.RcptOptions) (string, error) {
+	if err := validateLine(to); err != nil {
+		return "", err
 	}
 
 	var sb strings.Builder
@@ -542,7 +565,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 		if len(opts.Notify) != 0 {
 			sb.WriteString(" NOTIFY=")
 			if err := textsmtp.CheckNotifySet(opts.Notify); err != nil {
-				return errors.New("smtp: Malformed NOTIFY parameter value")
+				return "", errors.New("smtp: Malformed NOTIFY parameter value")
 			}
 			for i, v := range opts.Notify {
 				if i != 0 {
@@ -556,7 +579,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 			switch opts.OriginalRecipientType {
 			case smtp.DSNAddressTypeRFC822:
 				if !textsmtp.IsPrintableASCII(opts.OriginalRecipient) {
-					return errors.New("smtp: Illegal address")
+					return "", errors.New("smtp: Illegal address")
 				}
 				enc = encodeXtext(opts.OriginalRecipient)
 			case smtp.DSNAddressTypeUTF8:
@@ -566,7 +589,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 					enc = encodeUTF8AddrXtext(opts.OriginalRecipient)
 				}
 			default:
-				return errors.New("smtp: Unknown address type")
+				return "", errors.New("smtp: Unknown address type")
 			}
 			sb.WriteString(" ORCPT=")
 			sb.WriteString(string(opts.OriginalRecipientType))
@@ -574,10 +597,81 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 			sb.WriteString(enc)
 		}
 	}
-	if _, _, err := c.cmd(25, sb.String()); err != nil {
-		return err
+	return sb.String(), nil
+}
+
+// MailAndRcpt sends the MAIL command and all RCPT commands for the
+// given recipients. If the server supports PIPELINING (RFC 2920) all
+// commands are sent in one batch and the responses are read afterwards,
+// saving one network round trip per command.
+//
+// If rcptOpts is shorter than rcpts, default options are used for the
+// remaining recipients.
+//
+// rcptErrs contains one entry per recipient, nil marks an accepted
+// recipient. If err is non-nil (e.g. the MAIL command failed),
+// rcptErrs must be ignored.
+func (c *Client) MailAndRcpt(from string, mailOpts *MailOptions, rcpts []string, rcptOpts []*smtp.RcptOptions) (rcptErrs []error, err error) {
+	rcptOptsAt := func(i int) *smtp.RcptOptions {
+		if len(rcptOpts) > i {
+			return rcptOpts[i]
+		}
+		return nil
 	}
-	return nil
+
+	if _, ok := c.ext["PIPELINING"]; !ok {
+		// The server doesn't support pipelining, fallback to sequential commands.
+		if err := c.Mail(from, mailOpts); err != nil {
+			return nil, err
+		}
+		rcptErrs = make([]error, len(rcpts))
+		for i, to := range rcpts {
+			rcptErrs[i] = c.Rcpt(to, rcptOptsAt(i))
+		}
+		return rcptErrs, nil
+	}
+
+	mailLine, err := c.buildMail(from, mailOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	rcptLines := make([]string, len(rcpts))
+	for i, to := range rcpts {
+		if rcptLines[i], err = c.buildRcpt(to, rcptOptsAt(i)); err != nil {
+			return nil, err
+		}
+	}
+
+	c.setDeadline(c.cfg.commandTimeout)
+	defer c.clearDeadline()
+
+	// send all commands in one batch
+	if err = c.cfg.text.WriteLine(mailLine); err != nil {
+		return nil, err
+	}
+	for _, line := range rcptLines {
+		if err = c.cfg.text.WriteLine(line); err != nil {
+			return nil, err
+		}
+	}
+	if err = c.cfg.text.W.Flush(); err != nil {
+		return nil, err
+	}
+
+	// read all responses, even if one of them signals an error
+	_, _, mailErr := c.readResponse(250)
+
+	rcptErrs = make([]error, len(rcpts))
+	for i := range rcpts {
+		c.setDeadline(c.cfg.commandTimeout)
+		_, _, rcptErrs[i] = c.readResponse(25)
+	}
+
+	if mailErr != nil {
+		return nil, mailErr
+	}
+	return rcptErrs, nil
 }
 
 // Content issues a DATA or BDAT (prefer BDAT if available) command to

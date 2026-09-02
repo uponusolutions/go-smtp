@@ -154,33 +154,30 @@ func (c *Mailer) prepare(
 		}
 	}
 
-	// MAIL FROM:
-	if err := c.client.Mail(from, mailOptions); err != nil {
+	// MAIL FROM: and RCPT TO:, pipelined if the server supports it
+	rcptErrs, err := c.client.MailAndRcpt(from, mailOptions, rcpt, rcptsOptions)
+	if err != nil {
 		return nil, nil, err
 	}
 
 	failures := []resolve.Failure{}
 
-	// RCPT TO:
-	for i, addr := range rcpt {
-		var rcptsOption *smtp.RcptOptions
-		if len(rcptsOptions) > i {
-			rcptsOption = rcptsOptions[i]
+	for i, rcptErr := range rcptErrs {
+		if rcptErr == nil {
+			continue
 		}
 
-		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
-			smtpErr := &smtp.Status{}
+		smtpErr := &smtp.Status{}
 
-			// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
-			if c.cfg.abortOnRcptReject || !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
-				return nil, nil, err
-			}
-
-			failures = append(failures, resolve.Failure{
-				Rcpts: []string{addr},
-				Error: err,
-			})
+		// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
+		if c.cfg.abortOnRcptReject || !errors.As(rcptErr, &smtpErr) || smtpErr.Code != 550 {
+			return nil, nil, rcptErr
 		}
+
+		failures = append(failures, resolve.Failure{
+			Rcpts: []string{rcpt[i]},
+			Error: rcptErr,
+		})
 	}
 
 	// DATA
