@@ -42,6 +42,9 @@ jobs:
           branch: main
           workflow_conclusion: success
           name: main.breakdown
+          # artifacts expire after 90 days, a missing baseline should not
+          # fail the check, the diff to main is just omitted then
+          if_no_artifact_found: warn
 
       - name: check test coverage
         uses: vladopajic/go-test-coverage@v2
