@@ -95,12 +95,9 @@ func WriterCompareTest(t *testing.T, fs *embed.FS, path string, expected func(io
 func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Reader) ([]byte, error), actual func(io.Reader) ([]byte, error)) {
 	pr, pw := io.Pipe()
 
-	go func() {
-		_, err := pw.Write(b)
-		require.NoError(t, err)
-		err = pw.Close()
-		require.NoError(t, err)
-	}()
+	// pw is passed as parameter so reassigning pr/pw below
+	// doesn't race with a still running writer goroutine.
+	writeInGoroutine(t, [][]byte{b}, pw)
 	buf, err := expected(pr)
 
 	size := 1
