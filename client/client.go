@@ -27,6 +27,7 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
@@ -188,12 +189,23 @@ func (c *Client) Close() error {
 	return err
 }
 
+// setDeadline sets a deadline on the connection,
+// same as smtp.Timeout but without allocating a closure.
+func (c *Client) setDeadline(d time.Duration) {
+	_ = c.conn.SetDeadline(time.Now().Add(d))
+}
+
+// clearDeadline removes the deadline from the connection.
+func (c *Client) clearDeadline() {
+	_ = c.conn.SetDeadline(time.Time{})
+}
+
 // Greet reads the greeting of the server
 // if an error occurred the connection is closed
 func (c *Client) greet() error {
 	// Initial greeting timeout. RFC 5321 recommends 5 minutes.
-	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
-	defer timeout()
+	c.setDeadline(c.cfg.commandTimeout)
+	defer c.clearDeadline()
 
 	_, msg, err := c.readResponse(220)
 	if err != nil {
@@ -243,8 +255,8 @@ func (c *Client) readResponse(expectCode int) (int, string, error) {
 // cmd is a convenience function that sends a command and returns the response
 // textproto.Error returned by c.text.ReadResponse is converted into smtp.
 func (c *Client) cmd(expectCode int, line string) (int, string, error) {
-	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
-	defer timeout()
+	c.setDeadline(c.cfg.commandTimeout)
+	defer c.clearDeadline()
 
 	id, err := c.cfg.text.Cmd(line)
 	if err != nil {

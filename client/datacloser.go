@@ -3,8 +3,6 @@ package client
 import (
 	"errors"
 	"io"
-
-	"github.com/uponusolutions/go-smtp"
 )
 
 // DataCloser implement an io.WriteCloser with the additional
@@ -35,8 +33,8 @@ func (d *DataCloser) CloseWithResponse() (code int, msg string, err error) {
 		return 0, "", err
 	}
 
-	timeout := smtp.Timeout(d.c.conn, d.c.cfg.submissionTimeout)
-	defer timeout()
+	d.c.setDeadline(d.c.cfg.submissionTimeout)
+	defer d.c.clearDeadline()
 
 	code, msg, err = d.c.readResponse(250)
 
