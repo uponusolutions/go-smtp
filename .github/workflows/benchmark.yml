@@ -13,10 +13,8 @@ jobs:
     name: Benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "stable"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
       - name: Run benchmark
         run: export SETBYTES=NO && go test ./... -bench . -benchtime=10s -run ^$ | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt  && sed -i 's/BenchmarkDotReader\//BenchmarkDotReader/g' output.txt  && sed -i 's/BenchmarkDotWriter\//BenchmarkDotWriter/g' output.txt
       - name: Store benchmark result

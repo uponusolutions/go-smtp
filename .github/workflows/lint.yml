@@ -13,11 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version-file: go.tool.mod
+          go-version: 0.27.1 # https://github.com/actions/setup-go/issues/746
           cache-dependency-path: go.tool.sum
       - name: execute linter
         run: go tool -modfile=go.tool.mod golangci-lint run
