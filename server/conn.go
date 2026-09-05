@@ -390,12 +390,12 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 		caps.WriteString("\nXOORG")
 	}
 	if c.server.maxMessageBytes > 0 {
-		caps.WriteString(fmt.Sprintf("\nSIZE %v", c.server.maxMessageBytes))
+		fmt.Fprintf(&caps, "\nSIZE %v", c.server.maxMessageBytes)
 	} else {
 		caps.WriteString("\nSIZE")
 	}
 	if c.server.maxRecipients > 0 {
-		caps.WriteString(fmt.Sprintf("\nLIMITS RCPTMAX=%v", c.server.maxRecipients))
+		fmt.Fprintf(&caps, "\nLIMITS RCPTMAX=%v", c.server.maxRecipients)
 	}
 
 	return smtp.NewStatus(250, smtp.NoEnhancedCode, caps.String())
