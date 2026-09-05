@@ -6,10 +6,34 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
+
+// Parses the BY argument defined in RFC2852 section 4.
+// Returns pointer to options or nil if invalid.
+func parseDeliverByArgument(arg string) *smtp.DeliverByOptions {
+	secondsStr, modeStr, ok := strings.Cut(arg, ";")
+	if !ok {
+		return nil
+	}
+	modeStr, traceValue := strings.CutSuffix(modeStr, "T")
+	if modeStr != string(smtp.DeliverByNotify) && modeStr != string(smtp.DeliverByReturn) {
+		return nil
+	}
+	modeValue := smtp.DeliverByMode(modeStr)
+	secondsValue, err := strconv.Atoi(secondsStr)
+	if err != nil || (modeValue == smtp.DeliverByReturn && secondsValue < 1) {
+		return nil
+	}
+	return &smtp.DeliverByOptions{
+		Time:  time.Duration(secondsValue) * time.Second,
+		Mode:  modeValue,
+		Trace: traceValue,
+	}
+}
 
 func decodeSASLResponse(s string) ([]byte, error) {
 	if s == "=" {

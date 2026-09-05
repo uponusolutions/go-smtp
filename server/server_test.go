@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-sasl"
@@ -529,8 +531,10 @@ func TestServerCancelSASL(t *testing.T) {
 
 func TestServerEmptyFrom1(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:\r\n")
 	scanner.Scan()
@@ -541,8 +545,10 @@ func TestServerEmptyFrom1(t *testing.T) {
 
 func TestServerEmptyFrom2(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<>\r\n")
 	scanner.Scan()
@@ -557,8 +563,10 @@ func TestServerPanicRecover(t *testing.T) {
 		server.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	be.panicOnMail = true
 
@@ -571,8 +579,10 @@ func TestServerPanicRecover(t *testing.T) {
 
 func TestServerSMTPUTF8(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableSMTPUTF8(true))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book> SMTPUTF8\r\n")
 	scanner.Scan()
@@ -583,8 +593,10 @@ func TestServerSMTPUTF8(t *testing.T) {
 
 func TestServerSMTPUTF8_Disabled(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book> SMTPUTF8\r\n")
 	scanner.Scan()
@@ -595,8 +607,10 @@ func TestServerSMTPUTF8_Disabled(t *testing.T) {
 
 func TestServer8BITMIME(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book> BODY=8bitMIME\r\n")
 	scanner.Scan()
@@ -607,8 +621,10 @@ func TestServer8BITMIME(t *testing.T) {
 
 func TestServer_BODYInvalidValue(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book> BODY=RABIIT\r\n")
 	scanner.Scan()
@@ -619,8 +635,10 @@ func TestServer_BODYInvalidValue(t *testing.T) {
 
 func TestServerUnknownArg(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book> RABIIT\r\n")
 	scanner.Scan()
@@ -631,8 +649,10 @@ func TestServerUnknownArg(t *testing.T) {
 
 func TestServerBadSize(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book> SIZE=rabbit\r\n")
 	scanner.Scan()
@@ -643,8 +663,10 @@ func TestServerBadSize(t *testing.T) {
 
 func TestServerTooBig(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxMessageBytes(4294967294))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book> SIZE=4294967295\r\n")
 	scanner.Scan()
@@ -655,8 +677,10 @@ func TestServerTooBig(t *testing.T) {
 
 func TestServerEmptyTo(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -673,8 +697,10 @@ func TestServerEmptyTo(t *testing.T) {
 
 func TestServer(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -722,8 +748,10 @@ func TestServer(t *testing.T) {
 
 func TestServerPipeline(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c,
 		"MAIL FROM:<root@nsa.gov>\r\nRCPT TO:<root@gchq.gov.uk>\r\n"+
@@ -767,8 +795,10 @@ func TestServerPipeline(t *testing.T) {
 
 func TestServer_LFDotLF(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -811,8 +841,10 @@ func TestServer_LFDotLF(t *testing.T) {
 
 func TestServer_EmptyMessage(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -853,8 +885,10 @@ func TestServer_authDisabled(t *testing.T) {
 	bei.authDisabled = true
 
 	_, s, c, scanner, caps := testServerEhlo(t, bei)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	if _, ok := caps["AUTH PLAIN"]; ok {
 		t.Fatal("AUTH PLAIN capability is present when auth is disabled")
@@ -871,8 +905,10 @@ func TestServer_authWrongMechanism(t *testing.T) {
 	bei := new(backend)
 
 	_, s, c, scanner, caps := testServerEhlo(t, bei)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	if _, ok := caps["AUTH PLAIN"]; !ok {
 		t.Fatal("AUTH PLAIN capability isn't present when auth is enabled")
@@ -1036,8 +1072,10 @@ func TestServer_tooLongLine(t *testing.T) {
 
 func TestServer_anonymousUserError(t *testing.T) {
 	be, s, c, scanner, _ := testServerEhlo(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	be.userErr = smtp.ErrAuthRequired
 
@@ -1050,8 +1088,10 @@ func TestServer_anonymousUserError(t *testing.T) {
 
 func TestServer_anonymousUserOK(t *testing.T) {
 	be, s, c, scanner, _ := testServerEhlo(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM: root@nsa.gov\r\n")
 	scanner.Scan()
@@ -1074,8 +1114,10 @@ func TestServer_anonymousUserOK(t *testing.T) {
 
 func TestServer_recipientNecessary(t *testing.T) {
 	be, s, c, scanner, _ := testServerEhlo(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM: root@nsa.gov\r\n")
 	scanner.Scan()
@@ -1107,8 +1149,10 @@ func TestServer_recipientNecessary(t *testing.T) {
 
 func TestServer_authParam_invalidHexchar(t *testing.T) {
 	_, s, c, scanner, _ := testServerEhlo(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	// Invalid HEXCHAR
 	_, _ = io.WriteString(c, "MAIL FROM: root@nsa.gov AUTH=<hey+A>\r\n")
@@ -1127,8 +1171,10 @@ func TestServer_authParam_invalidHexchar(t *testing.T) {
 
 func TestServer_authParam(t *testing.T) {
 	be, s, c, scanner, _ := testServerEhlo(t, nil)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	// https://tools.ietf.org/html/rfc4954#section-4
 	// >servers that advertise support for this
@@ -1162,8 +1208,10 @@ func TestServer_authParam(t *testing.T) {
 
 func TestServer_Chunking(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -1209,8 +1257,10 @@ func TestServer_Chunking(t *testing.T) {
 
 func TestServer_Chunking_Large(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true), server.WithMaxLineLength(100))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	largeMessage := strings.Repeat("a", 5000)
 
@@ -1258,8 +1308,10 @@ func TestServer_Chunking_Large(t *testing.T) {
 
 func TestServer_Chunking_Reset(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 	be.dataErrors = make(chan error, 10)
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
@@ -1313,8 +1365,10 @@ func TestServer_Chunking_Reset(t *testing.T) {
 
 func TestServer_Chunking_Close(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 	be.dataErrors = make(chan error, 10)
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
@@ -1350,8 +1404,10 @@ func TestServer_Chunking_Close(t *testing.T) {
 
 func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 	be.dataErrors = make(chan error, 10)
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
@@ -1379,8 +1435,10 @@ func TestServer_Chunking_ClosedInTheMiddle(t *testing.T) {
 
 func TestServer_Chunking_EarlyError(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	be.dataErr = &smtp.Status{
 		Code:         555,
@@ -1410,8 +1468,10 @@ func TestServer_Chunking_EarlyError(t *testing.T) {
 
 func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableCHUNKING(true))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	be.dataErr = &smtp.Status{
 		Code:         555,
@@ -1452,7 +1512,10 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 
 func TestServer_Chunking_tooLongMessage(t *testing.T) {
 	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxMessageBytes(50), server.WithEnableCHUNKING(true))
-	defer func() { _ = s.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -1480,8 +1543,10 @@ func TestServer_Chunking_Binarymime(t *testing.T) {
 		server.WithEnableBINARYMIME(true),
 		server.WithEnableCHUNKING(true),
 	)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov> BODY=BINARYMIME\r\n")
 	scanner.Scan()
@@ -1525,12 +1590,212 @@ func TestServer_Chunking_Binarymime(t *testing.T) {
 	}
 }
 
+func TestServerRRVS(t *testing.T) {
+	be, s, c, scanner, caps := testServerEhlo(t, nil,
+		server.WithEnableRRVS(true))
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	if _, ok := caps["RRVS"]; !ok {
+		t.Fatal("Missing capability: RRVS")
+	}
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanner.Scan()
+
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk> RRVS=\r\n")
+	scanner.Scan()
+
+	if !strings.HasPrefix(scanner.Text(), "501 5.5.4") {
+		t.Fatal("Unexpected res on malformed RRVS parameter value:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk> RRVS=1234\r\n")
+	scanner.Scan()
+
+	if !strings.HasPrefix(scanner.Text(), "501 5.5.4 ") {
+		t.Fatal("Unexpected res on malformed RRVS parameter value:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk> RRVS=2014-04-03T23:01:00Z\r\n")
+	scanner.Scan()
+
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RRVS parameter value:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "RCPT TO:<root@bnd.bund.de> RRVS=2020-03-19T11:13:00Z;ign0r3.th1s;othr_stuff\r\n")
+	scanner.Scan()
+
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid RRVS parameter value:", scanner.Text())
+	}
+
+	// complete the transaction
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanner.Scan()
+	_, _ = io.WriteString(c, "Hey <3\r\n")
+	_, _ = io.WriteString(c, ".\r\n")
+	scanner.Scan()
+
+	opts := be.anonmsgs[0].RcptOpts
+	if opts == nil || len(opts) != 2 {
+		t.Fatal("Invalid number of recipients:", opts)
+	}
+
+	if !opts[0].RequireRecipientValidSince.Equal(time.Date(2014, time.April, 3, 23, 1, 0, 0, time.UTC)) {
+		t.Fatal("Invalid RRVS parameter value:", fmt.Sprintf("%#v", opts[0].RequireRecipientValidSince))
+	}
+
+	if !opts[1].RequireRecipientValidSince.Equal(time.Date(2020, time.March, 19, 11, 13, 0, 0, time.UTC)) {
+		t.Fatal("Invalid RRVS parameter value:", fmt.Sprintf("%#v", opts[1].RequireRecipientValidSince))
+	}
+}
+
+func TestServerDELIVERBY(t *testing.T) {
+	be, s, c, scanner, caps := testServerEhlo(t, nil,
+		server.WithEnableDELIVERBY(true),
+		server.WithMinimumDeliverByTime(50*time.Second),
+	)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	if _, ok := caps["DELIVERBY 50"]; !ok {
+		t.Fatal("Missing capability: DELIVERBY")
+	}
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanner.Scan()
+
+	malformedMsgs := []string{
+		"RCPT TO:<root@gchq.gov.uk> BY=",
+		"RCPT TO:<root@gchq.gov.uk> BY=1234",
+		"RCPT TO:<root@gchq.gov.uk> BY=123;RT;",
+		"RCPT TO:<root@gchq.gov.uk> BY=0;R",
+		"RCPT TO:<root@gchq.gov.uk> BY=49;RT",
+	}
+
+	for _, msg := range malformedMsgs {
+		_, _ = io.WriteString(c, msg+"\r\n")
+		scanner.Scan()
+		if !strings.HasPrefix(scanner.Text(), "501 5.5.4") {
+			t.Fatal("Unexpected res on malformed BY parameter value:", scanner.Text())
+		}
+	}
+
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk> BY=100;NT\r\n")
+	scanner.Scan()
+
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid BY parameter value:", scanner.Text())
+	}
+
+	// complete the transaction
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanner.Scan()
+	_, _ = io.WriteString(c, "Hey <3\r\n")
+	_, _ = io.WriteString(c, ".\r\n")
+	scanner.Scan()
+
+	opts := be.anonmsgs[0].RcptOpts
+	if opts == nil || len(opts) != 1 {
+		t.Fatal("Invalid number of recipients:", opts)
+	}
+
+	deliverByOpts := opts[0].DeliverBy
+
+	if deliverByOpts == nil {
+		t.Fatal("Deliver by options is nil:", opts)
+	}
+
+	expectedDeliverByOpts := smtp.DeliverByOptions{
+		Time:  100 * time.Second,
+		Mode:  smtp.DeliverByNotify,
+		Trace: true,
+	}
+
+	if deliverByOpts.Time != expectedDeliverByOpts.Time ||
+		deliverByOpts.Mode != expectedDeliverByOpts.Mode ||
+		deliverByOpts.Trace != expectedDeliverByOpts.Trace {
+		t.Fatal("Incorrect BY parameter value:", fmt.Sprintf("expected %#v, got %#v", expectedDeliverByOpts, deliverByOpts))
+	}
+}
+
+func TestServerMTPRIORITY(t *testing.T) {
+	be, s, c, scanner, caps := testServerEhlo(t,
+		nil, server.WithEnableMTPRIORITY(true),
+	)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	if _, ok := caps["MT-PRIORITY"]; !ok {
+		t.Fatal("Missing capability: MT-PRIORITY")
+	}
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanner.Scan()
+
+	malformedMsgs := []string{
+		"RCPT TO:<root@gchq.gov.uk> MT-PRIORITY=",
+		"RCPT TO:<root@gchq.gov.uk> MT-PRIORITY=foo",
+		"RCPT TO:<root@gchq.gov.uk> MT-PRIORITY=-10",
+		"RCPT TO:<root@gchq.gov.uk> MT-PRIORITY=10",
+	}
+
+	for _, msg := range malformedMsgs {
+		_, _ = io.WriteString(c, msg+"\r\n")
+		scanner.Scan()
+		if !strings.HasPrefix(scanner.Text(), "501 5.5.4") {
+			t.Fatal("Unexpected res on malformed MT-PRIORITY parameter value:", scanner.Text())
+		}
+	}
+
+	expectedPriority := -2
+
+	_, _ = io.WriteString(c, fmt.Sprintf("RCPT TO:<root@gchq.gov.uk> MT-PRIORITY=%d\r\n", expectedPriority))
+	scanner.Scan()
+
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid MT-PRIORITY parameter value:", scanner.Text())
+	}
+
+	// complete the transaction
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanner.Scan()
+	_, _ = io.WriteString(c, "Hey <3\r\n")
+	_, _ = io.WriteString(c, ".\r\n")
+	scanner.Scan()
+
+	opts := be.anonmsgs[0].RcptOpts
+	if opts == nil || len(opts) != 1 {
+		t.Fatal("Invalid number of recipients:", opts)
+	}
+
+	priority := opts[0].MTPriority
+
+	if priority == nil {
+		t.Fatal("MtPriority is nil:", opts)
+	}
+
+	if *priority != expectedPriority {
+		t.Fatal("Incorrect MtPriority parameter value:", fmt.Sprintf("expected %d, got %d", expectedPriority, *priority))
+	}
+}
+
 func TestServer_TooLongCommand(t *testing.T) {
 	maxLineLength := 2000
 
 	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithMaxLineLength(maxLineLength))
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<"+strings.Repeat("a", maxLineLength)+">\r\n")
 	scanner.Scan()
@@ -1579,8 +1844,10 @@ func TestServerDSN(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t, nil,
 		server.WithEnableDSN(true),
 	)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	if _, ok := caps["DSN"]; !ok {
 		t.Fatal("Missing capability: DSN")
@@ -1667,8 +1934,10 @@ func TestSMTPUTF8Disabled(t *testing.T) {
 	_, s, c, scanner, _ := testServerEhlo(t, nil,
 		server.WithEnableSMTPUTF8(false),
 	)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	_, _ = io.WriteString(c, "MAIL FROM:<e=mc2@example.com> SMTPUTF8\r\n")
 	scanner.Scan()
@@ -1684,8 +1953,10 @@ func TestServerDSNwithSMTPUTF8(t *testing.T) {
 		server.WithEnableSMTPUTF8(true),
 		server.WithEnableDSN(true),
 	)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	for _, cap := range []string{"DSN", "SMTPUTF8"} {
 		if _, ok := caps[cap]; !ok {
@@ -1794,8 +2065,10 @@ func TestServerXOORG(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t, nil,
 		server.WithEnableXOORG(true),
 	)
-	defer func() { _ = s.Close() }()
-	defer func() { _ = c.Close() }()
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
 
 	for _, cap := range []string{"XOORG"} {
 		if _, ok := caps[cap]; !ok {

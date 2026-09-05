@@ -4,14 +4,17 @@
 // It also implements the following extensions:
 //
 //   - 8BITMIME (RFC 1652)
-//   - AUTH (RFC 2554)
-//   - STARTTLS (RFC 3207)
 //   - ENHANCEDSTATUSCODES (RFC 2034)
-//   - SMTPUTF8 (RFC 6531)
-//   - REQUIRETLS (RFC 8689)
+//   - AUTH (RFC 2554)
+//   - DELIVERBY (RFC 2852)
 //   - CHUNKING (RFC 3030)
 //   - BINARYMIME (RFC 3030)
+//   - STARTTLS (RFC 3207)
 //   - DSN (RFC 3461, RFC 6533)
+//   - SMTPUTF8 (RFC 6531)
+//   - MT-PRIORITY (RFC 6710)
+//   - RRVS (RFC 7293)
+//   - REQUIRETLS (RFC 8689)
 //
 // Additional extensions may be handled by other packages.
 package client
@@ -27,6 +30,7 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
@@ -512,46 +516,71 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	if err := validateLine(to); err != nil {
 		return err
 	}
-
 	var sb strings.Builder
 	// A high enough power of 2 than 510+29+501
 	sb.Grow(2048)
 	fmt.Fprintf(&sb, "RCPT TO:<%s>", to)
 	if _, ok := c.ext["DSN"]; ok && opts != nil {
-		if len(opts.Notify) != 0 {
-			sb.WriteString(" NOTIFY=")
-			if err := textsmtp.CheckNotifySet(opts.Notify); err != nil {
-				return errors.New("smtp: Malformed NOTIFY parameter value")
-			}
-			for i, v := range opts.Notify {
-				if i != 0 {
-					sb.WriteString(",")
-				}
-				sb.WriteString(string(v))
-			}
+		if err := rcptDSN(&sb, opts, c.ext); err != nil {
+			return err
 		}
-		if opts.OriginalRecipient != "" {
-			var enc string
-			switch opts.OriginalRecipientType {
-			case smtp.DSNAddressTypeRFC822:
-				if !textsmtp.IsPrintableASCII(opts.OriginalRecipient) {
-					return errors.New("smtp: Illegal address")
-				}
-				enc = encodeXtext(opts.OriginalRecipient)
-			case smtp.DSNAddressTypeUTF8:
-				if _, ok := c.ext["SMTPUTF8"]; ok {
-					enc = encodeUTF8AddrUnitext(opts.OriginalRecipient)
-				} else {
-					enc = encodeUTF8AddrXtext(opts.OriginalRecipient)
-				}
-			default:
-				return errors.New("smtp: Unknown address type")
-			}
-			fmt.Fprintf(&sb, " ORCPT=%s;%s", string(opts.OriginalRecipientType), enc)
+	}
+	if _, ok := c.ext["RRVS"]; ok && opts != nil && !opts.RequireRecipientValidSince.IsZero() {
+		fmt.Fprintf(&sb, " RRVS=%s", opts.RequireRecipientValidSince.Format(time.RFC3339))
+	}
+	if _, ok := c.ext["DELIVERBY"]; ok && opts != nil && opts.DeliverBy != nil {
+		if opts.DeliverBy.Mode == smtp.DeliverByReturn && opts.DeliverBy.Time < 1 {
+			return errors.New("smtp: DELIVERBY mode must be greater than zero with return mode")
 		}
+		arg := fmt.Sprintf(" BY=%d;%s", int(opts.DeliverBy.Time.Seconds()), opts.DeliverBy.Mode)
+		if opts.DeliverBy.Trace {
+			arg += "T"
+		}
+		sb.WriteString(arg)
+	}
+	if _, ok := c.ext["MT-PRIORITY"]; ok && opts != nil && opts.MTPriority != nil {
+		if *opts.MTPriority < -9 || *opts.MTPriority > 9 {
+			return errors.New("smtp: MT-PRIORITY must be between -9 and 9")
+		}
+		fmt.Fprintf(&sb, " MT-PRIORITY=%d", *opts.MTPriority)
 	}
 	if _, _, err := c.cmd(25, "%s", sb.String()); err != nil {
 		return err
+	}
+	return nil
+}
+
+func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string) error {
+	if len(opts.Notify) != 0 {
+		sb.WriteString(" NOTIFY=")
+		if err := textsmtp.CheckNotifySet(opts.Notify); err != nil {
+			return errors.New("smtp: Malformed NOTIFY parameter value")
+		}
+		for i, v := range opts.Notify {
+			if i != 0 {
+				sb.WriteString(",")
+			}
+			sb.WriteString(string(v))
+		}
+	}
+	if opts.OriginalRecipient != "" {
+		var enc string
+		switch opts.OriginalRecipientType {
+		case smtp.DSNAddressTypeRFC822:
+			if !textsmtp.IsPrintableASCII(opts.OriginalRecipient) {
+				return errors.New("smtp: Illegal address")
+			}
+			enc = encodeXtext(opts.OriginalRecipient)
+		case smtp.DSNAddressTypeUTF8:
+			if _, ok := ext["SMTPUTF8"]; ok {
+				enc = encodeUTF8AddrUnitext(opts.OriginalRecipient)
+			} else {
+				enc = encodeUTF8AddrXtext(opts.OriginalRecipient)
+			}
+		default:
+			return errors.New("smtp: Unknown address type")
+		}
+		fmt.Fprintf(sb, " ORCPT=%s;%s", string(opts.OriginalRecipientType), enc)
 	}
 	return nil
 }

@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/uponusolutions/go-smtp"
 )
 
 // ErrServerClosed occurs if a server is already closed.
@@ -66,6 +68,28 @@ type Server struct {
 	// Advertise XOORG capability.
 	// Should be used only if backend supports it.
 	enableXOORG bool
+
+	// Advertise RRVS (RFC 7293) capability.
+	// Should be used only if backend supports it.
+	enableRRVS bool
+
+	// Advertise DELIVERBY (RFC 2852) capability.
+	// Should be used only if backend supports it.
+	enableDELIVERBY bool
+	// The minimum time, with seconds precision, that a client
+	// may specify in the BY argument with return mode.
+	// A zero value indicates no set minimum.
+	// Only use if DELIVERBY is enabled.
+	minimumDeliverByTime time.Duration
+
+	// Advertise MT-PRIORITY (RFC 6710) capability.
+	// Should only be used if backend supports it.
+	enableMTPRIORITY bool
+	// The priority profile mapping as defined
+	// in RFC 6710 section 10.2.
+	//
+	// Default value of NONE to advertise no specific profile.
+	mtPriorityProfile smtp.PriorityProfile
 
 	// The server backend.
 	backend Backend
@@ -258,5 +282,49 @@ func WithReaderSize(readerSize int) Option {
 func WithWriterSize(writerSize int) Option {
 	return func(s *Server) {
 		s.writerSize = writerSize
+	}
+}
+
+// WithEnableRRVS advertises RRVS (RFC 7293) capability.
+// Should be used only if backend supports it.
+func WithEnableRRVS(enableRRVS bool) Option {
+	return func(s *Server) {
+		s.enableRRVS = enableRRVS
+	}
+}
+
+// WithEnableDELIVERBY advertises DELIVERBY (RFC 2852) capability.
+// Should be used only if backend supports it.
+func WithEnableDELIVERBY(enableDELIVERBY bool) Option {
+	return func(s *Server) {
+		s.enableDELIVERBY = enableDELIVERBY
+	}
+}
+
+// WithMinimumDeliverByTime defines the minimum time, with seconds precision, that a client
+// may specify in the BY argument with return mode.
+// A zero value indicates no set minimum.
+// Only use if DELIVERBY is enabled.
+func WithMinimumDeliverByTime(minimumDeliverByTime time.Duration) Option {
+	return func(s *Server) {
+		s.minimumDeliverByTime = minimumDeliverByTime
+	}
+}
+
+// WithEnableMTPRIORITY advertises MT-PRIORITY (RFC 6710) capability.
+// Should only be used if backend supports it.
+func WithEnableMTPRIORITY(enableMTPRIORITY bool) Option {
+	return func(s *Server) {
+		s.enableMTPRIORITY = enableMTPRIORITY
+	}
+}
+
+// WithMtPriorityProfile sets the priority profile mapping as defined
+// in RFC 6710 section 10.2.
+//
+// Default value of NONE to advertise no specific profile.
+func WithMtPriorityProfile(mtPriorityProfile smtp.PriorityProfile) Option {
+	return func(s *Server) {
+		s.mtPriorityProfile = mtPriorityProfile
 	}
 }

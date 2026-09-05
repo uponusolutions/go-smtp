@@ -397,7 +397,23 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 	if c.server.maxRecipients > 0 {
 		fmt.Fprintf(&caps, "\nLIMITS RCPTMAX=%v", c.server.maxRecipients)
 	}
-
+	if c.server.enableRRVS {
+		caps.WriteString("\nRRVS")
+	}
+	if c.server.enableDELIVERBY {
+		if c.server.minimumDeliverByTime == 0 {
+			caps.WriteString("\nDELIVERBY")
+		} else {
+			fmt.Fprintf(&caps, "\nDELIVERBY %d", int(c.server.minimumDeliverByTime.Seconds()))
+		}
+	}
+	if c.server.enableMTPRIORITY {
+		if c.server.mtPriorityProfile == smtp.PriorityUnspecified {
+			caps.WriteString("\nMT-PRIORITY")
+		} else {
+			fmt.Fprintf(&caps, "MT-PRIORITY %s", c.server.mtPriorityProfile)
+		}
+	}
 	return smtp.NewStatus(250, smtp.NoEnhancedCode, caps.String())
 }
 
@@ -602,27 +618,25 @@ func (c *Conn) handleRcpt(arg string) error {
 	for key, value := range args {
 		switch key {
 		case "NOTIFY":
-			if !c.server.enableDSN {
-				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
+			if err := handleRcptNotify(c.server, opts, value); err != nil {
+				return err
 			}
-			notify := []smtp.DSNNotify{}
-			for val := range strings.SplitSeq(value, ",") {
-				notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
-			}
-			if err := textsmtp.CheckNotifySet(notify); err != nil {
-				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
-			}
-			opts.Notify = notify
 		case "ORCPT":
-			if !c.server.enableDSN {
-				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
+			if err := handleRcptORCPT(c.server, opts, value); err != nil {
+				return err
 			}
-			aType, aAddr, err := decodeTypedAddress(value)
-			if err != nil || aAddr == "" {
-				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ORCPT parameter value")
+		case "RRVS":
+			if err := handleRcptRRVS(c.server, opts, value); err != nil {
+				return err
 			}
-			opts.OriginalRecipientType = aType
-			opts.OriginalRecipient = aAddr
+		case "BY":
+			if err := handleRcptBY(c.server, opts, value); err != nil {
+				return err
+			}
+		case "MT-PRIORITY":
+			if err := handleRcptMTPRIORITY(c.server, opts, value); err != nil {
+				return err
+			}
 		default:
 			return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Unknown RCPT TO argument")
 		}
@@ -641,6 +655,79 @@ func (c *Conn) handleRcpt(arg string) error {
 
 	c.recipients++
 	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
+}
+
+func handleRcptNotify(server *Server, opts *smtp.RcptOptions, value string) error {
+	if !server.enableDSN {
+		return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
+	}
+	notify := []smtp.DSNNotify{}
+	for val := range strings.SplitSeq(value, ",") {
+		notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
+	}
+	if err := textsmtp.CheckNotifySet(notify); err != nil {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
+	}
+	opts.Notify = notify
+	return nil
+}
+
+func handleRcptORCPT(server *Server, opts *smtp.RcptOptions, value string) error {
+	if !server.enableDSN {
+		return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
+	}
+	aType, aAddr, err := decodeTypedAddress(value)
+	if err != nil || aAddr == "" {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ORCPT parameter value")
+	}
+	opts.OriginalRecipientType = aType
+	opts.OriginalRecipient = aAddr
+	return nil
+}
+
+func handleRcptRRVS(server *Server, opts *smtp.RcptOptions, value string) error {
+	if !server.enableRRVS {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "RRVS is not implemented")
+	}
+	value, _, _ = strings.Cut(value, ";") // discard the no-support action
+	rrvsTime, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed RRVS parameter value")
+	}
+	opts.RequireRecipientValidSince = rrvsTime
+	return nil
+}
+
+func handleRcptBY(server *Server, opts *smtp.RcptOptions, value string) error {
+	if !server.enableDELIVERBY {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "DELIVERBY is not implemented")
+	}
+	deliverBy := parseDeliverByArgument(value)
+	if deliverBy == nil {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed BY parameter value")
+	}
+	if server.minimumDeliverByTime != 0 &&
+		deliverBy.Mode == smtp.DeliverByReturn &&
+		deliverBy.Time < server.minimumDeliverByTime {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "BY parameter is below server minimum")
+	}
+	opts.DeliverBy = deliverBy
+	return nil
+}
+
+func handleRcptMTPRIORITY(server *Server, opts *smtp.RcptOptions, value string) error {
+	if !server.enableMTPRIORITY {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is not implemented")
+	}
+	mtPriority, err := strconv.Atoi(value)
+	if err != nil {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed MT-PRIORITY parameter value")
+	}
+	if mtPriority < -9 || mtPriority > 9 {
+		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is outside valid range")
+	}
+	opts.MTPriority = &mtPriority
+	return nil
 }
 
 func (c *Conn) handleVrfy(arg string) error {

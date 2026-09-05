@@ -1,6 +1,8 @@
 // Package smtp contains shared code between client and server implementations e.g. Status
 package smtp
 
+import "time"
+
 // BodyType describes the type of the body.
 type BodyType string
 
@@ -91,6 +93,37 @@ const (
 	DSNAddressTypeUTF8 DSNAddressType = "UTF-8"
 )
 
+// DeliverByMode sets the he deliver mode (RFC2852)
+type DeliverByMode string
+
+const (
+	// DeliverByNotify set the deliver mode to N
+	DeliverByNotify DeliverByMode = "N"
+	// DeliverByReturn set the deliver mode to R
+	DeliverByReturn DeliverByMode = "R"
+)
+
+// DeliverByOptions defines the deliver by options
+type DeliverByOptions struct {
+	Time  time.Duration
+	Mode  DeliverByMode
+	Trace bool
+}
+
+// PriorityProfile sets the priority profile (RFC6710)
+type PriorityProfile string
+
+const (
+	// PriorityUnspecified set the priority profile to none
+	PriorityUnspecified PriorityProfile = ""
+	// PriorityMIXER set the priority profile to MIXER
+	PriorityMIXER PriorityProfile = "MIXER"
+	// PrioritySTANAG4406 set the priority profile to STANAG4406
+	PrioritySTANAG4406 PriorityProfile = "STANAG4406"
+	// PriorityNSEP set the priority profile to NSEP
+	PriorityNSEP PriorityProfile = "NSEP"
+)
+
 // RcptOptions contains parameters for the RCPT command.
 type RcptOptions struct {
 	// Value of NOTIFY= argument, NEVER or a combination of either of
@@ -100,4 +133,14 @@ type RcptOptions struct {
 	// Original recipient set by client.
 	OriginalRecipientType DSNAddressType
 	OriginalRecipient     string
+
+	// Time value of the RRVS= argument
+	// or the zero time if unset.
+	RequireRecipientValidSince time.Time
+
+	// Value of BY= argument or nil if unset.
+	DeliverBy *DeliverByOptions
+
+	// Value of MT-PRIORITY= or nil if unset.
+	MTPriority *int
 }
