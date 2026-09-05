@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version-file: go.tool.mod
 
       - name: execute linter
         run: go tool -modfile=go.tool.mod golangci-lint run
