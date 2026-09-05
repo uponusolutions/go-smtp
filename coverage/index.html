@@ -87,7 +87,7 @@
 				
 				<option value="file15">github.com/uponusolutions/go-smtp/mailer/mailer.go (75.0%)</option>
 				
-				<option value="file16">github.com/uponusolutions/go-smtp/mailer/multireader.go (27.5%)</option>
+				<option value="file16">github.com/uponusolutions/go-smtp/mailer/multireader.go (55.0%)</option>
 				
 				<option value="file17">github.com/uponusolutions/go-smtp/resolve/resolve.go (100.0%)</option>
 				
@@ -107,7 +107,7 @@
 				
 				<option value="file25">github.com/uponusolutions/go-smtp/tester/cert.go (85.0%)</option>
 				
-				<option value="file26">github.com/uponusolutions/go-smtp/tester/compare.go (62.6%)</option>
+				<option value="file26">github.com/uponusolutions/go-smtp/tester/compare.go (97.3%)</option>
 				
 				<option value="file27">github.com/uponusolutions/go-smtp/tester/faker.go (60.0%)</option>
 				
@@ -2085,11 +2085,11 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span c
         <span class="cov6" title="8127">return dr</span>
 }
 
-func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="1169821">{
-        if err == nil </span><span class="cov9" title="1165766">{
+func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="1169818">{
+        if err == nil </span><span class="cov9" title="1165763">{
                 l := len(c)
 
-                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="10643">{
+                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="10640">{
                         // Ends with \r\n, write everything before.
                         return copy(b, c[:l-2])
                 }</span>
@@ -2113,7 +2113,7 @@ const (
 // Run data through a simple state machine to
 // elide leading dots and detect End-of-Data
 // (&lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;) line.
-func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1174331">{
+func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1174328">{
         if r.limited </span><span class="cov2" title="15">{
                 if r.n &lt;= 0 </span><span class="cov1" title="2">{
                         return 0, smtp.ErrDataTooLarge
@@ -2124,17 +2124,17 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117433
                 }</span>
         }
 
-        <span class="cov9" title="1174329">var n int       // Data written to b.
+        <span class="cov9" title="1174326">var n int       // Data written to b.
         var skipped int // How many.
 
         // IMPORTANT: We cannot wait on read,
         // because no EOL returns.
-        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="1032222">{
+        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="1032219">{
                 _, _ = r.r.Peek(5)
         }</span>
 
         // min 5, max buffer size, default len(b)
-        <span class="cov9" title="1174329">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+        <span class="cov9" title="1174326">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
 
         // write \n
         if r.state == stateCR </span><span class="cov1" title="4">{
@@ -2151,12 +2151,12 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117433
                 }</span>
         }
 
-        <span class="cov9" title="1174329">if r.state != stateEOF </span><span class="cov9" title="1174326">{
-                for </span><span class="cov10" title="1239087">{
+        <span class="cov9" title="1174326">if r.state != stateEOF </span><span class="cov9" title="1174323">{
+                for </span><span class="cov10" title="1239084">{
                         i := bytes.Index(c, crlfdot)
 
                         // No full \r\n. found.
-                        if i == -1 </span><span class="cov9" title="1169821">{
+                        if i == -1 </span><span class="cov9" title="1169818">{
                                 n += noCrlfDotFound(err, b, c)
                                 break</span>
                         }
@@ -2204,19 +2204,19 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117433
 
         // n + skipped is always smaller then what was peeked,
         // so it is guaranteed to work
-        <span class="cov9" title="1174329">_, _ = r.r.Discard(n + skipped)
+        <span class="cov9" title="1174326">_, _ = r.r.Discard(n + skipped)
 
         if err == io.EOF &amp;&amp; r.state != stateEOF </span><span class="cov6" title="4055">{
                 err = io.ErrUnexpectedEOF
-        }</span> else<span class="cov9" title="1170274"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov6" title="4073">{
+        }</span> else<span class="cov9" title="1170271"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov6" title="4073">{
                 err = io.EOF
         }</span>
 
-        <span class="cov9" title="1174329">if r.limited </span><span class="cov2" title="13">{
+        <span class="cov9" title="1174326">if r.limited </span><span class="cov2" title="13">{
                 r.n -= int64(n)
         }</span>
 
-        <span class="cov9" title="1174329">return n, err</span>
+        <span class="cov9" title="1174326">return n, err</span>
 }
 </pre>
 		
@@ -2564,7 +2564,7 @@ func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="58
         <span class="cov9" title="588">var line []byte
         for </span><span class="cov9" title="588">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov6" title="57">{
+                if err != nil </span><span class="cov6" title="55">{
                         return nil, err
                 }</span>
 
@@ -3181,62 +3181,62 @@ type multiReader struct {
 
 type eofReader struct{}
 
-f</span>unc (eofReader) Read([]byte) (int, error) <span class="cov0" title="0">{
+func (eofReader) Read([]byte) (int, error) <span class="cov0" title="0">{
         return 0, io.EOF
 }</span>
 
-f</span>unc (eofReader) Len() int <span class="cov0" title="0">{
+func (eofReader) Len() int <span class="cov0" title="0">{
         return 0
 }</span>
 
-f</span>unc (eofReader) WriteTo(_ io.Writer) (sum int64, err error) <span class="cov0" title="0">{
+func (eofReader) WriteTo(_ io.Writer) (sum int64, err error) <span class="cov0" title="0">{
         return 0, nil
 }</span>
 
-</span>func (mr *multiReader) Read(p []byte) (n int, err error) {
-        for len(mr.readers) &gt; 0 {</span>
-</span>                // Optimization to flatten nested multiReaders (Issue 13558).
-                if len(mr.readers) == 1 </span></span>{
-                        if r, ok </span>:= mr.readers[0].(*multiReader); ok </span><span class="cov0" title="0">{
+func (mr *multiReader) Read(p []byte) (n int, err error) <span class="cov8" title="13">{
+        for len(mr.readers) &gt; 0 </span><span class="cov10" title="19">{
+                // Optimization to flatten nested multiReaders (Issue 13558).
+                if len(mr.readers) == 1 </span><span class="cov6" title="6">{
+                        if r, ok := mr.readers[0].(*multiReader); ok </span><span class="cov0" title="0">{
                                 mr.readers = r.readers
                                 continue</span>
-                <span class="cov0" title="0">        }
+                        }
                 }
-</span>                n, err = mr.readers[0].Read(p)
-                if err == io.EOF {
+                <span class="cov10" title="19">n, err = mr.readers[0].Read(p)
+                if err == io.EOF </span><span class="cov7" title="8">{
                         // Use eofReader instead of nil to avoid nil panic
                         // after performing flatten (Issue 18232).
-                        </span></span>mr.readers[0] = eofReader{} // permit earlier GC
+                        mr.readers[0] = eofReader{} // permit earlier GC
                         mr.readers = mr.readers[1:]
-                }</span></span>
-</span>                if n &gt; 0 || err != io.EOF {
-                        if err == io.EOF &amp;&amp; len(mr.readers) &gt; 0 {
-                                </span></span></span>// Don't return EOF yet. More readers remain.
+                }</span>
+                <span class="cov10" title="19">if n &gt; 0 || err != io.EOF </span><span class="cov8" title="11">{
+                        if err == io.EOF &amp;&amp; len(mr.readers) &gt; 0 </span><span class="cov0" title="0">{
+                                // Don't return EOF yet. More readers remain.
                                 err = nil
-                        }</span></span>
+                        }</span>
                         <span class="cov8" title="11">return n, err</span>
-        <span class="cov0" title="0">        }
-</span>        }
+                }
+        }
         <span class="cov3" title="2">return 0, io.EOF</span>
 }
 
-func (mr *multiReader) WriteTo</span><span class="cov0" title="0">(w io.Writer) (sum int64, err error) {
+func (mr *multiReader) WriteTo(w io.Writer) (sum int64, err error) <span class="cov3" title="2">{
         n := int64(0)
-        for _, r := range mr.readers {
-                rn, err := r.W</span></span>riteTo(w)
+        for _, r := range mr.readers </span><span class="cov5" title="4">{
+                rn, err := r.WriteTo(w)
                 n += rn
-                if err != nil </span>{
-</span>                        return n, err
+                if err != nil </span><span class="cov0" title="0">{
+                        return n, err
                 }</span>
-</span>        }
+        }
         <span class="cov3" title="2">return n, nil</span>
 }
 
-func (mr *multiReader) Len() i</span><span class="cov0" title="0">nt {
+func (mr *multiReader) Len() int <span class="cov5" title="5">{
         length := 0
-        f</span>or _, r := range mr.readers </span><span class="cov8" title="12">{
+        for _, r := range mr.readers </span><span class="cov8" title="12">{
                 length += r.Len()
-        }</span></span>
+        }</span>
         <span class="cov5" title="5">return length</span>
 }
 
@@ -3247,34 +3247,34 @@ type MultiReader struct {
 
 // AddReader adds the next readers to the factory.
 // The new [MultiReader] takes ownership of the Readers,
-f</span>unc (mrf *MultiReader) AddReader(readers ...ReaderWriteToLen) <span class="cov0" title="0">{
+func (mrf *MultiReader) AddReader(readers ...ReaderWriteToLen) <span class="cov0" title="0">{
         mrf.readers = append(mrf.readers, readers...)
 }</span>
 
 // AddBytes adds the multiple byte slices to the factory.
-// The new [MultiReader] takes ow</span><span class="cov0" title="0">nership of the bytes,
-func (mrf *MultiReader) AddBytes(arrbytes ...[]byte) {
-        f</span>or _, reader := range arrbytes </span><span class="cov0" title="0">{
+// The new [MultiReader] takes ownership of the bytes,
+func (mrf *MultiReader) AddBytes(arrbytes ...[]byte) <span class="cov0" title="0">{
+        for _, reader := range arrbytes </span><span class="cov0" title="0">{
                 mrf.readers = append(mrf.readers, bytes.NewBuffer(reader))
         }</span>
 }
 
-// Reader creates a MultiR</span><span class="cov0" title="0">eader from all added readers.
-func (mrf *MultiReader) Reader() ReaderWriteToLen {
-        i</span>f len(mrf.readers) == 0 </span><span class="cov0" title="0">{
+// Reader creates a MultiReader from all added readers.
+func (mrf *MultiReader) Reader() ReaderWriteToLen <span class="cov0" title="0">{
+        if len(mrf.readers) == 0 </span><span class="cov0" title="0">{
                 return eofReader{}
         }</span>
 
-        var reader ReaderWriteToL</span>en
+        <span class="cov0" title="0">var reader ReaderWriteToLen
 
-        if len(mrf.readers) == 1 </span>{
-</span>                reader = mrf.readers[0]
-        }</span></span> else<span class="cov0" title="0"> {
+        if len(mrf.readers) == 1 </span><span class="cov0" title="0">{
+                reader = mrf.readers[0]
+        }</span> else<span class="cov0" title="0"> {
                 reader = NewMultiReader(mrf.readers...)
         }</span>
 
         // reset state
-        mrf.readers =</span> nil
+        <span class="cov0" title="0">mrf.readers = nil
 
         return reader</span>
 }
@@ -3282,9 +3282,9 @@ func (mrf *MultiReader) Reader() ReaderWriteToLen {
 // NewMultiReader returns a Reader that's the logical concatenation of
 // the provided input readers. They're read sequentially. Once all
 // inputs have returned EOF, Read will return EOF.  If any of the readers
-// return a non-nil, non-EOF error, Read will return that error<span class="cov0" title="0">.
+// return a non-nil, non-EOF error, Read will return that error.
 // The new [Reader] takes ownership of the Readers,
-f</span>unc NewMultiReader(readers ...ReaderWriteToLen) ReaderWriteToLen <span class="cov6" title="6">{
+func NewMultiReader(readers ...ReaderWriteToLen) ReaderWriteToLen <span class="cov6" title="6">{
         return &amp;multiReader{readers}
 }</span>
 </pre>
@@ -3684,7 +3684,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="67">{
 
         for </span><span class="cov8" title="311">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov6" title="58">{
+                if err != nil </span><span class="cov6" title="56">{
                         return err
                 }</span>
 
@@ -3710,7 +3710,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="67">{
 
 func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="317">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov6" title="56">{
+        if err != nil </span><span class="cov6" title="54">{
                 return "", "", err
         }</span>
         <span class="cov8" title="259">return parse.Cmd(line)</span>
@@ -3859,26 +3859,26 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov6" title="65">{
+func (c *Conn) Close(err error) <span class="cov6" title="63">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="34">{
+        if closeErr != nil </span><span class="cov5" title="33">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="34"> {
+                }</span> else<span class="cov5" title="33"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
 
-        <span class="cov6" title="65">if err != nil </span><span class="cov6" title="59">{
+        <span class="cov6" title="63">if err != nil </span><span class="cov6" title="57">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
-        <span class="cov6" title="65">if c.session != nil </span><span class="cov6" title="65">{
+        <span class="cov6" title="63">if c.session != nil </span><span class="cov6" title="63">{
                 c.session.Close(c.ctx, err)
                 c.session = nil
         }</span>
@@ -4013,20 +4013,20 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error <span class="cov6" titl
                 caps.WriteString("\nXOORG")
         }</span>
         <span class="cov6" title="65">if c.server.maxMessageBytes &gt; 0 </span><span class="cov4" title="15">{
-                caps.WriteString(fmt.Sprintf("\nSIZE %v", c.server.maxMessageBytes))
+                fmt.Fprintf(&amp;caps, "\nSIZE %v", c.server.maxMessageBytes)
         }</span> else<span class="cov6" title="50"> {
                 caps.WriteString("\nSIZE")
         }</span>
         <span class="cov6" title="65">if c.server.maxRecipients &gt; 0 </span><span class="cov4" title="12">{
-                caps.WriteString(fmt.Sprintf("\nLIMITS RCPTMAX=%v", c.server.maxRecipients))
+                fmt.Fprintf(&amp;caps, "\nLIMITS RCPTMAX=%v", c.server.maxRecipients)
         }</span>
 
         <span class="cov6" title="65">return smtp.NewStatus(250, smtp.NoEnhancedCode, caps.String())</span>
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov6" title="64">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="54">{
+func (c *Conn) handleError(err error) <span class="cov6" title="62">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="52">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -4059,13 +4059,13 @@ func (c *Conn) handleError(err error) <span class="cov6" title="64">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="863">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="859">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="863">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="863">{
+        <span class="cov10" title="859">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="859">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -4590,7 +4590,7 @@ func (c *Conn) readLine() (string, error) <span class="cov8" title="349">{
         if err == nil </span><span class="cov8" title="291">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov8" title="347">return line, err</span>
+        <span class="cov8" title="345">return line, err</span>
 }
 
 func (c *Conn) reset() error <span class="cov5" title="33">{
@@ -4872,7 +4872,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
 
         var err error
 
-        defer func() </span><span class="cov8" title="65">{
+        defer func() </span><span class="cov8" title="63">{
                 if err := recover(); err != nil </span><span class="cov1" title="1">{
                         c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
                         stack := debug.Stack()
@@ -4885,7 +4885,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                         c.Close(errors.New("recovered from panic inside handleConn"))
                 }</span>
 
-                <span class="cov8" title="65">s.locker.Lock()
+                <span class="cov8" title="63">s.locker.Lock()
                 delete(s.conns, c)
                 s.locker.Unlock()
 
@@ -5006,7 +5006,7 @@ func (s *Server) Close() error <span class="cov8" title="44">{
                 }</span>
         }
 
-        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="37">{
+        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="36">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
@@ -5544,12 +5544,12 @@ func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Rea
                 err = pw.Close()
                 require.NoError(t, err)
         }</span>()
-        <span class="cov0" title="0">buf, err := expected(pr)
+        <span class="cov1" title="2">buf, err := expected(pr)
 
         size := 1
-        for size &lt; 4048 &amp;&amp; len(b) &gt;= size </span>{
+        for size &lt; 4048 &amp;&amp; len(b) &gt;= size </span><span class="cov6" title="8094">{
                 bsplitted := chunkSlice(b, size)
-</span></span></span></span></span></span>
+
                 pr, pw = io.Pipe()
 
                 writeInGoroutine(t, bsplitted, pw)
@@ -5562,18 +5562,18 @@ func checkRaderExpectedAgainsActual(t *testing.T, b []byte, expected func(io.Rea
                 size++
         }</span>
 }
-</span>
+
 func writeInGoroutine(t *testing.T, bsplitted [][]byte, pw *io.PipeWriter) <span class="cov6" title="8094">{
         go func() </span><span class="cov6" title="8094">{
                 var err error
-                for _, b := range bsplitted </span></span>{
+                for _, b := range bsplitted </span><span class="cov9" title="1223561">{
                         _, err = pw.Write(b)
-</span>                        require.NoError(t, err)
+                        require.NoError(t, err)
                 }</span>
-                e</span>rr = pw.Close()
+                <span class="cov6" title="8094">err = pw.Close()
                 require.NoError(t, err)</span>
         }()
-</span>}
+}
 
 // ReaderCompareTest reads all files out of fs[path] and
 // compares the result of the expected func against the actual func.
@@ -5582,8 +5582,8 @@ func ReaderCompareTest(t *testing.T, fs *embed.FS, path string, expected func(io
         files, err := getAllFilenames(fs, path)
         require.NoError(t, err)
 
-        for _, file := range files </span>{
-                dat, err := fs.ReadFile(fi</span>le)
+        for _, file := range files </span><span class="cov1" title="2">{
+                dat, err := fs.ReadFile(file)
                 require.NoError(t, err)
                 checkRaderExpectedAgainsActual(t, []byte(dat), expected, actual)
         }</span>
