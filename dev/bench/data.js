@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788643021078,
+  "lastUpdate": 1788726662740,
   "repoUrl": "https://github.com/uponusolutions/go-smtp",
   "entries": {
     "Benchmark": [
@@ -7752,6 +7752,174 @@ window.BENCHMARK_DATA = {
             "value": 49902474,
             "unit": "ns/op",
             "extra": "240 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "committer": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "distinct": true,
+          "id": "631660ff4f711044d96e175f27964a7722a820f7",
+          "message": "Squashed commit of the following:\n\ncommit d5bd68541420d95e47261560ecdc727dacc7bd09\nMerge: c248a1d 8d5af0d\nAuthor: Marcel Link <marcel.link@uponu.com>\nDate:   Sun Sep 6 00:04:06 2026 +0200\n\n    Merge branch 'master' of github.com:emersion/go-smtp into\n    emersion-master\n\ncommit c248a1d57d2233cadf7f689db555e7b691f8d798\nAuthor: Marcel Link <marcel.link@uponu.com>\nDate:   Sat Sep 5 23:14:17 2026 +0200\n\n    chore: remove go report card\n\ncommit e5e89dc666be3e504d0039c5e4a541037b09b93a\nAuthor: Marcel Link <marcel.link@uponu.com>\nDate:   Sat Sep 5 23:12:31 2026 +0200\n\n    chore: dependencies\n\ncommit 8d5af0d9db3ace5e4fdc0e8b427f5b157b0c6c44\nAuthor: Iain <iain1970@protonmail.com>\nDate:   Tue Aug 18 00:46:49 2026 +0100\n\n    server: consume the rest of an oversized message body in LMTP mode\n\n    handleData clears the reader's size limit before draining what is left of an\n    oversized body, so the whole thing gets consumed. handleDataLMTP has the same\n    drain in both of its branches without that line, so the copy returns\n    ErrDataTooLarge having read nothing and the command loop goes on to read the\n    rest of the body as commands.\n\ncommit df08c7607808d001f46e323103310ca7d356e265\nAuthor: Iain <iain1970@protonmail.com>\nDate:   Sat Aug 15 00:14:18 2026 +0100\n\n    client: clear recipient list when a new transaction starts\n\n    CloseWithLMTPResponse reads one reply per entry in Client.rcpts, and only\n    Reset ever clears it. An LMTP client that sends a second message on the\n    same connection waits for a reply per recipient of both transactions and\n    blocks until SubmissionTimeout.\n\ncommit 642c374442498d8e36bc67c27391b5700ac66b89\nAuthor: Iain <iain1970@protonmail.com>\nDate:   Wed Aug 12 15:27:22 2026 +0100\n\n    server: restore line limit when a BDAT transaction is reset\n\n    handleBdat disables the line limit for the duration of a chunk and puts it\n    back when the sequence ends or io.Copy fails. A client that sends RSET\n    between chunks, or whose chunk trips MaxMessageBytes, ends the transaction\n    through reset() instead, leaving the limit off for the rest of the\n    connection.\n\ncommit 6a37d8b961a6d23a99ce30ab69b3004d9e59f8f5\nAuthor: latent-9 <296084221+latent-9@users.noreply.github.com>\nDate:   Sun Aug 9 14:15:27 2026 +1200\n\n    Fix typo in comment\n\ncommit f02fdf9cb6b33913a61e13f498dbbd19e3a3889d\nAuthor: HNO3Miracle <xiangao.or@isrc.iscas.ac.cn>\nDate:   Tue Jul 21 13:40:28 2026 +0800\n\n    client: pass authentication commands as data\n\n    Client.cmd treats its command argument as a format string. Pass dynamically\n    constructed authentication commands through a constant %s format so percent\n    signs in challenge responses remain data and current Go vet accepts the calls.\n\n    Signed-off-by: HNO3Miracle <xiangao.or@isrc.iscas.ac.cn>\n\ncommit 24034bd94c58db6d68dae5d8f44c1fee361cd0b4\nAuthor: Arnt Gulbrandsen <arnt@gulbrandsen.priv.no>\nDate:   Tue May 19 17:24:10 2026 +0200\n\n    client: Autodetect need for SMTPUTF8, and use it\n\n    This has no API changes; if you call SendMail() with some addresses that\n    weren't supported before, then it'll either work (because the server\n    supports the addresses) or break as before (because the server doesn't).\n\ncommit ab24fe7cbe995d404af3b1c093195f2f43b94688\nAuthor: Martin Tournoij <martin@arp242.net>\nDate:   Tue Jul 8 09:20:10 2025 +0100\n\n    Remove superfluous validateLine() calls in sendMail()\n\n    Client.SendMail() already calls validateLine() via Client.Mail() and\n    Client.Rcpt(), so there is no need to have these checks in sendMail().\n\n    Having these checks don't hurt as such, but looking at just the\n    sendMail() function it's not obvious whether these checks are needed if\n    you want to implement your own SendMail()-type function. With this\n    change, you can copy/paste sendMail(), add the smtp. package selector,\n    and modify as needed.\n\n    Also removes a superfluous nil check as a bonus.\n\ncommit 6944e3381b812d9b418405939b07780809df6c82\nAuthor: Quinn <10715168+qugu2427@users.noreply.github.com>\nDate:   Sun Jul 6 02:21:04 2025 -0600\n\n    Implement MT-PRIORITY (RFC 6710)\n\ncommit 54dd31d837eeef5d7d699c352bd03a8b4591e5d7\nAuthor: Quinn <10715168+qugu2427@users.noreply.github.com>\nDate:   Thu Jun 26 02:18:33 2025 -0600\n\n    Implement DELIVERBY (RFC 2852)\n\ncommit 495c409a4f616d934197f89dca8566ddc0fa65ec\nAuthor: Simon Ser <contact@emersion.fr>\nDate:   Sun Apr 27 18:08:03 2025 +0200\n\n    client: introduce DataCommand\n\n    Closes: https://github.com/emersion/go-smtp/issues/189\n\ncommit f9e8d24115250b2b79f76359a6a983f03f51d4e3\nAuthor: Quinn <10715168+qugu2427@users.noreply.github.com>\nDate:   Sun Apr 6 12:31:45 2025 -0600\n\n    Implement RRVS",
+          "timestamp": "2026-09-06T22:25:40+02:00",
+          "tree_id": "05d091ba9c7347a05ca2c785ffab0f3acf098bf5",
+          "url": "https://github.com/uponusolutions/go-smtp/commit/631660ff4f711044d96e175f27964a7722a820f7"
+        },
+        "date": 1788726661570,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkSmallWithChunking (github.com/uponusolutions/go-smtp)",
+            "value": 165436,
+            "unit": "ns/op",
+            "extra": "73564 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 293845,
+            "unit": "ns/op",
+            "extra": "40945 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSameConnection (github.com/uponusolutions/go-smtp)",
+            "value": 33800,
+            "unit": "ns/op",
+            "extra": "314680 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSameConnectionSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 33052,
+            "unit": "ns/op",
+            "extra": "363308 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunking (github.com/uponusolutions/go-smtp)",
+            "value": 173406,
+            "unit": "ns/op",
+            "extra": "70314 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 178928,
+            "unit": "ns/op",
+            "extra": "68328 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSameConnection (github.com/uponusolutions/go-smtp)",
+            "value": 42207,
+            "unit": "ns/op",
+            "extra": "267718 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSameConnectionSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 44478,
+            "unit": "ns/op",
+            "extra": "277424 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunking (github.com/uponusolutions/go-smtp)",
+            "value": 14277883,
+            "unit": "ns/op",
+            "extra": "830 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 16181965,
+            "unit": "ns/op",
+            "extra": "744 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSameConnection (github.com/uponusolutions/go-smtp)",
+            "value": 13955492,
+            "unit": "ns/op",
+            "extra": "814 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSameConnectionSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 13736690,
+            "unit": "ns/op",
+            "extra": "897 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunking (github.com/uponusolutions/go-smtp)",
+            "value": 18716131,
+            "unit": "ns/op",
+            "extra": "651 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 18770558,
+            "unit": "ns/op",
+            "extra": "628 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSameConnection (github.com/uponusolutions/go-smtp)",
+            "value": 21038249,
+            "unit": "ns/op",
+            "extra": "499 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSameConnectionSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 20301151,
+            "unit": "ns/op",
+            "extra": "630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderLegacy (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 12314702,
+            "unit": "ns/op",
+            "extra": "985 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderOptimized (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 952715,
+            "unit": "ns/op",
+            "extra": "12598 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderLegacySimpleReader (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 12558505,
+            "unit": "ns/op",
+            "extra": "903 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderOptimizedSimpleReader (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 948052,
+            "unit": "ns/op",
+            "extra": "12604 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterLegacy (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 586177514,
+            "unit": "ns/op",
+            "extra": "19 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterOptimized (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 37429741,
+            "unit": "ns/op",
+            "extra": "312 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterLegacySimpleReader (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 605866570,
+            "unit": "ns/op",
+            "extra": "20 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterOptimizedSimpleReader (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 54107167,
+            "unit": "ns/op",
+            "extra": "220 times\n4 procs"
           }
         ]
       }
