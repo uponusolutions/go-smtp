@@ -157,7 +157,7 @@ func (t *Textproto) ReadResponse(expectCode int) (code int, message string, err 
 func (t *Textproto) ReadCodeLine(expectCode int) (int, string, error) {
 	code, continued, message, err := t.readCodeLine(expectCode)
 	if err == nil && continued {
-		err = textproto.ProtocolError("unexpected multi-line response: " + message)
+		err = textproto.ProtocolError(fmt.Sprintf("unexpected multi-line response: %q", message))
 	}
 	return code, message, err
 }
@@ -172,13 +172,13 @@ func (t *Textproto) readCodeLine(expectCode int) (code int, continued bool, mess
 
 func parseCodeLine(line string, expectCode int) (code int, continued bool, message string, err error) {
 	if len(line) < 4 || line[3] != ' ' && line[3] != '-' {
-		err = textproto.ProtocolError("short response: " + line)
+		err = textproto.ProtocolError(fmt.Sprintf("short response: %q", line))
 		return code, continued, message, err
 	}
 	continued = line[3] == '-'
 	code, err = strconv.Atoi(line[0:3])
 	if err != nil || code < 100 {
-		err = textproto.ProtocolError("invalid response code: " + line)
+		err = textproto.ProtocolError(fmt.Sprintf("invalid response code: %q", line))
 		return code, continued, message, err
 	}
 	message = line[4:]
