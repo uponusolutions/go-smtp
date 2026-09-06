@@ -2,7 +2,6 @@
 
 ![coverage](https://raw.githubusercontent.com/uponusolutions/go-smtp/badges/.badges/main/coverage.svg)
 [![reference](https://pkg.go.dev/badge/github.com/uponusolutions/go-smtp.svg)](https://pkg.go.dev/github.com/uponusolutions/go-smtp)
-[![report](https://goreportcard.com/badge/github.com/uponusolutions/go-smtp)](https://goreportcard.com/report/github.com/uponusolutions/go-smtp)
 
 An ESMTP client and server library written in Go.
 
