@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/uponusolutions/go-smtp/client/client.go (78.6%)</option>
+				<option value="file0">github.com/uponusolutions/go-smtp/client/client.go (75.9%)</option>
 				
 				<option value="file1">github.com/uponusolutions/go-smtp/client/config.go (23.8%)</option>
 				
@@ -95,13 +95,13 @@
 				
 				<option value="file19">github.com/uponusolutions/go-smtp/server/backend.go (0.0%)</option>
 				
-				<option value="file20">github.com/uponusolutions/go-smtp/server/conn.go (77.9%)</option>
+				<option value="file20">github.com/uponusolutions/go-smtp/server/conn.go (78.7%)</option>
 				
-				<option value="file21">github.com/uponusolutions/go-smtp/server/encode.go (57.8%)</option>
+				<option value="file21">github.com/uponusolutions/go-smtp/server/encode.go (64.0%)</option>
 				
 				<option value="file22">github.com/uponusolutions/go-smtp/server/server.go (73.9%)</option>
 				
-				<option value="file23">github.com/uponusolutions/go-smtp/server/server_options.go (84.3%)</option>
+				<option value="file23">github.com/uponusolutions/go-smtp/server/server_options.go (83.6%)</option>
 				
 				<option value="file24">github.com/uponusolutions/go-smtp/tester/buffer.go (91.7%)</option>
 				
@@ -144,14 +144,17 @@
 // It also implements the following extensions:
 //
 //   - 8BITMIME (RFC 1652)
-//   - AUTH (RFC 2554)
-//   - STARTTLS (RFC 3207)
 //   - ENHANCEDSTATUSCODES (RFC 2034)
-//   - SMTPUTF8 (RFC 6531)
-//   - REQUIRETLS (RFC 8689)
+//   - AUTH (RFC 2554)
+//   - DELIVERBY (RFC 2852)
 //   - CHUNKING (RFC 3030)
 //   - BINARYMIME (RFC 3030)
+//   - STARTTLS (RFC 3207)
 //   - DSN (RFC 3461, RFC 6533)
+//   - SMTPUTF8 (RFC 6531)
+//   - MT-PRIORITY (RFC 6710)
+//   - RRVS (RFC 7293)
+//   - REQUIRETLS (RFC 8689)
 //
 // Additional extensions may be handled by other packages.
 package client
@@ -167,6 +170,7 @@ import (
         "net/textproto"
         "strconv"
         "strings"
+        "time"
 
         "github.com/uponusolutions/go-sasl"
         "github.com/uponusolutions/go-smtp"
@@ -652,48 +656,73 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error <span class="cov6
         if err := validateLine(to); err != nil </span><span class="cov1" title="1">{
                 return err
         }</span>
-
         <span class="cov5" title="15">var sb strings.Builder
         // A high enough power of 2 than 510+29+501
         sb.Grow(2048)
         fmt.Fprintf(&amp;sb, "RCPT TO:&lt;%s&gt;", to)
         if _, ok := c.ext["DSN"]; ok &amp;&amp; opts != nil </span><span class="cov3" title="4">{
-                if len(opts.Notify) != 0 </span><span class="cov2" title="2">{
-                        sb.WriteString(" NOTIFY=")
-                        if err := textsmtp.CheckNotifySet(opts.Notify); err != nil </span><span class="cov0" title="0">{
-                                return errors.New("smtp: Malformed NOTIFY parameter value")
-                        }</span>
-                        <span class="cov2" title="2">for i, v := range opts.Notify </span><span class="cov3" title="3">{
-                                if i != 0 </span><span class="cov1" title="1">{
-                                        sb.WriteString(",")
-                                }</span>
-                                <span class="cov3" title="3">sb.WriteString(string(v))</span>
-                        }
-                }
-                <span class="cov3" title="4">if opts.OriginalRecipient != "" </span><span class="cov3" title="4">{
-                        var enc string
-                        switch opts.OriginalRecipientType </span>{
-                        case smtp.DSNAddressTypeRFC822:<span class="cov1" title="1">
-                                if !textsmtp.IsPrintableASCII(opts.OriginalRecipient) </span><span class="cov0" title="0">{
-                                        return errors.New("smtp: Illegal address")
-                                }</span>
-                                <span class="cov1" title="1">enc = encodeXtext(opts.OriginalRecipient)</span>
-                        case smtp.DSNAddressTypeUTF8:<span class="cov3" title="3">
-                                if _, ok := c.ext["SMTPUTF8"]; ok </span><span class="cov1" title="1">{
-                                        enc = encodeUTF8AddrUnitext(opts.OriginalRecipient)
-                                }</span> else<span class="cov2" title="2"> {
-                                        enc = encodeUTF8AddrXtext(opts.OriginalRecipient)
-                                }</span>
-                        default:<span class="cov0" title="0">
-                                return errors.New("smtp: Unknown address type")</span>
-                        }
-                        <span class="cov3" title="4">fmt.Fprintf(&amp;sb, " ORCPT=%s;%s", string(opts.OriginalRecipientType), enc)</span>
-                }
+                if err := rcptDSN(&amp;sb, opts, c.ext); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+        <span class="cov5" title="15">if _, ok := c.ext["RRVS"]; ok &amp;&amp; opts != nil &amp;&amp; !opts.RequireRecipientValidSince.IsZero() </span><span class="cov0" title="0">{
+                fmt.Fprintf(&amp;sb, " RRVS=%s", opts.RequireRecipientValidSince.Format(time.RFC3339))
+        }</span>
+        <span class="cov5" title="15">if _, ok := c.ext["DELIVERBY"]; ok &amp;&amp; opts != nil &amp;&amp; opts.DeliverBy != nil </span><span class="cov0" title="0">{
+                if opts.DeliverBy.Mode == smtp.DeliverByReturn &amp;&amp; opts.DeliverBy.Time &lt; 1 </span><span class="cov0" title="0">{
+                        return errors.New("smtp: DELIVERBY mode must be greater than zero with return mode")
+                }</span>
+                <span class="cov0" title="0">arg := fmt.Sprintf(" BY=%d;%s", int(opts.DeliverBy.Time.Seconds()), opts.DeliverBy.Mode)
+                if opts.DeliverBy.Trace </span><span class="cov0" title="0">{
+                        arg += "T"
+                }</span>
+                <span class="cov0" title="0">sb.WriteString(arg)</span>
+        }
+        <span class="cov5" title="15">if _, ok := c.ext["MT-PRIORITY"]; ok &amp;&amp; opts != nil &amp;&amp; opts.MTPriority != nil </span><span class="cov0" title="0">{
+                if *opts.MTPriority &lt; -9 || *opts.MTPriority &gt; 9 </span><span class="cov0" title="0">{
+                        return errors.New("smtp: MT-PRIORITY must be between -9 and 9")
+                }</span>
+                <span class="cov0" title="0">fmt.Fprintf(&amp;sb, " MT-PRIORITY=%d", *opts.MTPriority)</span>
         }
         <span class="cov5" title="15">if _, _, err := c.cmd(25, "%s", sb.String()); err != nil </span><span class="cov1" title="1">{
                 return err
         }</span>
         <span class="cov5" title="14">return nil</span>
+}
+
+func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string) error <span class="cov3" title="4">{
+        if len(opts.Notify) != 0 </span><span class="cov2" title="2">{
+                sb.WriteString(" NOTIFY=")
+                if err := textsmtp.CheckNotifySet(opts.Notify); err != nil </span><span class="cov0" title="0">{
+                        return errors.New("smtp: Malformed NOTIFY parameter value")
+                }</span>
+                <span class="cov2" title="2">for i, v := range opts.Notify </span><span class="cov3" title="3">{
+                        if i != 0 </span><span class="cov1" title="1">{
+                                sb.WriteString(",")
+                        }</span>
+                        <span class="cov3" title="3">sb.WriteString(string(v))</span>
+                }
+        }
+        <span class="cov3" title="4">if opts.OriginalRecipient != "" </span><span class="cov3" title="4">{
+                var enc string
+                switch opts.OriginalRecipientType </span>{
+                case smtp.DSNAddressTypeRFC822:<span class="cov1" title="1">
+                        if !textsmtp.IsPrintableASCII(opts.OriginalRecipient) </span><span class="cov0" title="0">{
+                                return errors.New("smtp: Illegal address")
+                        }</span>
+                        <span class="cov1" title="1">enc = encodeXtext(opts.OriginalRecipient)</span>
+                case smtp.DSNAddressTypeUTF8:<span class="cov3" title="3">
+                        if _, ok := ext["SMTPUTF8"]; ok </span><span class="cov1" title="1">{
+                                enc = encodeUTF8AddrUnitext(opts.OriginalRecipient)
+                        }</span> else<span class="cov2" title="2"> {
+                                enc = encodeUTF8AddrXtext(opts.OriginalRecipient)
+                        }</span>
+                default:<span class="cov0" title="0">
+                        return errors.New("smtp: Unknown address type")</span>
+                }
+                <span class="cov3" title="4">fmt.Fprintf(sb, " ORCPT=%s;%s", string(opts.OriginalRecipientType), enc)</span>
+        }
+        <span class="cov3" title="4">return nil</span>
 }
 
 // Content issues a DATA or BDAT (prefer BDAT if available) command to
@@ -1251,7 +1280,7 @@ var NoEnhancedCode = EnhancedCode{-1, -1, -1}
 var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
 
 // NewStatus creates a new status.
-func NewStatus(code int, enhCode EnhancedCode, msg string) *Status <span class="cov10" title="234">{
+func NewStatus(code int, enhCode EnhancedCode, msg string) *Status <span class="cov10" title="258">{
         return &amp;Status{
                 Code:         code,
                 EnhancedCode: enhCode,
@@ -1422,15 +1451,15 @@ import (
 )
 
 // CutPrefixFold is a version of strings.CutPrefix which is case-insensitive.
-func CutPrefixFold(s, prefix string) (string, bool) <span class="cov5" title="86">{
+func CutPrefixFold(s, prefix string) (string, bool) <span class="cov5" title="104">{
         if len(s) &lt; len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) </span><span class="cov0" title="0">{
                 return "", false
         }</span>
-        <span class="cov5" title="86">return s[len(prefix):], true</span>
+        <span class="cov5" title="104">return s[len(prefix):], true</span>
 }
 
 // Cmd parses a line and returns the command, argument or an error.
-func Cmd(line string) (cmd string, arg string, err error) <span class="cov7" title="259">{
+func Cmd(line string) (cmd string, arg string, err error) <span class="cov7" title="283">{
         line = strings.TrimRight(line, "\r\n")
 
         l := len(line)
@@ -1441,7 +1470,7 @@ func Cmd(line string) (cmd string, arg string, err error) <span class="cov7" tit
                 return "", "", nil</span>
         case l &lt; 4:<span class="cov0" title="0">
                 return "", "", fmt.Errorf("command too short: %q", line)</span>
-        case l == 4:<span class="cov4" title="35">
+        case l == 4:<span class="cov4" title="38">
                 return strings.ToUpper(line), "", nil</span>
         case l == 5:<span class="cov0" title="0">
                 // Too long to be only command, too short to have args
@@ -1449,12 +1478,12 @@ func Cmd(line string) (cmd string, arg string, err error) <span class="cov7" tit
         }
 
         // If we made it here, command is long enough to have args
-        <span class="cov6" title="222">if line[4] != ' ' </span><span class="cov1" title="2">{
+        <span class="cov6" title="243">if line[4] != ' ' </span><span class="cov1" title="2">{
                 // There wasn't a space after the command?
                 return "", "", fmt.Errorf("mangled command: %q", line)
         }</span>
 
-        <span class="cov6" title="220">return strings.ToUpper(line[0:4]), strings.TrimSpace(line[5:]), nil</span>
+        <span class="cov6" title="241">return strings.ToUpper(line[0:4]), strings.TrimSpace(line[5:]), nil</span>
 }
 
 // Args takes the arguments proceeding a command and files them
@@ -1464,12 +1493,12 @@ func Cmd(line string) (cmd string, arg string, err error) <span class="cov7" tit
 //        " BODY=8BITMIME SIZE=1024 SMTPUTF8"
 //
 // The leading space is mandatory.
-func Args(s string) (map[string]string, error) <span class="cov5" title="86">{
+func Args(s string) (map[string]string, error) <span class="cov5" title="104">{
         argMap := map[string]string{}
-        for arg := range strings.FieldsSeq(s) </span><span class="cov5" title="39">{
+        for arg := range strings.FieldsSeq(s) </span><span class="cov5" title="54">{
                 m := strings.Split(arg, "=")
                 switch len(m) </span>{
-                case 2:<span class="cov4" title="34">
+                case 2:<span class="cov5" title="49">
                         argMap[strings.ToUpper(m[0])] = m[1]</span>
                 case 1:<span class="cov2" title="5">
                         argMap[strings.ToUpper(m[0])] = ""</span>
@@ -1477,19 +1506,19 @@ func Args(s string) (map[string]string, error) <span class="cov5" title="86">{
                         return nil, fmt.Errorf("failed to parse arg string: %q", arg)</span>
                 }
         }
-        <span class="cov5" title="86">return argMap, nil</span>
+        <span class="cov5" title="104">return argMap, nil</span>
 }
 
 // HelloArgument parses helo argument
-func HelloArgument(arg string) (string, error) <span class="cov5" title="68">{
+func HelloArgument(arg string) (string, error) <span class="cov5" title="71">{
         domain := arg
         if idx := strings.IndexRune(arg, ' '); idx &gt;= 0 </span><span class="cov0" title="0">{
                 domain = arg[:idx]
         }</span>
-        <span class="cov5" title="68">if domain == "" </span><span class="cov0" title="0">{
+        <span class="cov5" title="71">if domain == "" </span><span class="cov0" title="0">{
                 return "", errors.New("invalid domain")
         }</span>
-        <span class="cov5" title="68">return domain, nil</span>
+        <span class="cov5" title="71">return domain, nil</span>
 }
 
 // Parser parses command arguments defined in RFC 5321 section 4.1.2.
@@ -1497,51 +1526,51 @@ type Parser struct {
         S string
 }
 
-func (p *Parser) peekByte() (byte, bool) <span class="cov10" title="3613">{
+func (p *Parser) peekByte() (byte, bool) <span class="cov10" title="4309">{
         if len(p.S) == 0 </span><span class="cov4" title="24">{
                 return 0, false
         }</span>
-        <span class="cov9" title="3589">return p.S[0], true</span>
+        <span class="cov9" title="4285">return p.S[0], true</span>
 }
 
-func (p *Parser) readByte() (byte, bool) <span class="cov9" title="1601">{
+func (p *Parser) readByte() (byte, bool) <span class="cov9" title="1913">{
         ch, ok := p.peekByte()
-        if ok </span><span class="cov9" title="1601">{
+        if ok </span><span class="cov9" title="1913">{
                 p.S = p.S[1:]
         }</span>
-        <span class="cov9" title="1601">return ch, ok</span>
+        <span class="cov9" title="1913">return ch, ok</span>
 }
 
-func (p *Parser) acceptByte(ch byte) bool <span class="cov7" title="471">{
+func (p *Parser) acceptByte(ch byte) bool <span class="cov7" title="561">{
         got, ok := p.peekByte()
-        if !ok || got != ch </span><span class="cov6" title="220">{
+        if !ok || got != ch </span><span class="cov6" title="256">{
                 return false
         }</span>
-        <span class="cov7" title="251">p.readByte()
+        <span class="cov7" title="305">p.readByte()
         return true</span>
 }
 
-func (p *Parser) expectByte(ch byte) error <span class="cov6" title="173">{
+func (p *Parser) expectByte(ch byte) error <span class="cov6" title="209">{
         if !p.acceptByte(ch) </span><span class="cov2" title="3">{
                 if len(p.S) == 0 </span><span class="cov2" title="3">{
                         return fmt.Errorf("expected '%v', got EOF", string(ch))
                 }</span>
                 <span class="cov0" title="0">return fmt.Errorf("expected '%v', got '%v'", string(ch), string(p.S[0]))</span>
         }
-        <span class="cov6" title="170">return nil</span>
+        <span class="cov6" title="206">return nil</span>
 }
 
 // ReversePath parses a recipient.
-func (p *Parser) ReversePath() (string, error) <span class="cov5" title="60">{
+func (p *Parser) ReversePath() (string, error) <span class="cov5" title="63">{
         if after, ok := strings.CutPrefix(p.S, "&lt;&gt;"); ok </span><span class="cov1" title="2">{
                 p.S = after
                 return "", nil
         }</span>
-        <span class="cov5" title="58">return p.Path()</span>
+        <span class="cov5" title="61">return p.Path()</span>
 }
 
 // Path parses a recipient.
-func (p *Parser) Path() (string, error) <span class="cov6" title="99">{
+func (p *Parser) Path() (string, error) <span class="cov6" title="117">{
         hasBracket := p.acceptByte('&lt;')
         if p.acceptByte('@') </span><span class="cov0" title="0">{
                 i := strings.IndexByte(p.S, ':')
@@ -1550,55 +1579,55 @@ func (p *Parser) Path() (string, error) <span class="cov6" title="99">{
                 }</span>
                 <span class="cov0" title="0">p.S = p.S[i+1:]</span>
         }
-        <span class="cov6" title="99">mbox, err := p.Mailbox()
+        <span class="cov6" title="117">mbox, err := p.Mailbox()
         if err != nil </span><span class="cov3" title="9">{
                 return "", fmt.Errorf("in mailbox: %v", err)
         }</span>
-        <span class="cov5" title="90">if hasBracket </span><span class="cov5" title="80">{
+        <span class="cov6" title="108">if hasBracket </span><span class="cov5" title="98">{
                 if err := p.expectByte('&gt;'); err != nil </span><span class="cov1" title="1">{
                         return "", err
                 }</span>
         }
-        <span class="cov5" title="89">return mbox, nil</span>
+        <span class="cov6" title="107">return mbox, nil</span>
 }
 
 // Mailbox parses a mailbox.
-func (p *Parser) Mailbox() (string, error) <span class="cov6" title="100">{
+func (p *Parser) Mailbox() (string, error) <span class="cov6" title="118">{
         localPart, err := p.localPart()
         if err != nil </span><span class="cov2" title="4">{
                 return "", fmt.Errorf("in local-part: %v", err)
-        }</span> else<span class="cov6" title="96"> if localPart == "" </span><span class="cov2" title="3">{
+        }</span> else<span class="cov6" title="114"> if localPart == "" </span><span class="cov2" title="3">{
                 return "", errors.New("local-part is empty")
         }</span>
 
-        <span class="cov5" title="93">if err := p.expectByte('@'); err != nil </span><span class="cov1" title="2">{
+        <span class="cov6" title="111">if err := p.expectByte('@'); err != nil </span><span class="cov1" title="2">{
                 return "", err
         }</span>
 
-        <span class="cov5" title="91">var sb strings.Builder
+        <span class="cov6" title="109">var sb strings.Builder
         sb.WriteString(localPart)
         sb.WriteByte('@')
 
-        for </span><span class="cov8" title="1040">{
+        for </span><span class="cov8" title="1244">{
                 ch, ok := p.peekByte()
                 if !ok </span><span class="cov3" title="7">{
                         break</span>
                 }
-                <span class="cov8" title="1033">if ch == ' ' || ch == '\t' || ch == '&gt;' </span><span class="cov5" title="84">{
+                <span class="cov8" title="1237">if ch == ' ' || ch == '\t' || ch == '&gt;' </span><span class="cov5" title="102">{
                         break</span>
                 }
-                <span class="cov8" title="949">p.readByte()
+                <span class="cov8" title="1135">p.readByte()
                 sb.WriteByte(ch)</span>
         }
 
-        <span class="cov5" title="91">if strings.HasSuffix(sb.String(), "@") </span><span class="cov0" title="0">{
+        <span class="cov6" title="109">if strings.HasSuffix(sb.String(), "@") </span><span class="cov0" title="0">{
                 return "", errors.New("domain is empty")
         }</span>
 
-        <span class="cov5" title="91">return sb.String(), nil</span>
+        <span class="cov6" title="109">return sb.String(), nil</span>
 }
 
-func (p *Parser) localPart() (string, error) <span class="cov6" title="100">{
+func (p *Parser) localPart() (string, error) <span class="cov6" title="118">{
         var sb strings.Builder
 
         if p.acceptByte('"') </span><span class="cov0" title="0">{ // quoted-string
@@ -1616,19 +1645,19 @@ func (p *Parser) localPart() (string, error) <span class="cov6" title="100">{
                         }</span>
                         <span class="cov0" title="0">sb.WriteByte(ch)</span>
                 }
-        } else<span class="cov6" title="100"> { // dot-string
-                for </span><span class="cov7" title="501">{
+        } else<span class="cov6" title="118"> { // dot-string
+                for </span><span class="cov7" title="591">{
                         ch, ok := p.peekByte()
                         if !ok </span><span class="cov2" title="5">{
                                 return sb.String(), nil
                         }</span>
-                        <span class="cov7" title="496">switch ch </span>{
-                        case '@':<span class="cov5" title="91">
+                        <span class="cov7" title="586">switch ch </span>{
+                        case '@':<span class="cov6" title="109">
                                 return sb.String(), nil</span>
                         case '(', ')', '&lt;', '&gt;', '[', ']', ':', ';', '\\', ',', '"', ' ', '\t':<span class="cov2" title="4">
                                 return "", errors.New("malformed dot-string")</span>
                         }
-                        <span class="cov7" title="401">p.readByte()
+                        <span class="cov7" title="473">p.readByte()
                         sb.WriteByte(ch)</span>
                 }
         }
@@ -1698,7 +1727,7 @@ func NewBdatReader(arg string, maxMessageBytes int64, input io.Reader, nextComma
         }, nil</span>
 }
 
-func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">{
+func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="52">{
         if d.size == 0 </span><span class="cov8" title="25">{
                 if d.last </span><span class="cov5" title="7">{
                         return 0, io.EOF
@@ -1715,7 +1744,7 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">
                 }
 
                 <span class="cov6" title="12">switch cmd </span>{
-                case "BDAT":<span class="cov5" title="9">
+                case "BDAT":<span class="cov6" title="9">
                         d.size, d.last, err = bdatArg(arg)
                         if err != nil </span><span class="cov1" title="1">{
                                 return 0, err
@@ -1733,15 +1762,15 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">
                 }
         }
 
-        <span class="cov9" title="35">if d.maxMessageBytes != 0 &amp;&amp; d.bytesReceived+d.size &gt; d.maxMessageBytes </span><span class="cov3" title="3">{
+        <span class="cov9" title="34">if d.maxMessageBytes != 0 &amp;&amp; d.bytesReceived+d.size &gt; d.maxMessageBytes </span><span class="cov3" title="3">{
                 return 0, smtp.ErrDataTooLarge
         }</span>
 
-        <span class="cov8" title="32">if d.chunk == nil </span><span class="cov8" title="22">{
+        <span class="cov8" title="31">if d.chunk == nil </span><span class="cov8" title="22">{
                 d.chunk = io.LimitReader(d.input, int64(d.size))
         }</span>
 
-        <span class="cov8" title="32">n, err := d.chunk.Read(b)
+        <span class="cov8" title="31">n, err := d.chunk.Read(b)
         d.bytesReceived += int64(n)
         d.size -= int64(n)
 
@@ -1750,7 +1779,7 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">
                 err = smtp.ErrConnection
         }</span>
 
-        <span class="cov8" title="32">return n, err</span>
+        <span class="cov8" title="31">return n, err</span>
 }
 </pre>
 		
@@ -2072,7 +2101,7 @@ type dotReader struct {
 }
 
 // NewDotReader creates a new dot reader.
-func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span class="cov6" title="8127">{
+func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span class="cov6" title="8130">{
         dr := &amp;dotReader{
                 r: reader,
         }
@@ -2082,14 +2111,14 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span c
                 dr.n = maxMessageBytes
         }</span>
 
-        <span class="cov6" title="8127">return dr</span>
+        <span class="cov6" title="8130">return dr</span>
 }
 
-func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="1169819">{
-        if err == nil </span><span class="cov9" title="1165764">{
+func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="1169818">{
+        if err == nil </span><span class="cov9" title="1165763">{
                 l := len(c)
 
-                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="10641">{
+                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="10640">{
                         // Ends with \r\n, write everything before.
                         return copy(b, c[:l-2])
                 }</span>
@@ -2113,7 +2142,7 @@ const (
 // Run data through a simple state machine to
 // elide leading dots and detect End-of-Data
 // (&lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;) line.
-func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1174329">{
+func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1174331">{
         if r.limited </span><span class="cov2" title="15">{
                 if r.n &lt;= 0 </span><span class="cov1" title="2">{
                         return 0, smtp.ErrDataTooLarge
@@ -2124,17 +2153,17 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117432
                 }</span>
         }
 
-        <span class="cov9" title="1174327">var n int       // Data written to b.
+        <span class="cov9" title="1174329">var n int       // Data written to b.
         var skipped int // How many.
 
         // IMPORTANT: We cannot wait on read,
         // because no EOL returns.
-        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="1032220">{
+        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="1032222">{
                 _, _ = r.r.Peek(5)
         }</span>
 
         // min 5, max buffer size, default len(b)
-        <span class="cov9" title="1174327">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+        <span class="cov9" title="1174329">c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
 
         // write \n
         if r.state == stateCR </span><span class="cov1" title="4">{
@@ -2151,17 +2180,17 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117432
                 }</span>
         }
 
-        <span class="cov9" title="1174327">if r.state != stateEOF </span><span class="cov9" title="1174324">{
-                for </span><span class="cov10" title="1239085">{
+        <span class="cov9" title="1174329">if r.state != stateEOF </span><span class="cov9" title="1174326">{
+                for </span><span class="cov10" title="1239087">{
                         i := bytes.Index(c, crlfdot)
 
                         // No full \r\n. found.
-                        if i == -1 </span><span class="cov9" title="1169819">{
+                        if i == -1 </span><span class="cov9" title="1169818">{
                                 n += noCrlfDotFound(err, b, c)
                                 break</span>
                         }
 
-                        <span class="cov8" title="69266">if len(c)-1 &lt; i+4 </span><span class="cov4" title="430">{
+                        <span class="cov8" title="69269">if len(c)-1 &lt; i+4 </span><span class="cov4" title="430">{
                                 // i is \r, \n.\r\n needs to be accessible
                                 if err != nil </span><span class="cov1" title="2">{
                                         // No more data, just read to the end.
@@ -2176,7 +2205,7 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117432
                                 <span class="cov4" title="430">break</span>
                         }
 
-                        <span class="cov8" title="68836">p := copy(b, c[:i+2])
+                        <span class="cov8" title="68839">p := copy(b, c[:i+2])
                         n += p
 
                         // b was to small
@@ -2190,7 +2219,7 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117432
                         }
 
                         // The end \r\n.\n\r
-                        <span class="cov8" title="68831">if c[i+3] == '\r' &amp;&amp; c[i+4] == '\n' </span><span class="cov6" title="4070">{
+                        <span class="cov8" title="68834">if c[i+3] == '\r' &amp;&amp; c[i+4] == '\n' </span><span class="cov6" title="4073">{
                                 r.state = stateEOF
                                 skipped += 3 // skip .\r\n
                                 break</span>
@@ -2204,19 +2233,19 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117432
 
         // n + skipped is always smaller then what was peeked,
         // so it is guaranteed to work
-        <span class="cov9" title="1174327">_, _ = r.r.Discard(n + skipped)
+        <span class="cov9" title="1174329">_, _ = r.r.Discard(n + skipped)
 
         if err == io.EOF &amp;&amp; r.state != stateEOF </span><span class="cov6" title="4055">{
                 err = io.ErrUnexpectedEOF
-        }</span> else<span class="cov9" title="1170272"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov6" title="4073">{
+        }</span> else<span class="cov9" title="1170274"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov6" title="4076">{
                 err = io.EOF
         }</span>
 
-        <span class="cov9" title="1174327">if r.limited </span><span class="cov2" title="13">{
+        <span class="cov9" title="1174329">if r.limited </span><span class="cov2" title="13">{
                 r.n -= int64(n)
         }</span>
 
-        <span class="cov9" title="1174327">return n, err</span>
+        <span class="cov9" title="1174329">return n, err</span>
 }
 </pre>
 		
@@ -2384,16 +2413,16 @@ func NewTextproto(
         readerSize int,
         writerSize int,
         maxLineLength int,
-) *Textproto <span class="cov7" title="108">{
-        if readerSize == 0 </span><span class="cov6" title="67">{
+) *Textproto <span class="cov7" title="111">{
+        if readerSize == 0 </span><span class="cov6" title="70">{
                 readerSize = 4096 // default
         }</span>
 
-        <span class="cov7" title="108">if writerSize == 0 </span><span class="cov6" title="67">{
+        <span class="cov7" title="111">if writerSize == 0 </span><span class="cov6" title="70">{
                 writerSize = 4096 // default
         }</span>
 
-        <span class="cov7" title="108">return &amp;Textproto{
+        <span class="cov7" title="111">return &amp;Textproto{
                 R:                  bufio.NewReaderSize(conn, readerSize),
                 W:                  bufio.NewWriterSize(conn, writerSize),
                 conn:               conn,
@@ -2441,12 +2470,12 @@ func (t *Textproto) Cmd(format string, args ...any) (id uint, err error) <span c
 }
 
 // PrintfLine writes the formatted output followed by \r\n.
-func (t *Textproto) PrintfLine(format string, args ...any) error <span class="cov10" title="826">{
+func (t *Textproto) PrintfLine(format string, args ...any) error <span class="cov10" title="874">{
         if _, err := fmt.Fprintf(t.W, format, args...); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov10" title="826">_, err := t.W.Write(crnl)
+        <span class="cov10" title="874">_, err := t.W.Write(crnl)
         return err</span>
 }
 
@@ -2488,13 +2517,13 @@ func (t *Textproto) PrintfLineAndFlush(format string, args ...any) error <span c
 func (t *Textproto) ReadResponse(expectCode int) (code int, message string, err error) <span class="cov7" title="143">{
         code, continued, message, err := t.readCodeLine(expectCode)
         multi := continued
-        for continued </span><span class="cov7" title="90">{
+        for continued </span><span class="cov6" title="90">{
                 line, err := t.ReadLine()
                 if err != nil </span><span class="cov0" title="0">{
                         return 0, "", err
                 }</span>
 
-                <span class="cov7" title="90">var code2 int
+                <span class="cov6" title="90">var code2 int
                 var moreMessage string
                 code2, continued, moreMessage, err = parseCodeLine(line, 0)
                 if err != nil || code2 != code </span><span class="cov1" title="2">{
@@ -2550,31 +2579,31 @@ func parseCodeLine(line string, expectCode int) (code int, continued bool, messa
 
 // ReadLine reads a single line from r,
 // eliding the final \n or \r\n from the returned string.
-func (t *Textproto) ReadLine() (string, error) <span class="cov9" title="589">{
+func (t *Textproto) ReadLine() (string, error) <span class="cov9" title="615">{
         line, err := t.readLineSlice()
         return string(line), err
 }</span>
 
-func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="589">{
+func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="615">{
         // If the line limit was exceeded once, the connection shouldn't be used anymore.
         if t.lineLengthExceeded </span><span class="cov1" title="1">{
                 return nil, ErrTooLongLine
         }</span>
 
-        <span class="cov9" title="588">var line []byte
-        for </span><span class="cov9" title="588">{
+        <span class="cov9" title="614">var line []byte
+        for </span><span class="cov9" title="614">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov6" title="57">{
+                if err != nil </span><span class="cov6" title="56">{
                         return nil, err
                 }</span>
 
-                <span class="cov9" title="529">if t.maxLineLength &gt; 0 &amp;&amp; len(l)+len(line) &gt; t.maxLineLength </span><span class="cov2" title="3">{
+                <span class="cov9" title="553">if t.maxLineLength &gt; 0 &amp;&amp; len(l)+len(line) &gt; t.maxLineLength </span><span class="cov2" title="3">{
                         t.lineLengthExceeded = true
                         return nil, ErrTooLongLine
                 }</span>
 
                 // Avoid the copy if the first call produced a full line.
-                <span class="cov9" title="526">if line == nil &amp;&amp; !more </span><span class="cov9" title="526">{
+                <span class="cov9" title="550">if line == nil &amp;&amp; !more </span><span class="cov9" title="550">{
                         return l, nil
                 }</span>
                 <span class="cov0" title="0">line = append(line, l...)
@@ -3675,23 +3704,23 @@ type Conn struct {
 }
 
 // run loops until an error occurs (quit for example)
-func (c *Conn) run() (err error) <span class="cov6" title="67">{
+func (c *Conn) run() (err error) <span class="cov6" title="70">{
         var (
                 cmd string
                 arg string
         )
         c.greet()
 
-        for </span><span class="cov8" title="311">{
+        for </span><span class="cov8" title="337">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov6" title="58">{
+                if err != nil </span><span class="cov6" title="57">{
                         return err
                 }</span>
 
-                <span class="cov8" title="251">err = c.handle(cmd, arg)
-                if err != nil </span><span class="cov8" title="240">{
+                <span class="cov8" title="275">err = c.handle(cmd, arg)
+                if err != nil </span><span class="cov8" title="264">{
                         // if error is a smtp status it isn't necessary to close the connection
-                        if smtpErr, ok := err.(*smtp.Status); ok </span><span class="cov8" title="240">{
+                        if smtpErr, ok := err.(*smtp.Status); ok </span><span class="cov8" title="264">{
                                 // Service closing transmission channel, after quit
                                 if smtpErr.Code == 221 </span><span class="cov3" title="6">{
                                         return smtpErr
@@ -3699,7 +3728,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="67">{
 
                                 // ToDo: close connection on repeated errors (e.g. authentication tries)
 
-                                <span class="cov8" title="234">c.writeStatus(smtpErr)
+                                <span class="cov8" title="258">c.writeStatus(smtpErr)
                                 continue</span>
                         }
 
@@ -3708,40 +3737,40 @@ func (c *Conn) run() (err error) <span class="cov6" title="67">{
         }
 }
 
-func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="317">{
+func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="343">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov6" title="56">{
+        if err != nil </span><span class="cov6" title="55">{
                 return "", "", err
         }</span>
-        <span class="cov8" title="259">return parse.Cmd(line)</span>
+        <span class="cov8" title="283">return parse.Cmd(line)</span>
 }
 
 // Commands are dispatched to the appropriate handler functions.
-func (c *Conn) handle(cmd string, arg string) error <span class="cov8" title="251">{
+func (c *Conn) handle(cmd string, arg string) error <span class="cov8" title="275">{
         if cmd == "" </span><span class="cov0" title="0">{
                 return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
         }</span>
-        <span class="cov8" title="251">cmd = strings.ToUpper(cmd)
+        <span class="cov8" title="275">cmd = strings.ToUpper(cmd)
 
         switch c.state </span>{
-        case stateInit, stateUpgrade:<span class="cov6" title="67">
+        case stateInit, stateUpgrade:<span class="cov6" title="70">
                 return c.handleStateInit(cmd, arg)</span>
         case stateEnforceSecureConnection:<span class="cov2" title="3">
                 return c.handleStateEnforceSecureConnection(cmd, arg)</span>
         case stateEnforceAuthentication:<span class="cov3" title="7">
                 return c.handleStateEnforceAuthentication(cmd, arg)</span>
-        case stateGreeted:<span class="cov7" title="102">
+        case stateGreeted:<span class="cov7" title="105">
                 return c.handleStateGreeted(cmd, arg)</span>
-        case stateMail:<span class="cov6" title="72">
+        case stateMail:<span class="cov6" title="90">
                 return c.handleStateMail(cmd, arg)</span>
         default:<span class="cov0" title="0">
                 return fmt.Errorf("unsupported state %d, how?", c.state)</span>
         }
 }
 
-func (c *Conn) handleStateInit(cmd string, arg string) error <span class="cov6" title="67">{
+func (c *Conn) handleStateInit(cmd string, arg string) error <span class="cov6" title="70">{
         switch cmd </span>{
-        case "HELO", "EHLO":<span class="cov6" title="67">
+        case "HELO", "EHLO":<span class="cov6" title="70">
                 return c.handleGreet(cmd == "EHLO", arg)</span>
         case "NOOP":<span class="cov0" title="0">
                 return smtp.Noop</span>
@@ -3778,11 +3807,11 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error <s
         }
 }
 
-func (c *Conn) handleStateGreeted(cmd string, arg string) error <span class="cov7" title="102">{
+func (c *Conn) handleStateGreeted(cmd string, arg string) error <span class="cov7" title="105">{
         switch cmd </span>{
         case "HELO", "EHLO":<span class="cov0" title="0">
                 return c.handleGreet(cmd == "EHLO", arg)</span>
-        case "MAIL":<span class="cov6" title="48">
+        case "MAIL":<span class="cov6" title="51">
                 return c.handleMail(arg)</span>
         case "NOOP":<span class="cov1" title="2">
                 return smtp.Noop</span>
@@ -3804,11 +3833,11 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error <span class="cov
         }
 }
 
-func (c *Conn) handleStateMail(cmd string, arg string) error <span class="cov6" title="72">{
+func (c *Conn) handleStateMail(cmd string, arg string) error <span class="cov6" title="90">{
         switch cmd </span>{
         case "HELO", "EHLO":<span class="cov1" title="1">
                 return c.handleGreet(cmd == "EHLO", arg)</span>
-        case "RCPT":<span class="cov5" title="38">
+        case "RCPT":<span class="cov6" title="53">
                 return c.handleRcpt(arg)</span>
         case "NOOP":<span class="cov0" title="0">
                 return smtp.Noop</span>
@@ -3821,7 +3850,7 @@ func (c *Conn) handleStateMail(cmd string, arg string) error <span class="cov6" 
                         return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "CHUNKING is not implemented")
                 }</span>
                 <span class="cov3" title="9">return c.handleBdat(arg)</span>
-        case "DATA":<span class="cov5" title="21">
+        case "DATA":<span class="cov5" title="24">
                 return c.handleData(arg)</span>
         case "QUIT":<span class="cov0" title="0">
                 return smtp.Quit</span>
@@ -3859,26 +3888,26 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov6" title="65">{
+func (c *Conn) Close(err error) <span class="cov6" title="64">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="28">{
+        if closeErr != nil </span><span class="cov5" title="39">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="28"> {
+                }</span> else<span class="cov5" title="39"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
 
-        <span class="cov6" title="65">if err != nil </span><span class="cov6" title="59">{
+        <span class="cov6" title="64">if err != nil </span><span class="cov6" title="58">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
-        <span class="cov6" title="65">if c.session != nil </span><span class="cov6" title="65">{
+        <span class="cov6" title="64">if c.session != nil </span><span class="cov6" title="64">{
                 c.session.Close(c.ctx, err)
                 c.session = nil
         }</span>
@@ -3895,7 +3924,7 @@ func (c *Conn) TLSConnectionState() (tls.ConnectionState, bool) <span class="cov
 }
 
 // IsTLS returns if the connection is encrypted by tls.
-func (c *Conn) IsTLS() bool <span class="cov6" title="70">{
+func (c *Conn) IsTLS() bool <span class="cov6" title="73">{
         _, ok := c.conn.(*tls.Conn)
         return ok
 }</span>
@@ -3930,7 +3959,7 @@ func (c *Conn) handleRSET() error <span class="cov1" title="2">{
 }
 
 // GREET state -&gt; waiting for HELO
-func (c *Conn) handleGreet(esmtp bool, arg string) error <span class="cov6" title="68">{
+func (c *Conn) handleGreet(esmtp bool, arg string) error <span class="cov6" title="71">{
         domain, err := parse.HelloArgument(arg)
         if err != nil </span><span class="cov0" title="0">{
                 return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Domain/address argument required for HELO")
@@ -3938,7 +3967,7 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error <span class="cov6" titl
 
         // c.helo is populated before NewSession so
         // NewSession can access it via Conn.Esmtp.
-        <span class="cov6" title="68">c.esmtp = esmtp
+        <span class="cov6" title="71">c.esmtp = esmtp
 
         // c.helo is populated before NewSession so
         // NewSession can access it via Conn.Hostname.
@@ -3954,19 +3983,19 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error <span class="cov6" titl
                 }</span>
         }
 
-        <span class="cov6" title="68">if c.server.enforceSecureConnection &amp;&amp; !c.IsTLS() </span><span class="cov2" title="3">{
+        <span class="cov6" title="71">if c.server.enforceSecureConnection &amp;&amp; !c.IsTLS() </span><span class="cov2" title="3">{
                 c.state = stateEnforceSecureConnection
-        }</span> else<span class="cov6" title="65"> if c.server.enforceAuthentication &amp;&amp; !c.didAuth </span><span class="cov2" title="4">{
+        }</span> else<span class="cov6" title="68"> if c.server.enforceAuthentication &amp;&amp; !c.didAuth </span><span class="cov2" title="4">{
                 c.state = stateEnforceAuthentication
-        }</span> else<span class="cov6" title="61"> {
+        }</span> else<span class="cov6" title="64"> {
                 c.state = stateGreeted
         }</span>
 
-        <span class="cov6" title="68">if !esmtp </span><span class="cov2" title="3">{
+        <span class="cov6" title="71">if !esmtp </span><span class="cov2" title="3">{
                 return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Hello %s", domain))
         }</span>
 
-        <span class="cov6" title="65">caps := strings.Builder{}
+        <span class="cov6" title="68">caps := strings.Builder{}
         caps.Grow(512)
 
         caps.WriteString("Hello ")
@@ -3978,16 +4007,16 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error <span class="cov6" titl
                 caps.WriteString("\nCHUNKING")
         }</span>
 
-        <span class="cov6" title="65">isTLS := c.IsTLS()
+        <span class="cov6" title="68">isTLS := c.IsTLS()
 
         if !isTLS &amp;&amp; c.server.tlsConfig != nil </span><span class="cov2" title="3">{
                 caps.WriteString("\nSTARTTLS")
         }</span>
 
-        <span class="cov6" title="65">c.mechanisms = c.session.AuthMechanisms(c.ctx)
-        if len(c.mechanisms) &gt; 0 </span><span class="cov6" title="52">{
+        <span class="cov6" title="68">c.mechanisms = c.session.AuthMechanisms(c.ctx)
+        if len(c.mechanisms) &gt; 0 </span><span class="cov6" title="55">{
                 caps.WriteString("\nAUTH")
-                for _, name := range c.mechanisms </span><span class="cov6" title="52">{
+                for _, name := range c.mechanisms </span><span class="cov6" title="55">{
                         caps.WriteByte(' ')
                         caps.WriteString(name)
                 }</span>
@@ -3997,36 +4026,52 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error <span class="cov6" titl
                         "No auth mechanism available but authentication enforced", err)
         }</span>
 
-        <span class="cov6" title="65">if c.server.enableSMTPUTF8 </span><span class="cov1" title="2">{
+        <span class="cov6" title="68">if c.server.enableSMTPUTF8 </span><span class="cov1" title="2">{
                 caps.WriteString("\nSMTPUTF8")
         }</span>
-        <span class="cov6" title="65">if isTLS &amp;&amp; c.server.enableREQUIRETLS </span><span class="cov0" title="0">{
+        <span class="cov6" title="68">if isTLS &amp;&amp; c.server.enableREQUIRETLS </span><span class="cov0" title="0">{
                 caps.WriteString("\nREQUIRETLS")
         }</span>
-        <span class="cov6" title="65">if c.server.enableBINARYMIME </span><span class="cov1" title="1">{
+        <span class="cov6" title="68">if c.server.enableBINARYMIME </span><span class="cov1" title="1">{
                 caps.WriteString("\nBINARYMIME")
         }</span>
-        <span class="cov6" title="65">if c.server.enableDSN </span><span class="cov1" title="2">{
+        <span class="cov6" title="68">if c.server.enableDSN </span><span class="cov1" title="2">{
                 caps.WriteString("\nDSN")
         }</span>
-        <span class="cov6" title="65">if c.server.enableXOORG </span><span class="cov1" title="1">{
+        <span class="cov6" title="68">if c.server.enableXOORG </span><span class="cov1" title="1">{
                 caps.WriteString("\nXOORG")
         }</span>
-        <span class="cov6" title="65">if c.server.maxMessageBytes &gt; 0 </span><span class="cov4" title="15">{
+        <span class="cov6" title="68">if c.server.maxMessageBytes &gt; 0 </span><span class="cov4" title="15">{
                 fmt.Fprintf(&amp;caps, "\nSIZE %v", c.server.maxMessageBytes)
-        }</span> else<span class="cov6" title="50"> {
+        }</span> else<span class="cov6" title="53"> {
                 caps.WriteString("\nSIZE")
         }</span>
-        <span class="cov6" title="65">if c.server.maxRecipients &gt; 0 </span><span class="cov4" title="12">{
+        <span class="cov6" title="68">if c.server.maxRecipients &gt; 0 </span><span class="cov4" title="12">{
                 fmt.Fprintf(&amp;caps, "\nLIMITS RCPTMAX=%v", c.server.maxRecipients)
         }</span>
-
-        <span class="cov6" title="65">return smtp.NewStatus(250, smtp.NoEnhancedCode, caps.String())</span>
+        <span class="cov6" title="68">if c.server.enableRRVS </span><span class="cov1" title="1">{
+                caps.WriteString("\nRRVS")
+        }</span>
+        <span class="cov6" title="68">if c.server.enableDELIVERBY </span><span class="cov1" title="1">{
+                if c.server.minimumDeliverByTime == 0 </span><span class="cov0" title="0">{
+                        caps.WriteString("\nDELIVERBY")
+                }</span> else<span class="cov1" title="1"> {
+                        fmt.Fprintf(&amp;caps, "\nDELIVERBY %d", int(c.server.minimumDeliverByTime.Seconds()))
+                }</span>
+        }
+        <span class="cov6" title="68">if c.server.enableMTPRIORITY </span><span class="cov1" title="1">{
+                if c.server.mtPriorityProfile == smtp.PriorityUnspecified </span><span class="cov1" title="1">{
+                        caps.WriteString("\nMT-PRIORITY")
+                }</span> else<span class="cov0" title="0"> {
+                        fmt.Fprintf(&amp;caps, "MT-PRIORITY %s", c.server.mtPriorityProfile)
+                }</span>
+        }
+        <span class="cov6" title="68">return smtp.NewStatus(250, smtp.NoEnhancedCode, caps.String())</span>
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov6" title="64">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="54">{
+func (c *Conn) handleError(err error) <span class="cov6" title="63">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="53">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -4059,13 +4104,13 @@ func (c *Conn) handleError(err error) <span class="cov6" title="64">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="863">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="918">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="863">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="863">{
+        <span class="cov10" title="918">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="918">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -4073,23 +4118,23 @@ func (c *Conn) logger() *slog.Logger <span class="cov10" title="863">{
 
 // READY state -&gt; waiting for MAIL
 // nolint: revive
-func (c *Conn) handleMail(arg string) error <span class="cov6" title="48">{
+func (c *Conn) handleMail(arg string) error <span class="cov6" title="51">{
         arg, ok := parse.CutPrefixFold(arg, "FROM:")
         if !ok </span><span class="cov0" title="0">{
                 return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:&lt;address&gt;")
         }</span>
 
-        <span class="cov6" title="48">p := parse.Parser{S: strings.TrimSpace(arg)}
+        <span class="cov6" title="51">p := parse.Parser{S: strings.TrimSpace(arg)}
         from, err := p.ReversePath()
         if err != nil </span><span class="cov1" title="1">{
                 return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:&lt;address&gt;")
         }</span>
-        <span class="cov6" title="47">args, err := parse.Args(p.S)
+        <span class="cov6" title="50">args, err := parse.Args(p.S)
         if err != nil </span><span class="cov0" title="0">{
                 return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse MAIL ESMTP parameters")
         }</span>
 
-        <span class="cov6" title="47">opts := &amp;smtp.MailOptions{}
+        <span class="cov6" title="50">opts := &amp;smtp.MailOptions{}
 
         c.binarymime = false
         // This is where the Conn may put BODY=8BITMIME, but we already
@@ -4181,7 +4226,7 @@ func (c *Conn) handleMail(arg string) error <span class="cov6" title="48">{
                 }
         }
 
-        <span class="cov5" title="39">if err := c.session.Mail(c.ctx, from, opts); err != nil </span><span class="cov1" title="1">{
+        <span class="cov5" title="42">if err := c.session.Mail(c.ctx, from, opts); err != nil </span><span class="cov1" title="1">{
                 if smtpErr, ok := err.(*smtp.Status); ok </span><span class="cov1" title="1">{
                         // a positive response also counts as a success
                         if smtpErr.Positive() </span><span class="cov0" title="0">{
@@ -4192,66 +4237,64 @@ func (c *Conn) handleMail(arg string) error <span class="cov6" title="48">{
                 <span class="cov0" title="0">return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Mail not accepted", err)</span>
         }
 
-        <span class="cov5" title="37">c.state = stateMail
+        <span class="cov5" title="40">c.state = stateMail
         return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from &lt;%v&gt;", from))</span>
 }
 
 // MAIL state -&gt; waiting for RCPTs followed by DATA
-func (c *Conn) handleRcpt(arg string) error <span class="cov5" title="38">{
+func (c *Conn) handleRcpt(arg string) error <span class="cov6" title="53">{
         arg, ok := parse.CutPrefixFold(arg, "TO:")
         if !ok </span><span class="cov0" title="0">{
                 return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:&lt;address&gt;")
         }</span>
 
-        <span class="cov5" title="38">p := parse.Parser{S: strings.TrimSpace(arg)}
+        <span class="cov6" title="53">p := parse.Parser{S: strings.TrimSpace(arg)}
         recipient, err := p.Path()
         if err != nil </span><span class="cov1" title="1">{
                 return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:&lt;address&gt;")
         }</span>
 
-        <span class="cov5" title="37">if c.server.maxRecipients &gt; 0 &amp;&amp; c.recipients &gt;= c.server.maxRecipients </span><span class="cov0" title="0">{
+        <span class="cov6" title="52">if c.server.maxRecipients &gt; 0 &amp;&amp; c.recipients &gt;= c.server.maxRecipients </span><span class="cov0" title="0">{
                 return smtp.NewStatus(452, smtp.EnhancedCode{4, 5, 3},
                         fmt.Sprintf("Maximum limit of %v recipients reached", c.server.maxRecipients),
                 )
         }</span>
 
-        <span class="cov5" title="37">args, err := parse.Args(p.S)
+        <span class="cov6" title="52">args, err := parse.Args(p.S)
         if err != nil </span><span class="cov0" title="0">{
                 return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse RCPT ESMTP parameters")
         }</span>
 
-        <span class="cov5" title="37">opts := &amp;smtp.RcptOptions{}
+        <span class="cov6" title="52">opts := &amp;smtp.RcptOptions{}
 
-        for key, value := range args </span><span class="cov4" title="10">{
+        for key, value := range args </span><span class="cov5" title="25">{
                 switch key </span>{
                 case "NOTIFY":<span class="cov3" title="5">
-                        if !c.server.enableDSN </span><span class="cov0" title="0">{
-                                return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
+                        if err := handleRcptNotify(c.server, opts, value); err != nil </span><span class="cov0" title="0">{
+                                return err
                         }</span>
-                        <span class="cov3" title="5">notify := []smtp.DSNNotify{}
-                        for val := range strings.SplitSeq(value, ",") </span><span class="cov3" title="7">{
-                                notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
-                        }</span>
-                        <span class="cov3" title="5">if err := textsmtp.CheckNotifySet(notify); err != nil </span><span class="cov0" title="0">{
-                                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
-                        }</span>
-                        <span class="cov3" title="5">opts.Notify = notify</span>
                 case "ORCPT":<span class="cov3" title="5">
-                        if !c.server.enableDSN </span><span class="cov0" title="0">{
-                                return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
+                        if err := handleRcptORCPT(c.server, opts, value); err != nil </span><span class="cov0" title="0">{
+                                return err
                         }</span>
-                        <span class="cov3" title="5">aType, aAddr, err := decodeTypedAddress(value)
-                        if err != nil || aAddr == "" </span><span class="cov0" title="0">{
-                                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ORCPT parameter value")
+                case "RRVS":<span class="cov2" title="4">
+                        if err := handleRcptRRVS(c.server, opts, value); err != nil </span><span class="cov1" title="2">{
+                                return err
                         }</span>
-                        <span class="cov3" title="5">opts.OriginalRecipientType = aType
-                        opts.OriginalRecipient = aAddr</span>
+                case "BY":<span class="cov3" title="6">
+                        if err := handleRcptBY(c.server, opts, value); err != nil </span><span class="cov3" title="5">{
+                                return err
+                        }</span>
+                case "MT-PRIORITY":<span class="cov3" title="5">
+                        if err := handleRcptMTPRIORITY(c.server, opts, value); err != nil </span><span class="cov2" title="4">{
+                                return err
+                        }</span>
                 default:<span class="cov0" title="0">
                         return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Unknown RCPT TO argument")</span>
                 }
         }
 
-        <span class="cov5" title="37">if err := c.session.Rcpt(c.ctx, recipient, opts); err != nil </span><span class="cov1" title="1">{
+        <span class="cov5" title="41">if err := c.session.Rcpt(c.ctx, recipient, opts); err != nil </span><span class="cov1" title="1">{
                 if smtpErr, ok := err.(*smtp.Status); ok </span><span class="cov1" title="1">{
                         // a positive response also counts as a success
                         if smtpErr.Positive() </span><span class="cov0" title="0">{
@@ -4262,8 +4305,81 @@ func (c *Conn) handleRcpt(arg string) error <span class="cov5" title="38">{
                 <span class="cov0" title="0">return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "Recipient not accepted", err)</span>
         }
 
-        <span class="cov5" title="36">c.recipients++
+        <span class="cov5" title="40">c.recipients++
         return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure &lt;%v&gt; gets this", recipient))</span>
+}
+
+func handleRcptNotify(server *Server, opts *smtp.RcptOptions, value string) error <span class="cov3" title="5">{
+        if !server.enableDSN </span><span class="cov0" title="0">{
+                return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
+        }</span>
+        <span class="cov3" title="5">notify := []smtp.DSNNotify{}
+        for val := range strings.SplitSeq(value, ",") </span><span class="cov3" title="7">{
+                notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
+        }</span>
+        <span class="cov3" title="5">if err := textsmtp.CheckNotifySet(notify); err != nil </span><span class="cov0" title="0">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
+        }</span>
+        <span class="cov3" title="5">opts.Notify = notify
+        return nil</span>
+}
+
+func handleRcptORCPT(server *Server, opts *smtp.RcptOptions, value string) error <span class="cov3" title="5">{
+        if !server.enableDSN </span><span class="cov0" title="0">{
+                return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
+        }</span>
+        <span class="cov3" title="5">aType, aAddr, err := decodeTypedAddress(value)
+        if err != nil || aAddr == "" </span><span class="cov0" title="0">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ORCPT parameter value")
+        }</span>
+        <span class="cov3" title="5">opts.OriginalRecipientType = aType
+        opts.OriginalRecipient = aAddr
+        return nil</span>
+}
+
+func handleRcptRRVS(server *Server, opts *smtp.RcptOptions, value string) error <span class="cov2" title="4">{
+        if !server.enableRRVS </span><span class="cov0" title="0">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "RRVS is not implemented")
+        }</span>
+        <span class="cov2" title="4">value, _, _ = strings.Cut(value, ";") // discard the no-support action
+        rrvsTime, err := time.Parse(time.RFC3339, value)
+        if err != nil </span><span class="cov1" title="2">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed RRVS parameter value")
+        }</span>
+        <span class="cov1" title="2">opts.RequireRecipientValidSince = rrvsTime
+        return nil</span>
+}
+
+func handleRcptBY(server *Server, opts *smtp.RcptOptions, value string) error <span class="cov3" title="6">{
+        if !server.enableDELIVERBY </span><span class="cov0" title="0">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "DELIVERBY is not implemented")
+        }</span>
+        <span class="cov3" title="6">deliverBy := parseDeliverByArgument(value)
+        if deliverBy == nil </span><span class="cov2" title="4">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed BY parameter value")
+        }</span>
+        <span class="cov1" title="2">if server.minimumDeliverByTime != 0 &amp;&amp;
+                deliverBy.Mode == smtp.DeliverByReturn &amp;&amp;
+                deliverBy.Time &lt; server.minimumDeliverByTime </span><span class="cov1" title="1">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "BY parameter is below server minimum")
+        }</span>
+        <span class="cov1" title="1">opts.DeliverBy = deliverBy
+        return nil</span>
+}
+
+func handleRcptMTPRIORITY(server *Server, opts *smtp.RcptOptions, value string) error <span class="cov3" title="5">{
+        if !server.enableMTPRIORITY </span><span class="cov0" title="0">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is not implemented")
+        }</span>
+        <span class="cov3" title="5">mtPriority, err := strconv.Atoi(value)
+        if err != nil </span><span class="cov1" title="2">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed MT-PRIORITY parameter value")
+        }</span>
+        <span class="cov2" title="3">if mtPriority &lt; -9 || mtPriority &gt; 9 </span><span class="cov1" title="2">{
+                return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is outside valid range")
+        }</span>
+        <span class="cov1" title="1">opts.MTPriority = &amp;mtPriority
+        return nil</span>
 }
 
 func (c *Conn) handleVrfy(arg string) error <span class="cov2" title="3">{
@@ -4409,33 +4525,33 @@ func (c *Conn) handleStartTLS() error <span class="cov1" title="2">{
 }
 
 // DATA
-func (c *Conn) handleData(arg string) error <span class="cov5" title="21">{
+func (c *Conn) handleData(arg string) error <span class="cov5" title="24">{
         // at least a single recipient needs to be set
         if c.recipients == 0 </span><span class="cov1" title="1">{
                 return smtp.ErrNoRecipients
         }</span>
 
-        <span class="cov4" title="20">if arg != "" </span><span class="cov0" title="0">{
+        <span class="cov5" title="23">if arg != "" </span><span class="cov0" title="0">{
                 return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "DATA command should not have any arguments")
         }</span>
-        <span class="cov4" title="20">if c.binarymime </span><span class="cov0" title="0">{
+        <span class="cov5" title="23">if c.binarymime </span><span class="cov0" title="0">{
                 return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed for BINARYMIME messages")
         }</span>
 
-        <span class="cov4" title="20">var r io.Reader
+        <span class="cov5" title="23">var r io.Reader
 
-        rstart := func() io.Reader </span><span class="cov4" title="20">{
+        rstart := func() io.Reader </span><span class="cov5" title="23">{
                 if r != nil </span><span class="cov0" title="0">{
                         return r
                 }</span>
                 // We have recipients, go to accept data
-                <span class="cov4" title="20">c.writeResponse(354, smtp.NoEnhancedCode, "Go ahead. End your data with &lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;")
+                <span class="cov5" title="23">c.writeResponse(354, smtp.NoEnhancedCode, "Go ahead. End your data with &lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;")
 
                 r := textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
                 return r</span>
         }
 
-        <span class="cov4" title="20">uuid, err := c.session.Data(c.ctx, rstart)
+        <span class="cov5" title="23">uuid, err := c.session.Data(c.ctx, rstart)
         if err != nil </span><span class="cov1" title="1">{
                 // an error which isn't a SMTPStatus error will always terminate the connection
                 // if it is an SMTPStatus then wi need to make sure the stream ist read to the end
@@ -4446,14 +4562,14 @@ func (c *Conn) handleData(arg string) error <span class="cov5" title="21">{
         }
 
         // Make sure all the data has been consumed
-        <span class="cov4" title="19">if r != nil </span><span class="cov0" title="0">{
+        <span class="cov5" title="22">if r != nil </span><span class="cov0" title="0">{
                 _, _ = io.Copy(io.Discard, r)
         }</span>
 
-        <span class="cov4" title="19">if err = c.reset(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov5" title="22">if err = c.reset(); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov4" title="19">return c.accepted(uuid)</span>
+        <span class="cov5" title="22">return c.accepted(uuid)</span>
 }
 
 func (c *Conn) handleBdat(arg string) error <span class="cov3" title="9">{
@@ -4508,7 +4624,7 @@ func (c *Conn) handleBdat(arg string) error <span class="cov3" title="9">{
         <span class="cov2" title="3">return c.accepted(queueid)</span>
 }
 
-func (*Conn) accepted(queueid string) *smtp.Status <span class="cov5" title="22">{
+func (*Conn) accepted(queueid string) *smtp.Status <span class="cov5" title="25">{
         if queueid != "" </span><span class="cov0" title="0">{
                 // limit length if queueid is too long (&lt; 1000)
                 if len(queueid) &gt; 977 </span><span class="cov0" title="0">{
@@ -4516,19 +4632,19 @@ func (*Conn) accepted(queueid string) *smtp.Status <span class="cov5" title="22"
                 }</span>
                 <span class="cov0" title="0">return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued as "+queueid)</span>
         }
-        <span class="cov5" title="22">return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")</span>
+        <span class="cov5" title="25">return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")</span>
 }
 
-func (c *Conn) greet() <span class="cov6" title="67">{
+func (c *Conn) greet() <span class="cov6" title="70">{
         protocol := "ESMTP"
         c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.hostname, protocol))
 }</span>
 
-func (c *Conn) writeStatus(status *smtp.Status) <span class="cov8" title="244">{
+func (c *Conn) writeStatus(status *smtp.Status) <span class="cov8" title="268">{
         c.writeResponse(status.Code, status.EnhancedCode, status.Message)
 }</span>
 
-func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) <span class="cov8" title="380">{
+func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) <span class="cov8" title="410">{
         c.logger().DebugContext(c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", text))
 
         // TODO: error handling
@@ -4538,7 +4654,7 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) <
 
         // All responses must include an enhanced code, if it is missing - use
         // a generic code X.0.0.
-        <span class="cov8" title="380">if enhCode == smtp.EnhancedCodeNotSet </span><span class="cov1" title="1">{
+        <span class="cov8" title="410">if enhCode == smtp.EnhancedCodeNotSet </span><span class="cov1" title="1">{
                 cat := code / 100
                 switch cat </span>{
                 case 2, 4, 5:<span class="cov1" title="1">
@@ -4548,27 +4664,27 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) <
                 }
         }
 
-        <span class="cov8" title="380">p := 0
-        for </span><span class="cov9" title="722">{
+        <span class="cov8" title="410">p := 0
+        for </span><span class="cov9" title="770">{
                 i := strings.IndexByte(text[p:], '\n')
-                if i &lt; 0 </span><span class="cov8" title="380">{
+                if i &lt; 0 </span><span class="cov8" title="410">{
                         break</span>
                 }
 
-                <span class="cov8" title="342">_ = c.text.PrintfLine("%d-%v", code, text[p:p+i])
+                <span class="cov8" title="360">_ = c.text.PrintfLine("%d-%v", code, text[p:p+i])
                 p += i + 1</span>
         }
 
-        <span class="cov8" title="380">if enhCode == smtp.NoEnhancedCode </span><span class="cov7" title="184">{
+        <span class="cov8" title="410">if enhCode == smtp.NoEnhancedCode </span><span class="cov7" title="193">{
                 _ = c.text.PrintfLine("%d %v", code, text[p:])
-        }</span> else<span class="cov8" title="196"> {
+        }</span> else<span class="cov8" title="217"> {
                 _ = c.text.PrintfLine("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[p:])
         }</span>
 
         // PIPELINE support
         // If there is something buffered in c.text.R then we can assume another command is following.
         // This means the client is doing pipelining and we don't need to respond just now.
-        <span class="cov8" title="380">if c.text.R.Buffered() == 0 </span><span class="cov8" title="371">{
+        <span class="cov8" title="410">if c.text.R.Buffered() == 0 </span><span class="cov8" title="401">{
                 _ = c.text.W.Flush()
         }</span>
 }
@@ -4582,24 +4698,24 @@ func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, e
 }
 
 // Reads a line of input
-func (c *Conn) readLine() (string, error) <span class="cov8" title="349">{
-        if c.server.readTimeout != 0 </span><span class="cov6" title="48">{
+func (c *Conn) readLine() (string, error) <span class="cov8" title="375">{
+        if c.server.readTimeout != 0 </span><span class="cov6" title="47">{
                 _ = c.conn.SetReadDeadline(time.Now().Add(c.server.readTimeout))
         }</span>
-        <span class="cov8" title="349">line, err := c.text.ReadLine()
-        if err == nil </span><span class="cov8" title="291">{
+        <span class="cov8" title="375">line, err := c.text.ReadLine()
+        if err == nil </span><span class="cov8" title="315">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov8" title="347">return line, err</span>
+        <span class="cov8" title="370">return line, err</span>
 }
 
-func (c *Conn) reset() error <span class="cov5" title="33">{
+func (c *Conn) reset() error <span class="cov5" title="36">{
         // Reset state to Greeted
-        if c.state == stateMail </span><span class="cov5" title="30">{
+        if c.state == stateMail </span><span class="cov5" title="33">{
                 c.state = stateGreeted
         }</span>
 
-        <span class="cov5" title="33">c.recipients = 0
+        <span class="cov5" title="36">c.recipients = 0
 
         upgrade := c.state == stateUpgrade
 
@@ -4607,7 +4723,7 @@ func (c *Conn) reset() error <span class="cov5" title="33">{
         if upgrade </span><span class="cov1" title="2">{
                 c.didAuth = false
         }</span>
-        <span class="cov5" title="33">ctx, err := c.session.Reset(c.ctx, upgrade)
+        <span class="cov5" title="36">ctx, err := c.session.Reset(c.ctx, upgrade)
         c.ctx = ctx
         return err</span>
 }
@@ -4621,10 +4737,34 @@ import (
         "regexp"
         "strconv"
         "strings"
+        "time"
 
         "github.com/uponusolutions/go-smtp"
         "github.com/uponusolutions/go-smtp/internal/textsmtp"
 )
+
+// Parses the BY argument defined in RFC2852 section 4.
+// Returns pointer to options or nil if invalid.
+func parseDeliverByArgument(arg string) *smtp.DeliverByOptions <span class="cov5" title="6">{
+        secondsStr, modeStr, ok := strings.Cut(arg, ";")
+        if !ok </span><span class="cov2" title="2">{
+                return nil
+        }</span>
+        <span class="cov4" title="4">modeStr, traceValue := strings.CutSuffix(modeStr, "T")
+        if modeStr != string(smtp.DeliverByNotify) &amp;&amp; modeStr != string(smtp.DeliverByReturn) </span><span class="cov1" title="1">{
+                return nil
+        }</span>
+        <span class="cov3" title="3">modeValue := smtp.DeliverByMode(modeStr)
+        secondsValue, err := strconv.Atoi(secondsStr)
+        if err != nil || (modeValue == smtp.DeliverByReturn &amp;&amp; secondsValue &lt; 1) </span><span class="cov1" title="1">{
+                return nil
+        }</span>
+        <span class="cov2" title="2">return &amp;smtp.DeliverByOptions{
+                Time:  time.Duration(secondsValue) * time.Second,
+                Mode:  modeValue,
+                Trace: traceValue,
+        }</span>
+}
 
 func decodeSASLResponse(s string) ([]byte, error) <span class="cov10" title="38">{
         if s == "=" </span><span class="cov0" title="0">{
@@ -4814,18 +4954,18 @@ import (
 )
 
 // Serve accepts incoming connections on the Listener l.
-func (s *Server) Serve(ctx context.Context, l net.Listener) error <span class="cov8" title="57">{
+func (s *Server) Serve(ctx context.Context, l net.Listener) error <span class="cov8" title="60">{
         s.locker.Lock()
         s.listeners = append(s.listeners, l)
         s.locker.Unlock()
 
         var tempDelay time.Duration // how long to sleep on accept failure
 
-        for </span><span class="cov10" title="125">{
+        for </span><span class="cov10" title="131">{
                 c, err := l.Accept()
-                if err != nil </span><span class="cov8" title="46">{
+                if err != nil </span><span class="cov8" title="49">{
                         select </span>{
-                        case &lt;-s.done:<span class="cov8" title="44">
+                        case &lt;-s.done:<span class="cov8" title="47">
                                 // we called Close()
                                 return nil</span>
                         default:<span class="cov2" title="2"></span>
@@ -4851,12 +4991,12 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error <span class="c
                         <span class="cov1" title="1">return err</span>
                 }
 
-                <span class="cov8" title="67">s.wg.Add(1)
+                <span class="cov8" title="70">s.wg.Add(1)
                 go s.handleConn(ctx, c)</span>
         }
 }
 
-func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov8" title="67">{
+func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov8" title="70">{
         ctx, cancel := context.WithCancel(ctx)
 
         c := &amp;Conn{
@@ -4872,7 +5012,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
 
         var err error
 
-        defer func() </span><span class="cov8" title="65">{
+        defer func() </span><span class="cov8" title="64">{
                 if err := recover(); err != nil </span><span class="cov1" title="1">{
                         c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
                         stack := debug.Stack()
@@ -4885,7 +5025,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                         c.Close(errors.New("recovered from panic inside handleConn"))
                 }</span>
 
-                <span class="cov8" title="65">s.locker.Lock()
+                <span class="cov8" title="64">s.locker.Lock()
                 delete(s.conns, c)
                 s.locker.Unlock()
 
@@ -4894,14 +5034,14 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                 cancel()</span>
         }()
 
-        <span class="cov8" title="67">sctx, session, err := s.backend.NewSession(ctx, c)
+        <span class="cov8" title="70">sctx, session, err := s.backend.NewSession(ctx, c)
         if err != nil </span><span class="cov0" title="0">{
                 c.Close(fmt.Errorf("couldn't create connection wrapper: %w", err))
                 return
         }</span>
 
         // update ctx and set session
-        <span class="cov8" title="67">c.ctx = sctx
+        <span class="cov8" title="70">c.ctx = sctx
         c.session = session
 
         c.logger().DebugContext(c.ctx, "connection is opened")
@@ -4921,38 +5061,38 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
         }
 
         // run always returns an error when finished
-        <span class="cov8" title="67">c.handleError(c.run())</span>
+        <span class="cov8" title="70">c.handleError(c.run())</span>
 }
 
 // Listen listens on the network address s.Addr
 // to handle requests on incoming connections.
 //
 // If s.Addr is blank and LMTP is disabled, ":smtp" is used.
-func (s *Server) Listen() (net.Listener, error) <span class="cov8" title="56">{
+func (s *Server) Listen() (net.Listener, error) <span class="cov8" title="59">{
         network := s.network
-        if network == "" </span><span class="cov8" title="56">{
+        if network == "" </span><span class="cov8" title="59">{
                 network = "tcp"
         }</span>
 
-        <span class="cov8" title="56">addr := s.addr
+        <span class="cov8" title="59">addr := s.addr
         if addr == "" </span><span class="cov0" title="0">{
                 addr = ":smtp"
         }</span>
 
-        <span class="cov8" title="56">var l net.Listener
+        <span class="cov8" title="59">var l net.Listener
         var err error
 
         if s.implicitTLS </span><span class="cov1" title="1">{
                 l, err = tls.Listen(network, addr, s.tlsConfig)
-        }</span> else<span class="cov8" title="55"> {
+        }</span> else<span class="cov8" title="58"> {
                 l, err = net.Listen(network, addr)
         }</span>
 
-        <span class="cov8" title="56">if err != nil </span><span class="cov0" title="0">{
+        <span class="cov8" title="59">if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
 
-        <span class="cov8" title="56">return l, nil</span>
+        <span class="cov8" title="59">return l, nil</span>
 }
 
 // ListenAndServe listens on the network address s.Addr and then calls Serve
@@ -4990,27 +5130,27 @@ func (s *Server) ListenAndServe(ctx context.Context) error <span class="cov0" ti
 //
 // Close returns any error returned from closing the server's underlying
 // listener(s).
-func (s *Server) Close() error <span class="cov8" title="44">{
+func (s *Server) Close() error <span class="cov8" title="47">{
         select </span>{
         case &lt;-s.done:<span class="cov0" title="0">
                 return ErrServerClosed</span>
-        default:<span class="cov8" title="44">
+        default:<span class="cov8" title="47">
                 close(s.done)</span>
         }
 
-        <span class="cov8" title="44">var err error
+        <span class="cov8" title="47">var err error
         s.locker.Lock()
-        for _, l := range s.listeners </span><span class="cov8" title="44">{
+        for _, l := range s.listeners </span><span class="cov8" title="47">{
                 if lerr := l.Close(); lerr != nil &amp;&amp; err == nil </span><span class="cov0" title="0">{
                         err = lerr
                 }</span>
         }
 
-        <span class="cov8" title="44">for conn := range s.conns </span><span class="cov7" title="35">{
+        <span class="cov8" title="47">for conn := range s.conns </span><span class="cov7" title="40">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
-        <span class="cov8" title="44">s.locker.Unlock()
+        <span class="cov8" title="47">s.locker.Unlock()
 
         return err</span>
 }
@@ -5068,6 +5208,8 @@ import (
         "net"
         "sync"
         "time"
+
+        "github.com/uponusolutions/go-smtp"
 )
 
 // ErrServerClosed occurs if a server is already closed.
@@ -5128,6 +5270,28 @@ type Server struct {
         // Should be used only if backend supports it.
         enableXOORG bool
 
+        // Advertise RRVS (RFC 7293) capability.
+        // Should be used only if backend supports it.
+        enableRRVS bool
+
+        // Advertise DELIVERBY (RFC 2852) capability.
+        // Should be used only if backend supports it.
+        enableDELIVERBY bool
+        // The minimum time, with seconds precision, that a client
+        // may specify in the BY argument with return mode.
+        // A zero value indicates no set minimum.
+        // Only use if DELIVERBY is enabled.
+        minimumDeliverByTime time.Duration
+
+        // Advertise MT-PRIORITY (RFC 6710) capability.
+        // Should only be used if backend supports it.
+        enableMTPRIORITY bool
+        // The priority profile mapping as defined
+        // in RFC 6710 section 10.2.
+        //
+        // Default value of NONE to advertise no specific profile.
+        mtPriorityProfile smtp.PriorityProfile
+
         // The server backend.
         backend Backend
 
@@ -5142,7 +5306,7 @@ type Server struct {
 }
 
 // Backend returns the servers Backend.
-func (s *Server) Backend() Backend <span class="cov5" title="12">{
+func (s *Server) Backend() Backend <span class="cov4" title="12">{
         return s.backend
 }</span>
 
@@ -5150,22 +5314,22 @@ func (s *Server) Backend() Backend <span class="cov5" title="12">{
 type Option func(*Server)
 
 // New creates a new SMTP server.
-func New(opts ...Option) *Server <span class="cov7" title="57">{
+func New(opts ...Option) *Server <span class="cov7" title="60">{
         s := &amp;Server{
                 done:     make(chan struct{}, 1),
                 conns:    make(map[*Conn]struct{}),
                 hostname: "localhost",
         }
 
-        for _, o := range opts </span><span class="cov10" title="266">{
+        for _, o := range opts </span><span class="cov10" title="282">{
                 o(s)
         }</span>
 
-        <span class="cov7" title="57">if s.logger == nil </span><span class="cov7" title="55">{
+        <span class="cov7" title="60">if s.logger == nil </span><span class="cov7" title="58">{
                 s.logger = slog.Default()
         }</span>
 
-        <span class="cov7" title="57">return s</span>
+        <span class="cov7" title="60">return s</span>
 }
 
 // WithLogger sets the backend.
@@ -5176,8 +5340,8 @@ func WithLogger(logger *slog.Logger) Option <span class="cov2" title="2">{
 }
 
 // WithBackend sets the backend.
-func WithBackend(backend Backend) Option <span class="cov7" title="58">{
-        return func(s *Server) </span><span class="cov7" title="58">{
+func WithBackend(backend Backend) Option <span class="cov7" title="61">{
+        return func(s *Server) </span><span class="cov7" title="61">{
                 s.backend = backend
         }</span>
 }
@@ -5211,8 +5375,8 @@ func WithMaxMessageBytes(maxMessageBytes int64) Option <span class="cov3" title=
 }
 
 // WithMaxLineLength sets the max length per line.
-func WithMaxLineLength(maxLineLength int) Option <span class="cov7" title="56">{
-        return func(s *Server) </span><span class="cov7" title="56">{
+func WithMaxLineLength(maxLineLength int) Option <span class="cov7" title="59">{
+        return func(s *Server) </span><span class="cov7" title="59">{
                 s.maxLineLength = maxLineLength
         }</span>
 }
@@ -5225,8 +5389,8 @@ func WithMaxRecipients(maxRecipients int) Option <span class="cov2" title="2">{
 }
 
 // WithAddr sets addr.
-func WithAddr(addr string) Option <span class="cov7" title="56">{
-        return func(s *Server) </span><span class="cov7" title="56">{
+func WithAddr(addr string) Option <span class="cov7" title="59">{
+        return func(s *Server) </span><span class="cov7" title="59">{
                 s.addr = addr
         }</span>
 }
@@ -5281,8 +5445,8 @@ func WithImplicitTLS(implicitTLS bool) Option <span class="cov1" title="1">{
 }
 
 // WithHostname sets the domain.
-func WithHostname(hostname string) Option <span class="cov7" title="54">{
-        return func(s *Server) </span><span class="cov7" title="54">{
+func WithHostname(hostname string) Option <span class="cov7" title="57">{
+        return func(s *Server) </span><span class="cov7" title="57">{
                 s.hostname = hostname
         }</span>
 }
@@ -5319,6 +5483,50 @@ func WithReaderSize(readerSize int) Option <span class="cov0" title="0">{
 func WithWriterSize(writerSize int) Option <span class="cov0" title="0">{
         return func(s *Server) </span><span class="cov0" title="0">{
                 s.writerSize = writerSize
+        }</span>
+}
+
+// WithEnableRRVS advertises RRVS (RFC 7293) capability.
+// Should be used only if backend supports it.
+func WithEnableRRVS(enableRRVS bool) Option <span class="cov1" title="1">{
+        return func(s *Server) </span><span class="cov1" title="1">{
+                s.enableRRVS = enableRRVS
+        }</span>
+}
+
+// WithEnableDELIVERBY advertises DELIVERBY (RFC 2852) capability.
+// Should be used only if backend supports it.
+func WithEnableDELIVERBY(enableDELIVERBY bool) Option <span class="cov1" title="1">{
+        return func(s *Server) </span><span class="cov1" title="1">{
+                s.enableDELIVERBY = enableDELIVERBY
+        }</span>
+}
+
+// WithMinimumDeliverByTime defines the minimum time, with seconds precision, that a client
+// may specify in the BY argument with return mode.
+// A zero value indicates no set minimum.
+// Only use if DELIVERBY is enabled.
+func WithMinimumDeliverByTime(minimumDeliverByTime time.Duration) Option <span class="cov1" title="1">{
+        return func(s *Server) </span><span class="cov1" title="1">{
+                s.minimumDeliverByTime = minimumDeliverByTime
+        }</span>
+}
+
+// WithEnableMTPRIORITY advertises MT-PRIORITY (RFC 6710) capability.
+// Should only be used if backend supports it.
+func WithEnableMTPRIORITY(enableMTPRIORITY bool) Option <span class="cov1" title="1">{
+        return func(s *Server) </span><span class="cov1" title="1">{
+                s.enableMTPRIORITY = enableMTPRIORITY
+        }</span>
+}
+
+// WithMtPriorityProfile sets the priority profile mapping as defined
+// in RFC 6710 section 10.2.
+//
+// Default value of NONE to advertise no specific profile.
+func WithMtPriorityProfile(mtPriorityProfile smtp.PriorityProfile) Option <span class="cov0" title="0">{
+        return func(s *Server) </span><span class="cov0" title="0">{
+                s.mtPriorityProfile = mtPriorityProfile
         }</span>
 }
 </pre>
@@ -5795,12 +6003,12 @@ func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) <s
 }</span>
 
 // Close implements the Close interface.
-func (s *Session) Close(_ context.Context, _ error) <span class="cov5" title="12">{
+func (s *Session) Close(_ context.Context, _ error) <span class="cov5" title="10">{
         s.mail = &amp;Mail{}
 }</span>
 
 // Logger implements the Logger interface.
-func (Session) Logger(_ context.Context) *slog.Logger <span class="cov10" title="131">{
+func (Session) Logger(_ context.Context) *slog.Logger <span class="cov10" title="127">{
         return nil
 }</span>
 
