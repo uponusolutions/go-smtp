@@ -67,15 +67,24 @@ func (c *Conn) run() (err error) {
 
 		err = c.handle(cmd, arg)
 		if err != nil {
+			// if error is a smtp status multiline it isn't necessary to close the connection
+			if smtpErr, ok := err.(*smtp.StatusMultiline); ok {
+				// Service closing transmission channel, after quit
+				if smtpErr.Code == 221 {
+					return smtpErr
+				}
+				// ToDo: close connection on repeated errors (e.g. authentication tries)
+				c.writeStatusMultiline(smtpErr)
+				continue
+			}
+
 			// if error is a smtp status it isn't necessary to close the connection
 			if smtpErr, ok := err.(*smtp.Status); ok {
 				// Service closing transmission channel, after quit
 				if smtpErr.Code == 221 {
 					return smtpErr
 				}
-
 				// ToDo: close connection on repeated errors (e.g. authentication tries)
-
 				c.writeStatus(smtpErr)
 				continue
 			}
@@ -340,85 +349,78 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 	}
 
 	if !esmtp {
-		return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Hello %s", domain))
-	}
-
-	caps := strings.Builder{}
-	caps.Grow(512)
-
-	caps.WriteString("Hello ")
-	caps.WriteString(domain)
-
-	caps.WriteString("\nPIPELINING\n8BITMIME\nENHANCEDSTATUSCODES")
-
-	if c.server.enableCHUNKING {
-		caps.WriteString("\nCHUNKING")
-	}
-
-	isTLS := c.IsTLS()
-
-	if !isTLS && c.server.tlsConfig != nil {
-		caps.WriteString("\nSTARTTLS")
+		return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "Hello "+c.helo)
 	}
 
 	c.mechanisms = c.session.AuthMechanisms(c.ctx)
-	if len(c.mechanisms) > 0 {
-		caps.WriteString("\nAUTH")
-		for _, name := range c.mechanisms {
-			caps.WriteByte(' ')
-			caps.WriteString(name)
-		}
-	} else if c.server.enforceAuthentication {
+
+	if len(c.mechanisms) == 0 && c.server.enforceAuthentication {
 		// without any auth mechanism, no authentication can happen => deadlock
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0},
 			"No auth mechanism available but authentication enforced", err)
 	}
 
-	if c.server.enableSMTPUTF8 {
-		caps.WriteString("\nSMTPUTF8")
-	}
-	if isTLS && c.server.enableREQUIRETLS {
-		caps.WriteString("\nREQUIRETLS")
-	}
-	if c.server.enableBINARYMIME {
-		caps.WriteString("\nBINARYMIME")
-	}
-	if c.server.enableDSN {
-		caps.WriteString("\nDSN")
-	}
-	if c.server.enableXOORG {
-		caps.WriteString("\nXOORG")
-	}
-	if c.server.maxMessageBytes > 0 {
-		caps.WriteString("\nSIZE ")
-		caps.WriteString(strconv.FormatInt(c.server.maxMessageBytes, 10))
-	} else {
-		caps.WriteString("\nSIZE")
-	}
-	if c.server.maxRecipients > 0 {
-		caps.WriteString("\nLIMITS RCPTMAX=")
-		caps.WriteString(strconv.FormatInt(int64(c.server.maxRecipients), 10))
-	}
-	if c.server.enableRRVS {
-		caps.WriteString("\nRRVS")
-	}
-	if c.server.enableDELIVERBY {
-		if c.server.minimumDeliverByTime > 0 {
-			caps.WriteString("\nDELIVERBY ")
-			caps.WriteString(strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10))
-		} else {
-			caps.WriteString("\nDELIVERBY")
+	return c.handleGreetResponse()
+}
+
+func (c *Conn) handleGreetResponse() *smtp.StatusMultiline {
+	return smtp.NewStatusMultiline(250, smtp.NoEnhancedCode, func(yield func(string, bool) bool) {
+		yield("Hello "+c.helo, true)
+
+		if c.server.enableCHUNKING {
+			yield("CHUNKING", true)
 		}
-	}
-	if c.server.enableMTPRIORITY {
-		if c.server.mtPriorityProfile != smtp.PriorityUnspecified {
-			caps.WriteString("\nMT-PRIORITY ")
-			caps.WriteString(string(c.server.mtPriorityProfile))
-		} else {
-			caps.WriteString("\nMT-PRIORITY")
+		isTLS := c.IsTLS()
+		if !isTLS && c.server.tlsConfig != nil {
+			yield("STARTTLS", true)
 		}
-	}
-	return smtp.NewStatus(250, smtp.NoEnhancedCode, caps.String())
+		if len(c.mechanisms) > 0 {
+			yield("AUTH "+strings.Join(c.mechanisms, " "), true)
+		}
+		if c.server.enableSMTPUTF8 {
+			yield("SMTPUTF8", true)
+		}
+		if isTLS && c.server.enableREQUIRETLS {
+			yield("REQUIRETLS", true)
+		}
+		if c.server.enableBINARYMIME {
+			yield("BINARYMIME", true)
+		}
+		if c.server.enableDSN {
+			yield("DSN", true)
+		}
+		if c.server.enableXOORG {
+			yield("XOORG", true)
+		}
+		if c.server.maxMessageBytes > 0 {
+			yield("SIZE "+strconv.FormatInt(c.server.maxMessageBytes, 10), true)
+		} else {
+			yield("SIZE", true)
+		}
+		if c.server.maxRecipients > 0 {
+			yield("LIMITS RCPTMAX="+strconv.FormatInt(int64(c.server.maxRecipients), 10), true)
+		}
+		if c.server.enableRRVS {
+			yield("RRVS", true)
+		}
+		if c.server.enableDELIVERBY {
+			if c.server.minimumDeliverByTime > 0 {
+				yield("DELIVERBY "+strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10), true)
+			} else {
+				yield("DELIVERBY", true)
+			}
+		}
+		if c.server.enableMTPRIORITY {
+			if c.server.mtPriorityProfile != smtp.PriorityUnspecified {
+				yield("MT-PRIORITY "+string(c.server.mtPriorityProfile), true)
+			} else {
+				yield("MT-PRIORITY", true)
+			}
+		}
+		yield("PIPELINING", true)
+		yield("8BITMIME", true)
+		yield("ENHANCEDSTATUSCODES", false)
+	})
 }
 
 // handleError handles error and closes the connection afterwards.
@@ -435,7 +437,7 @@ func (c *Conn) handleError(err error) {
 	}
 
 	if smtpErr, ok := err.(*smtp.Status); ok {
-		c.writeResponse(smtpErr.Code, smtpErr.EnhancedCode, smtpErr.Message)
+		c.writeStatus(smtpErr)
 
 		if smtpErr.Code != 221 {
 			c.Close(fmt.Errorf("smtp error: %w", err))
@@ -996,6 +998,42 @@ func (c *Conn) writeStatus(status *smtp.Status) {
 	c.writeResponse(status.Code, status.EnhancedCode, status.Message)
 }
 
+func (c *Conn) writeStatusMultiline(status *smtp.StatusMultiline) {
+	c.logger().DebugContext(
+		c.ctx, "statusMultiline", slog.Int("code", status.Code), slog.Any("enhCode", status.EnhancedCode),
+	)
+
+	// TODO: error handling
+	if c.server.writeTimeout != 0 {
+		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
+	}
+
+	codeString := strconv.FormatInt(int64(status.Code), 10)
+	enhCodeString := status.EnhancedCode.ToResponsePart(status.Code)
+
+	for message, hasNextLine := range status.Message {
+		_, _ = c.text.W.Write([]byte(codeString))
+		if hasNextLine {
+			_ = c.text.W.WriteByte('-')
+		} else {
+			// the space at the end is only necessary with the enhanced status code or a text following
+			if enhCodeString != "" || len(message) > 0 {
+				_ = c.text.W.WriteByte(' ')
+			}
+		}
+		_, _ = c.text.W.Write([]byte(enhCodeString))
+		_, _ = c.text.W.Write([]byte(message))
+		_, _ = c.text.W.Write([]byte{'\r', '\n'})
+	}
+
+	// PIPELINE support
+	// If there is something buffered in c.text.R then we can assume another command is following.
+	// This means the client is doing pipelining and we don't need to respond just now.
+	if c.text.R.Buffered() == 0 {
+		_ = c.text.W.Flush()
+	}
+}
+
 func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	c.logger().DebugContext(c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", text))
 
@@ -1004,33 +1042,31 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
 	}
 
-	// All responses must include an enhanced code, if it is missing - use
-	// a generic code X.0.0.
-	if enhCode == smtp.EnhancedCodeNotSet {
-		cat := code / 100
-		switch cat {
-		case 2, 4, 5:
-			enhCode = smtp.EnhancedCode{cat, 0, 0}
-		default:
-			enhCode = smtp.NoEnhancedCode
-		}
-	}
+	codeString := strconv.FormatInt(int64(code), 10)
+	enhCodeString := enhCode.ToResponsePart(code)
 
 	p := 0
 	for {
+		_, _ = c.text.W.Write([]byte(codeString))
+
 		i := strings.IndexByte(text[p:], '\n')
 		if i < 0 {
+			i = len(text) - p
+			// the space at the end is only necessary with the enhanced status code or a text following
+			if enhCodeString != "" || len(text[p:p+i]) > 0 {
+				_ = c.text.W.WriteByte(' ')
+			}
+		} else {
+			_ = c.text.W.WriteByte('-')
+		}
+		_, _ = c.text.W.Write([]byte(enhCodeString))
+		_, _ = c.text.W.Write([]byte(text[p : p+i]))
+		_, _ = c.text.W.Write([]byte{'\r', '\n'})
+		p += i + 1
+
+		if len(text) <= p {
 			break
 		}
-
-		_ = c.text.PrintfLine("%d-%v", code, text[p:p+i])
-		p += i + 1
-	}
-
-	if enhCode == smtp.NoEnhancedCode {
-		_ = c.text.PrintfLine("%d %v", code, text[p:])
-	} else {
-		_ = c.text.PrintfLine("%d %v.%v.%v %v", code, enhCode[0], enhCode[1], enhCode[2], text[p:])
 	}
 
 	// PIPELINE support

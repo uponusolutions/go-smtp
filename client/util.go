@@ -29,19 +29,14 @@ func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
 // toSMTPErr converts textproto.Error into smtp, parsing
 // enhanced status code if it is present.
 func toSMTPErr(protoErr *textproto.Error) *smtp.Status {
-	smtpErr := &smtp.Status{
-		Code:    protoErr.Code,
-		Message: protoErr.Msg,
-	}
-
 	parts := strings.SplitN(protoErr.Msg, " ", 2)
 	if len(parts) != 2 {
-		return smtpErr
+		return smtp.NewStatus(protoErr.Code, smtp.EnhancedCode{}, protoErr.Msg)
 	}
 
 	enchCode, err := parseEnhancedCode(parts[0])
 	if err != nil {
-		return smtpErr
+		return smtp.NewStatus(protoErr.Code, smtp.EnhancedCode{}, protoErr.Msg)
 	}
 
 	msg := parts[1]
@@ -49,9 +44,7 @@ func toSMTPErr(protoErr *textproto.Error) *smtp.Status {
 	// Per RFC 2034, enhanced code should be prepended to each line.
 	msg = strings.ReplaceAll(msg, "\n"+parts[0]+" ", "\n")
 
-	smtpErr.EnhancedCode = enchCode
-	smtpErr.Message = msg
-	return smtpErr
+	return smtp.NewStatus(protoErr.Code, enchCode, msg)
 }
 
 // validateLine checks to see if a line has CR or LF.

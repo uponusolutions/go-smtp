@@ -14,6 +14,7 @@ lint:
 
 bench:
 	go test ./... -bench . -benchtime=10s -run ^$$
+ # go test ./... -bench '^Benchmark$/^SmallWithChunking$' -benchtime=10s -run ^$
 
 pprof:
 	go test . -bench ^Benchmark/^SmallWithChunking$$ -benchtime=10s -run ^$$ -cpuprofile cpu.pprof -memprofile mem.pprof

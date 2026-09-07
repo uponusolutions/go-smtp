@@ -358,7 +358,7 @@ func testServerAuthenticated(t *testing.T, bei *backend, opts ...server.Option) 
 
 	_, _ = io.WriteString(c, "AUTH PLAIN\r\n")
 	scanner.Scan()
-	if scanner.Text() != "334 " {
+	if scanner.Text() != "334" {
 		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 
@@ -518,7 +518,7 @@ func TestServerCancelSASL(t *testing.T) {
 
 	_, _ = io.WriteString(c, "AUTH PLAIN\r\n")
 	scanner.Scan()
-	if scanner.Text() != "334 " {
+	if scanner.Text() != "334" {
 		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 
@@ -1440,11 +1440,7 @@ func TestServer_Chunking_EarlyError(t *testing.T) {
 		_ = c.Close()
 	}()
 
-	be.dataErr = &smtp.Status{
-		Code:         555,
-		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
-		Message:      "I failed",
-	}
+	be.dataErr = smtp.NewStatus(555, smtp.EnhancedCode{5, 0, 0}, "I failed")
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -1473,11 +1469,7 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 		_ = c.Close()
 	}()
 
-	be.dataErr = &smtp.Status{
-		Code:         555,
-		EnhancedCode: smtp.EnhancedCode{5, 0, 0},
-		Message:      "I failed",
-	}
+	be.dataErr = smtp.NewStatus(555, smtp.EnhancedCode{5, 0, 0}, "I failed")
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
