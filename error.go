@@ -26,7 +26,7 @@ type Status struct {
 // message as stream returned by the server.
 type StatusMultiline struct {
 	statusBase
-	Message iter.Seq2[string, bool]
+	Message iter.Seq[string]
 }
 
 // NoEnhancedCode is used to indicate that enhanced error code should not be
@@ -55,7 +55,7 @@ func NewStatus(code int, enhCode EnhancedCode, msg string) *Status {
 
 // NewStatusMultiline creates a new status multiline.
 // You should only use this, if you are return more then one line and you must set Message.
-func NewStatusMultiline(code int, enhCode EnhancedCode, msg iter.Seq2[string, bool]) *StatusMultiline {
+func NewStatusMultiline(code int, enhCode EnhancedCode, msg iter.Seq[string]) *StatusMultiline {
 	return &StatusMultiline{
 		statusBase: statusBase{
 			Code:         code,
@@ -82,11 +82,14 @@ func (err *Status) Error() string {
 func (err *StatusMultiline) Error() string {
 	if err.Message != nil {
 		sb := strings.Builder{}
-		for message, hasNextLine := range err.Message {
-			sb.WriteString(message)
-			if hasNextLine {
+		first := true
+		for message := range err.Message {
+			if first {
+				first = false
+			} else {
 				sb.WriteByte('\n')
 			}
+			sb.WriteString(message)
 		}
 		message := sb.String()
 		if message != "" {

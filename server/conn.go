@@ -345,62 +345,61 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 }
 
 func (c *Conn) handleGreetResponse() *smtp.StatusMultiline {
-	return smtp.NewStatusMultiline(250, smtp.NoEnhancedCode, func(yield func(string, bool) bool) {
-		yield("Hello "+c.helo, true)
-
+	return smtp.NewStatusMultiline(250, smtp.NoEnhancedCode, func(yield func(string) bool) {
+		yield("Hello " + c.helo)
+		yield("PIPELINING")
+		yield("8BITMIME")
+		yield("ENHANCEDSTATUSCODES")
 		if c.server.enableCHUNKING {
-			yield("CHUNKING", true)
+			yield("CHUNKING")
 		}
 		isTLS := c.IsTLS()
 		if !isTLS && c.server.tlsConfig != nil {
-			yield("STARTTLS", true)
+			yield("STARTTLS")
 		}
 		if len(c.mechanisms) > 0 {
-			yield("AUTH "+strings.Join(c.mechanisms, " "), true)
+			yield("AUTH " + strings.Join(c.mechanisms, " "))
 		}
 		if c.server.enableSMTPUTF8 {
-			yield("SMTPUTF8", true)
+			yield("SMTPUTF8")
 		}
 		if isTLS && c.server.enableREQUIRETLS {
-			yield("REQUIRETLS", true)
+			yield("REQUIRETLS")
 		}
 		if c.server.enableBINARYMIME {
-			yield("BINARYMIME", true)
+			yield("BINARYMIME")
 		}
 		if c.server.enableDSN {
-			yield("DSN", true)
+			yield("DSN")
 		}
 		if c.server.enableXOORG {
-			yield("XOORG", true)
+			yield("XOORG")
 		}
 		if c.server.maxMessageBytes > 0 {
-			yield("SIZE "+strconv.FormatInt(c.server.maxMessageBytes, 10), true)
+			yield("SIZE " + strconv.FormatInt(c.server.maxMessageBytes, 10))
 		} else {
-			yield("SIZE", true)
+			yield("SIZE")
 		}
 		if c.server.maxRecipients > 0 {
-			yield("LIMITS RCPTMAX="+strconv.FormatInt(int64(c.server.maxRecipients), 10), true)
+			yield("LIMITS RCPTMAX=" + strconv.FormatInt(int64(c.server.maxRecipients), 10))
 		}
 		if c.server.enableRRVS {
-			yield("RRVS", true)
+			yield("RRVS")
 		}
 		if c.server.enableDELIVERBY {
 			if c.server.minimumDeliverByTime > 0 {
-				yield("DELIVERBY "+strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10), true)
+				yield("DELIVERBY " + strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10))
 			} else {
-				yield("DELIVERBY", true)
+				yield("DELIVERBY")
 			}
 		}
 		if c.server.enableMTPRIORITY {
 			if c.server.mtPriorityProfile != smtp.PriorityUnspecified {
-				yield("MT-PRIORITY "+string(c.server.mtPriorityProfile), true)
+				yield("MT-PRIORITY " + string(c.server.mtPriorityProfile))
 			} else {
-				yield("MT-PRIORITY", true)
+				yield("MT-PRIORITY")
 			}
 		}
-		yield("PIPELINING", true)
-		yield("8BITMIME", true)
-		yield("ENHANCEDSTATUSCODES", false)
 	})
 }
 
@@ -1017,6 +1016,23 @@ func enhancedCodeToPart(enhCode smtp.EnhancedCode, code int) string {
 		strconv.FormatInt(int64(enhCode[2]), 10) + " "
 }
 
+// writeLine writes a single reply line. last selects the terminating form.
+func (c *Conn) writeLine(code, enhCode, message string, last bool) {
+	w := c.text.W
+	_, _ = w.WriteString(code)
+	if last {
+		// RFC 5321 permits omitting the space when there is no text, but
+		// RFC 4954 requires it for the 334 challenge and net/textproto
+		// rejects any reply shorter than four bytes. Always emit it.
+		_ = w.WriteByte(' ')
+	} else {
+		_ = w.WriteByte('-')
+	}
+	_, _ = w.WriteString(enhCode)
+	_, _ = w.WriteString(strings.TrimSuffix(message, "\r"))
+	_, _ = w.WriteString("\r\n")
+}
+
 func (c *Conn) writeStatus(status *smtp.Status) {
 	c.writeResponse(status.Code, status.EnhancedCode, status.Message)
 }
@@ -1034,18 +1050,19 @@ func (c *Conn) writeStatusMultiline(status *smtp.StatusMultiline) {
 	codeString := strconv.FormatInt(int64(status.Code), 10)
 	enhCodeString := enhancedCodeToPart(status.EnhancedCode, status.Code)
 
-	for message, hasNextLine := range status.Message {
-		_, _ = c.text.W.Write([]byte(codeString))
-		if hasNextLine {
-			_ = c.text.W.WriteByte('-')
-		} else {
-			// the space es always necessary, see rfc4954
-			_ = c.text.W.WriteByte(' ')
+	var pending string
+	var havePending bool
+
+	if status.Message != nil {
+		for message := range status.Message {
+			if havePending {
+				c.writeLine(codeString, enhCodeString, pending, false)
+			}
+			pending, havePending = message, true
 		}
-		_, _ = c.text.W.Write([]byte(enhCodeString))
-		_, _ = c.text.W.Write([]byte(message))
-		_, _ = c.text.W.Write([]byte{'\r', '\n'})
 	}
+
+	c.writeLine(codeString, enhCodeString, pending, true)
 
 	// PIPELINE support
 	// If there is something buffered in c.text.R then we can assume another command is following.
@@ -1066,26 +1083,14 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	codeString := strconv.FormatInt(int64(code), 10)
 	enhCodeString := enhancedCodeToPart(enhCode, code)
 
-	p := 0
 	for {
-		_, _ = c.text.W.Write([]byte(codeString))
-
-		i := strings.IndexByte(text[p:], '\n')
+		i := strings.IndexByte(text, '\n')
 		if i < 0 {
-			i = len(text) - p
-			// the space es always necessary, see rfc4954
-			_ = c.text.W.WriteByte(' ')
-		} else {
-			_ = c.text.W.WriteByte('-')
-		}
-		_, _ = c.text.W.Write([]byte(enhCodeString))
-		_, _ = c.text.W.Write([]byte(text[p : p+i]))
-		_, _ = c.text.W.Write([]byte{'\r', '\n'})
-		p += i + 1
-
-		if len(text) <= p {
+			c.writeLine(codeString, enhCodeString, text, true)
 			break
 		}
+		c.writeLine(codeString, enhCodeString, text[:i], false)
+		text = text[i+1:]
 	}
 
 	// PIPELINE support
