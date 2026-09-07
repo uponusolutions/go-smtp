@@ -95,7 +95,7 @@
 				
 				<option value="file19">github.com/uponusolutions/go-smtp/server/backend.go (0.0%)</option>
 				
-				<option value="file20">github.com/uponusolutions/go-smtp/server/conn.go (79.8%)</option>
+				<option value="file20">github.com/uponusolutions/go-smtp/server/conn.go (79.7%)</option>
 				
 				<option value="file21">github.com/uponusolutions/go-smtp/server/encode.go (64.0%)</option>
 				
@@ -1321,6 +1321,7 @@ func NewStatus(code int, enhCode EnhancedCode, msg string) *Status <span class="
 }</span>
 
 // NewStatusMultiline creates a new status multiline.
+// You should only use this, if you are return more then one line and you must set Message.
 func NewStatusMultiline(code int, enhCode EnhancedCode, msg iter.Seq2[string, bool]) *StatusMultiline <span class="cov7" title="68">{
         return &amp;StatusMultiline{
                 statusBase: statusBase{
@@ -2684,21 +2685,21 @@ func parseCodeLine(line string, expectCode int) (code int, continued bool, messa
 
 // ReadLine reads a single line from r,
 // eliding the final \n or \r\n from the returned string.
-func (t *Textproto) ReadLine() (string, error) <span class="cov10" title="615">{
+func (t *Textproto) ReadLine() (string, error) <span class="cov10" title="616">{
         line, err := t.readLineSlice()
         return string(line), err
 }</span>
 
-func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov10" title="615">{
+func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov10" title="616">{
         // If the line limit was exceeded once, the connection shouldn't be used anymore.
         if t.lineLengthExceeded </span><span class="cov1" title="1">{
                 return nil, ErrTooLongLine
         }</span>
 
-        <span class="cov9" title="614">var line []byte
-        for </span><span class="cov9" title="614">{
+        <span class="cov9" title="615">var line []byte
+        for </span><span class="cov9" title="615">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov6" title="58">{
+                if err != nil </span><span class="cov6" title="57">{
                         return nil, err
                 }</span>
 
@@ -3816,9 +3817,9 @@ func (c *Conn) run() (err error) <span class="cov6" title="70">{
         )
         c.greet()
 
-        for </span><span class="cov8" title="337">{
+        for </span><span class="cov8" title="338">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov6" title="59">{
+                if err != nil </span><span class="cov6" title="58">{
                         return err
                 }</span>
 
@@ -3853,9 +3854,9 @@ func (c *Conn) run() (err error) <span class="cov6" title="70">{
 
 // nextCommand reads the next line and parses it.
 // The command is always returned upper case.
-func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="343">{
+func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="344">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov6" title="57">{
+        if err != nil </span><span class="cov6" title="56">{
                 return "", "", err
         }</span>
         <span class="cov8" title="283">return parse.Cmd(line)</span>
@@ -4002,7 +4003,7 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov6" title="66">{
+func (c *Conn) Close(err error) <span class="cov6" title="65">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
@@ -4017,11 +4018,11 @@ func (c *Conn) Close(err error) <span class="cov6" title="66">{
                 }</span>
         }
 
-        <span class="cov6" title="66">if err != nil </span><span class="cov6" title="60">{
+        <span class="cov6" title="65">if err != nil </span><span class="cov6" title="59">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
-        <span class="cov6" title="66">if c.session != nil </span><span class="cov6" title="66">{
+        <span class="cov6" title="65">if c.session != nil </span><span class="cov6" title="65">{
                 c.session.Close(c.ctx, err)
                 c.session = nil
         }</span>
@@ -4181,8 +4182,8 @@ func (c *Conn) handleGreetResponse() *smtp.StatusMultiline <span class="cov6" ti
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov6" title="65">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="55">{
+func (c *Conn) handleError(err error) <span class="cov6" title="64">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="54">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -4215,13 +4216,13 @@ func (c *Conn) handleError(err error) <span class="cov6" title="65">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="923">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="921">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="923">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="923">{
+        <span class="cov10" title="921">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="921">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -4773,11 +4774,9 @@ func (c *Conn) writeStatusMultiline(status *smtp.StatusMultiline) <span class="c
                 if hasNextLine </span><span class="cov8" title="360">{
                         _ = c.text.W.WriteByte('-')
                 }</span> else<span class="cov6" title="68"> {
-                        // the space at the end is only necessary with the enhanced status code or a text following
-                        if enhCodeString != "" || len(message) &gt; 0 </span><span class="cov6" title="68">{
-                                _ = c.text.W.WriteByte(' ')
-                        }</span>
-                }
+                        // the space es always necessary, see rfc4954
+                        _ = c.text.W.WriteByte(' ')
+                }</span>
                 <span class="cov8" title="428">_, _ = c.text.W.Write([]byte(enhCodeString))
                 _, _ = c.text.W.Write([]byte(message))
                 _, _ = c.text.W.Write([]byte{'\r', '\n'})</span>
@@ -4809,11 +4808,9 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) <
                 i := strings.IndexByte(text[p:], '\n')
                 if i &lt; 0 </span><span class="cov8" title="342">{
                         i = len(text) - p
-                        // the space at the end is only necessary with the enhanced status code or a text following
-                        if enhCodeString != "" || len(text[p:p+i]) &gt; 0 </span><span class="cov8" title="310">{
-                                _ = c.text.W.WriteByte(' ')
-                        }</span>
-                } else<span class="cov0" title="0"> {
+                        // the space es always necessary, see rfc4954
+                        _ = c.text.W.WriteByte(' ')
+                }</span> else<span class="cov0" title="0"> {
                         _ = c.text.W.WriteByte('-')
                 }</span>
                 <span class="cov8" title="342">_, _ = c.text.W.Write([]byte(enhCodeString))
@@ -4843,15 +4840,15 @@ func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, e
 }
 
 // Reads a line of input
-func (c *Conn) readLine() (string, error) <span class="cov8" title="375">{
+func (c *Conn) readLine() (string, error) <span class="cov8" title="376">{
         if c.server.readTimeout != 0 </span><span class="cov6" title="48">{
                 _ = c.conn.SetReadDeadline(time.Now().Add(c.server.readTimeout))
         }</span>
-        <span class="cov8" title="375">line, err := c.text.ReadLine()
+        <span class="cov8" title="376">line, err := c.text.ReadLine()
         if err == nil </span><span class="cov8" title="315">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov8" title="372">return line, err</span>
+        <span class="cov8" title="371">return line, err</span>
 }
 
 func (c *Conn) reset() error <span class="cov5" title="36">{
@@ -5157,7 +5154,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
 
         var err error
 
-        defer func() </span><span class="cov8" title="66">{
+        defer func() </span><span class="cov8" title="65">{
                 if err := recover(); err != nil </span><span class="cov1" title="1">{
                         c.writeResponse(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
                         stack := debug.Stack()
@@ -5170,7 +5167,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                         c.Close(errors.New("recovered from panic inside handleConn"))
                 }</span>
 
-                <span class="cov8" title="66">s.locker.Lock()
+                <span class="cov8" title="65">s.locker.Lock()
                 delete(s.conns, c)
                 s.locker.Unlock()
 
@@ -5291,7 +5288,7 @@ func (s *Server) Close() error <span class="cov8" title="47">{
                 }</span>
         }
 
-        <span class="cov8" title="47">for conn := range s.conns </span><span class="cov7" title="39">{
+        <span class="cov8" title="47">for conn := range s.conns </span><span class="cov7" title="40">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
