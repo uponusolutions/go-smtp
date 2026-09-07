@@ -45,27 +45,37 @@ func Cmd(line string) (cmd string, arg string, err error) {
 	return strings.ToUpper(line[0:4]), strings.TrimSpace(line[5:]), nil
 }
 
-// Args takes the arguments proceeding a command and files them
-// into a map[string]string after uppercasing each key.  Sample arg
+// Arg is a single ESMTP argument (e.g. SIZE=1024) with an uppercased key.
+type Arg struct {
+	Key   string
+	Value string
+}
+
+// Args takes the arguments proceeding a command and parses them
+// into a list of key/value pairs after uppercasing each key.  Sample arg
 // string:
 //
 //	" BODY=8BITMIME SIZE=1024 SMTPUTF8"
 //
 // The leading space is mandatory.
-func Args(s string) (map[string]string, error) {
-	argMap := map[string]string{}
-	for arg := range strings.FieldsSeq(s) {
-		m := strings.Split(arg, "=")
-		switch len(m) {
-		case 2:
-			argMap[strings.ToUpper(m[0])] = m[1]
-		case 1:
-			argMap[strings.ToUpper(m[0])] = ""
-		default:
+func Args(s string) ([]Arg, error) {
+	if len(s) == 0 {
+		return nil, nil
+	}
+
+	args := make([]Arg, 0, strings.Count(s, " "))
+	// Only whitespace is an allowed separator, FieldsSec acceots all Unicode whitespace
+	for arg := range strings.SplitSeq(s, " ") {
+		if arg == "" {
+			return nil, fmt.Errorf("empty arg in arg string: %q", s)
+		}
+		key, value, _ := strings.Cut(arg, "=")
+		if strings.IndexByte(value, '=') >= 0 {
 			return nil, fmt.Errorf("failed to parse arg string: %q", arg)
 		}
+		args = append(args, Arg{Key: strings.ToUpper(key), Value: value})
 	}
-	return argMap, nil
+	return args, nil
 }
 
 // HelloArgument parses helo argument
@@ -122,7 +132,8 @@ func (p *Parser) expectByte(ch byte) error {
 // ReversePath parses a recipient.
 func (p *Parser) ReversePath() (string, error) {
 	if after, ok := strings.CutPrefix(p.S, "<>"); ok {
-		p.S = after
+		// remove leading whitespace after the reverse-path
+		p.S, _ = strings.CutPrefix(after, " ")
 		return "", nil
 	}
 	return p.Path()
@@ -147,6 +158,10 @@ func (p *Parser) Path() (string, error) {
 			return "", err
 		}
 	}
+
+	// remove leading whitespace after the reverse-path
+	p.S, _ = strings.CutPrefix(p.S, " ")
+
 	return mbox, nil
 }
 

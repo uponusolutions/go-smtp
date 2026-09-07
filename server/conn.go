@@ -475,11 +475,11 @@ func (c *Conn) handleMail(arg string) error {
 	p := parse.Parser{S: strings.TrimSpace(arg)}
 	from, err := p.ReversePath()
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
+		return c.newStatusError(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>", err)
 	}
 	args, err := parse.Args(p.S)
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse MAIL ESMTP parameters")
+		return c.newStatusError(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse MAIL ESMTP parameters", err)
 	}
 
 	opts := &smtp.MailOptions{}
@@ -487,10 +487,10 @@ func (c *Conn) handleMail(arg string) error {
 	c.binarymime = false
 	// This is where the Conn may put BODY=8BITMIME, but we already
 	// read the DATA as bytes, so it does not effect our processing.
-	for key, value := range args {
-		switch key {
+	for _, arg := range args {
+		switch arg.Key {
 		case "SIZE":
-			size, err := strconv.ParseUint(value, 10, 32)
+			size, err := strconv.ParseUint(arg.Value, 10, 32)
 			if err != nil {
 				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse SIZE as an integer")
 			}
@@ -501,7 +501,7 @@ func (c *Conn) handleMail(arg string) error {
 
 			opts.Size = int64(size)
 		case "XOORG":
-			value, err := decodeXtext(value)
+			value, err := decodeXtext(arg.Value)
 			if err != nil || value == "" {
 				return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Malformed XOORG parameter value")
 			}
@@ -520,7 +520,7 @@ func (c *Conn) handleMail(arg string) error {
 			}
 			opts.RequireTLS = true
 		case "BODY":
-			value = strings.ToUpper(value)
+			value := strings.ToUpper(arg.Value)
 			switch smtp.BodyType(value) {
 			case smtp.BodyBinaryMIME:
 				if !c.server.enableBINARYMIME {
@@ -537,7 +537,7 @@ func (c *Conn) handleMail(arg string) error {
 			if !c.server.enableDSN {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "RET is not implemented")
 			}
-			value = strings.ToUpper(value)
+			value := strings.ToUpper(arg.Value)
 			switch smtp.DSNReturn(value) {
 			case smtp.DSNReturnFull, smtp.DSNReturnHeaders:
 				// This space is intentionally left blank
@@ -549,13 +549,13 @@ func (c *Conn) handleMail(arg string) error {
 			if !c.server.enableDSN {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ENVID is not implemented")
 			}
-			value, err := decodeXtext(value)
+			value, err := decodeXtext(arg.Value)
 			if err != nil || value == "" || !textsmtp.IsPrintableASCII(value) {
 				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ENVID parameter value")
 			}
 			opts.EnvelopeID = value
 		case "AUTH":
-			value, err := decodeXtext(value)
+			value, err := decodeXtext(arg.Value)
 			if err != nil || value == "" {
 				return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter value")
 			}
@@ -610,31 +610,31 @@ func (c *Conn) handleRcpt(arg string) error {
 
 	args, err := parse.Args(p.S)
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse RCPT ESMTP parameters")
+		return c.newStatusError(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse RCPT ESMTP parameters", err)
 	}
 
 	opts := &smtp.RcptOptions{}
 
-	for key, value := range args {
-		switch key {
+	for _, arg := range args {
+		switch arg.Key {
 		case "NOTIFY":
-			if err := handleRcptNotify(c.server, opts, value); err != nil {
+			if err := handleRcptNotify(c.server, opts, arg.Value); err != nil {
 				return err
 			}
 		case "ORCPT":
-			if err := handleRcptORCPT(c.server, opts, value); err != nil {
+			if err := handleRcptORCPT(c.server, opts, arg.Value); err != nil {
 				return err
 			}
 		case "RRVS":
-			if err := handleRcptRRVS(c.server, opts, value); err != nil {
+			if err := handleRcptRRVS(c.server, opts, arg.Value); err != nil {
 				return err
 			}
 		case "BY":
-			if err := handleRcptBY(c.server, opts, value); err != nil {
+			if err := handleRcptBY(c.server, opts, arg.Value); err != nil {
 				return err
 			}
 		case "MT-PRIORITY":
-			if err := handleRcptMTPRIORITY(c.server, opts, value); err != nil {
+			if err := handleRcptMTPRIORITY(c.server, opts, arg.Value); err != nil {
 				return err
 			}
 		default:
@@ -738,13 +738,13 @@ func (c *Conn) handleVrfy(arg string) error {
 	}
 	args, err := parse.Args(p.S)
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse VRFY ESMTP parameters")
+		return c.newStatusError(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse VRFY ESMTP parameters", err)
 	}
 
 	opts := &smtp.VrfyOptions{}
 
-	for key := range args {
-		if key == "SMTPUTF8" {
+	for _, arg := range args {
+		if arg.Key == "SMTPUTF8" {
 			if !c.server.enableSMTPUTF8 {
 				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
 			}
