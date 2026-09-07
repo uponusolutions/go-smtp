@@ -1016,10 +1016,8 @@ func (c *Conn) writeStatusMultiline(status *smtp.StatusMultiline) {
 		if hasNextLine {
 			_ = c.text.W.WriteByte('-')
 		} else {
-			// the space at the end is only necessary with the enhanced status code or a text following
-			if enhCodeString != "" || len(message) > 0 {
-				_ = c.text.W.WriteByte(' ')
-			}
+			// the space es always necessary, see rfc4954
+			_ = c.text.W.WriteByte(' ')
 		}
 		_, _ = c.text.W.Write([]byte(enhCodeString))
 		_, _ = c.text.W.Write([]byte(message))
@@ -1052,10 +1050,8 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 		i := strings.IndexByte(text[p:], '\n')
 		if i < 0 {
 			i = len(text) - p
-			// the space at the end is only necessary with the enhanced status code or a text following
-			if enhCodeString != "" || len(text[p:p+i]) > 0 {
-				_ = c.text.W.WriteByte(' ')
-			}
+			// the space es always necessary, see rfc4954
+			_ = c.text.W.WriteByte(' ')
 		} else {
 			_ = c.text.W.WriteByte('-')
 		}

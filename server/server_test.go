@@ -358,7 +358,7 @@ func testServerAuthenticated(t *testing.T, bei *backend, opts ...server.Option) 
 
 	_, _ = io.WriteString(c, "AUTH PLAIN\r\n")
 	scanner.Scan()
-	if scanner.Text() != "334" {
+	if scanner.Text() != "334 " {
 		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 
@@ -518,7 +518,7 @@ func TestServerCancelSASL(t *testing.T) {
 
 	_, _ = io.WriteString(c, "AUTH PLAIN\r\n")
 	scanner.Scan()
-	if scanner.Text() != "334" {
+	if scanner.Text() != "334 " {
 		t.Fatal("Invalid AUTH response:", scanner.Text())
 	}
 
