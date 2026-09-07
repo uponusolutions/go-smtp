@@ -67,28 +67,9 @@ func (c *Conn) run() (err error) {
 
 		err = c.handle(cmd, arg)
 		if err != nil {
-			// if error is a smtp status multiline it isn't necessary to close the connection
-			if smtpErr, ok := err.(*smtp.StatusMultiline); ok {
-				// Service closing transmission channel, after quit
-				if smtpErr.Code == 221 {
-					return smtpErr
-				}
-				// ToDo: close connection on repeated errors (e.g. authentication tries)
-				c.writeStatusMultiline(smtpErr)
+			if c.writeResponseStatus(err, false) > 0 {
 				continue
 			}
-
-			// if error is a smtp status it isn't necessary to close the connection
-			if smtpErr, ok := err.(*smtp.Status); ok {
-				// Service closing transmission channel, after quit
-				if smtpErr.Code == 221 {
-					return smtpErr
-				}
-				// ToDo: close connection on repeated errors (e.g. authentication tries)
-				c.writeStatus(smtpErr)
-				continue
-			}
-
 			return err
 		}
 	}
@@ -436,15 +417,12 @@ func (c *Conn) handleError(err error) {
 		return
 	}
 
-	if smtpErr, ok := err.(*smtp.Status); ok {
-		c.writeStatus(smtpErr)
-
-		if smtpErr.Code != 221 {
+	if code := c.writeResponseStatus(err, true); code > 0 {
+		if code != 221 {
 			c.Close(fmt.Errorf("smtp error: %w", err))
 		} else {
 			c.Close(nil)
 		}
-
 		return
 	}
 
@@ -994,6 +972,51 @@ func (c *Conn) greet() {
 	c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.hostname, protocol))
 }
 
+func (c *Conn) writeResponseStatus(err error, allowQuit bool) int {
+	switch s := err.(type) {
+	case *smtp.Status:
+		// Service closing transmission channel, after quit
+		if !allowQuit && s.Code == 221 {
+			return 0
+		}
+		// ToDo: close connection on repeated errors (e.g. authentication tries)
+		c.writeStatus(s)
+		return s.Code
+	case *smtp.StatusMultiline:
+		// Service closing transmission channel, after quit
+		if !allowQuit && s.Code == 221 {
+			return 0
+		}
+		// ToDo: close connection on repeated errors (e.g. authentication tries)
+		c.writeStatusMultiline(s)
+		return s.Code
+	default:
+		return 0
+	}
+}
+
+// enhancedCodeToPart returns the part of the response defined by enhanced code.
+func enhancedCodeToPart(enhCode smtp.EnhancedCode, code int) string {
+	if enhCode == smtp.NoEnhancedCode {
+		return ""
+	}
+
+	// All responses must include an enhanced code, if it is missing - use
+	// a generic code X.0.0.
+	if enhCode == smtp.EnhancedCodeNotSet {
+		cat := code / 100
+		switch cat {
+		case 2, 4, 5:
+			return strconv.FormatInt(int64(cat), 10) + ".0.0 "
+		default:
+			return ""
+		}
+	}
+	return strconv.FormatInt(int64(enhCode[0]), 10) + "." +
+		strconv.FormatInt(int64(enhCode[1]), 10) + "." +
+		strconv.FormatInt(int64(enhCode[2]), 10) + " "
+}
+
 func (c *Conn) writeStatus(status *smtp.Status) {
 	c.writeResponse(status.Code, status.EnhancedCode, status.Message)
 }
@@ -1009,7 +1032,7 @@ func (c *Conn) writeStatusMultiline(status *smtp.StatusMultiline) {
 	}
 
 	codeString := strconv.FormatInt(int64(status.Code), 10)
-	enhCodeString := status.EnhancedCode.ToResponsePart(status.Code)
+	enhCodeString := enhancedCodeToPart(status.EnhancedCode, status.Code)
 
 	for message, hasNextLine := range status.Message {
 		_, _ = c.text.W.Write([]byte(codeString))
@@ -1041,7 +1064,7 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	}
 
 	codeString := strconv.FormatInt(int64(code), 10)
-	enhCodeString := enhCode.ToResponsePart(code)
+	enhCodeString := enhancedCodeToPart(enhCode, code)
 
 	p := 0
 	for {

@@ -3,34 +3,11 @@ package smtp
 import (
 	"fmt"
 	"iter"
-	"strconv"
 	"strings"
 )
 
 // EnhancedCode is the SMTP enhanced code
 type EnhancedCode [3]int
-
-// ToResponsePart returns the part of the response defined by enhanced code.
-func (enhCode EnhancedCode) ToResponsePart(code int) string {
-	if enhCode == NoEnhancedCode {
-		return ""
-	}
-
-	// All responses must include an enhanced code, if it is missing - use
-	// a generic code X.0.0.
-	if enhCode == EnhancedCodeNotSet {
-		cat := code / 100
-		switch cat {
-		case 2, 4, 5:
-			return strconv.FormatInt(int64(cat), 10) + ".0.0 "
-		default:
-			return ""
-		}
-	}
-	return strconv.FormatInt(int64(enhCode[0]), 10) + "." +
-		strconv.FormatInt(int64(enhCode[1]), 10) + "." +
-		strconv.FormatInt(int64(enhCode[2]), 10) + " "
-}
 
 // statusBase specifies the error code, enhanced error code (if any)
 type statusBase struct {
