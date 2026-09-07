@@ -390,28 +390,32 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 		caps.WriteString("\nXOORG")
 	}
 	if c.server.maxMessageBytes > 0 {
-		fmt.Fprintf(&caps, "\nSIZE %v", c.server.maxMessageBytes)
+		caps.WriteString("\nSIZE ")
+		caps.WriteString(strconv.FormatInt(c.server.maxMessageBytes, 10))
 	} else {
 		caps.WriteString("\nSIZE")
 	}
 	if c.server.maxRecipients > 0 {
-		fmt.Fprintf(&caps, "\nLIMITS RCPTMAX=%v", c.server.maxRecipients)
+		caps.WriteString("\nLIMITS RCPTMAX=")
+		caps.WriteString(strconv.FormatInt(int64(c.server.maxRecipients), 10))
 	}
 	if c.server.enableRRVS {
 		caps.WriteString("\nRRVS")
 	}
 	if c.server.enableDELIVERBY {
-		if c.server.minimumDeliverByTime == 0 {
-			caps.WriteString("\nDELIVERBY")
+		if c.server.minimumDeliverByTime > 0 {
+			caps.WriteString("\nDELIVERBY ")
+			caps.WriteString(strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10))
 		} else {
-			fmt.Fprintf(&caps, "\nDELIVERBY %d", int(c.server.minimumDeliverByTime.Seconds()))
+			caps.WriteString("\nDELIVERBY")
 		}
 	}
 	if c.server.enableMTPRIORITY {
-		if c.server.mtPriorityProfile == smtp.PriorityUnspecified {
-			caps.WriteString("\nMT-PRIORITY")
+		if c.server.mtPriorityProfile != smtp.PriorityUnspecified {
+			caps.WriteString("\nMT-PRIORITY ")
+			caps.WriteString(string(c.server.mtPriorityProfile))
 		} else {
-			fmt.Fprintf(&caps, "MT-PRIORITY %s", c.server.mtPriorityProfile)
+			caps.WriteString("\nMT-PRIORITY")
 		}
 	}
 	return smtp.NewStatus(250, smtp.NoEnhancedCode, caps.String())
