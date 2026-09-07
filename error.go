@@ -77,6 +77,7 @@ func NewStatus(code int, enhCode EnhancedCode, msg string) *Status {
 }
 
 // NewStatusMultiline creates a new status multiline.
+// You should only use this, if you are return more then one line and you must set Message.
 func NewStatusMultiline(code int, enhCode EnhancedCode, msg iter.Seq2[string, bool]) *StatusMultiline {
 	return &StatusMultiline{
 		statusBase: statusBase{
