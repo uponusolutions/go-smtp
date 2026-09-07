@@ -85,6 +85,8 @@ func (c *Conn) run() (err error) {
 	}
 }
 
+// nextCommand reads the next line and parses it.
+// The command is always returned upper case.
 func (c *Conn) nextCommand() (cmd string, arg string, err error) {
 	line, err := c.readLine()
 	if err != nil {
@@ -98,8 +100,6 @@ func (c *Conn) handle(cmd string, arg string) error {
 	if cmd == "" {
 		return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
 	}
-	cmd = strings.ToUpper(cmd)
-
 	switch c.state {
 	case stateInit, stateUpgrade:
 		return c.handleStateInit(cmd, arg)

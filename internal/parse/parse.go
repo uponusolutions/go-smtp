@@ -15,13 +15,12 @@ func CutPrefixFold(s, prefix string) (string, bool) {
 }
 
 // Cmd parses a line and returns the command, argument or an error.
+// Command is converted to upper case.
 func Cmd(line string) (cmd string, arg string, err error) {
 	line = strings.TrimRight(line, "\r\n")
 
 	l := len(line)
 	switch {
-	case strings.HasPrefix(strings.ToUpper(line), "STARTTLS"):
-		return "STARTTLS", "", nil
 	case l == 0:
 		return "", "", nil
 	case l < 4:
@@ -31,6 +30,10 @@ func Cmd(line string) (cmd string, arg string, err error) {
 	case l == 5:
 		// Too long to be only command, too short to have args
 		return "", "", fmt.Errorf("mangled command: %q", line)
+	// Commands are always 4 characters long, except STARTTLS which is 8 characters long.
+	// STARTTLS has no parameters (RFC 3207).
+	case l == 8 && strings.EqualFold(line, "STARTTLS"):
+		return "STARTTLS", "", nil
 	}
 
 	// If we made it here, command is long enough to have args
