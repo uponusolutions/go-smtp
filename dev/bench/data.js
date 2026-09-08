@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788880797139,
+  "lastUpdate": 1788880871563,
   "repoUrl": "https://github.com/uponusolutions/go-smtp",
   "entries": {
     "Benchmark": [
@@ -1512,6 +1512,174 @@ window.BENCHMARK_DATA = {
             "value": 64764870,
             "unit": "ns/op",
             "extra": "186 times\n4 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "committer": {
+            "email": "marcel.link@uponu.com",
+            "name": "Marcel Link",
+            "username": "ml1nk"
+          },
+          "distinct": true,
+          "id": "71573837c9b8002aaf7672066192762c8795ca8c",
+          "message": "feat: move server in tester to tester/testserver, cleanup textproto",
+          "timestamp": "2026-09-08T17:15:04+02:00",
+          "tree_id": "a1c5815c5d7a409d875f6c8f16214c0d63405ee5",
+          "url": "https://github.com/uponusolutions/go-smtp/commit/71573837c9b8002aaf7672066192762c8795ca8c"
+        },
+        "date": 1788880870806,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkSmallWithChunking (github.com/uponusolutions/go-smtp)",
+            "value": 356678,
+            "unit": "ns/op",
+            "extra": "33610 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 442453,
+            "unit": "ns/op",
+            "extra": "27088 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSameConnection (github.com/uponusolutions/go-smtp)",
+            "value": 90981,
+            "unit": "ns/op",
+            "extra": "130179 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithChunkingSameConnectionSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 91280,
+            "unit": "ns/op",
+            "extra": "132336 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunking (github.com/uponusolutions/go-smtp)",
+            "value": 377017,
+            "unit": "ns/op",
+            "extra": "31575 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 381429,
+            "unit": "ns/op",
+            "extra": "31551 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSameConnection (github.com/uponusolutions/go-smtp)",
+            "value": 114395,
+            "unit": "ns/op",
+            "extra": "105337 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkSmallWithoutChunkingSameConnectionSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 116972,
+            "unit": "ns/op",
+            "extra": "102068 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunking (github.com/uponusolutions/go-smtp)",
+            "value": 18072904,
+            "unit": "ns/op",
+            "extra": "669 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 19217346,
+            "unit": "ns/op",
+            "extra": "630 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSameConnection (github.com/uponusolutions/go-smtp)",
+            "value": 17211238,
+            "unit": "ns/op",
+            "extra": "698 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithChunkingSameConnectionSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 16641468,
+            "unit": "ns/op",
+            "extra": "727 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunking (github.com/uponusolutions/go-smtp)",
+            "value": 26937532,
+            "unit": "ns/op",
+            "extra": "451 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 27537676,
+            "unit": "ns/op",
+            "extra": "448 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSameConnection (github.com/uponusolutions/go-smtp)",
+            "value": 323437992,
+            "unit": "ns/op",
+            "extra": "100 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkLargeWithoutChunkingSameConnectionSimpleReader (github.com/uponusolutions/go-smtp)",
+            "value": 168384311,
+            "unit": "ns/op",
+            "extra": "319 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderLegacy (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 20427792,
+            "unit": "ns/op",
+            "extra": "590 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderOptimized (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 1131825,
+            "unit": "ns/op",
+            "extra": "9555 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderLegacySimpleReader (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 20382700,
+            "unit": "ns/op",
+            "extra": "586 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotReaderOptimizedSimpleReader (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 1131656,
+            "unit": "ns/op",
+            "extra": "10000 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterLegacy (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 1113522132,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterOptimized (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 47933180,
+            "unit": "ns/op",
+            "extra": "249 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterLegacySimpleReader (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 1130566178,
+            "unit": "ns/op",
+            "extra": "9 times\n4 procs"
+          },
+          {
+            "name": "BenchmarkDotWriterOptimizedSimpleReader (github.com/uponusolutions/go-smtp/internal/textsmtp)",
+            "value": 58985140,
+            "unit": "ns/op",
+            "extra": "202 times\n4 procs"
           }
         ]
       }
