@@ -250,13 +250,10 @@ func (c *Client) cmd(expectCode int, format string, args ...any) (int, string, e
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	id, err := c.cfg.text.Cmd(format, args...)
+	err := c.cfg.text.PrintfLineAndFlush(format, args...)
 	if err != nil {
 		return 0, "", err
 	}
-	c.cfg.text.StartResponse(id)
-	defer c.cfg.text.EndResponse(id)
-
 	return c.readResponse(expectCode)
 }
 

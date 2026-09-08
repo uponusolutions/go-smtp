@@ -17,7 +17,6 @@ type Textproto struct {
 	conn               io.ReadWriteCloser
 	maxLineLength      int
 	lineLengthExceeded bool
-	textproto.Pipeline
 }
 
 // NewTextproto creates a new connection wrapper.
@@ -46,41 +45,6 @@ func NewTextproto(
 
 // ErrTooLongLine occurs if the smtp line is too long.
 var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
-
-// Cmd is a convenience method that sends a command after
-// waiting its turn in the pipeline. The command text is the
-// result of formatting format with args and appending \r\n.
-// Cmd returns the id of the command, for use with StartResponse and EndResponse.
-//
-// For example, a client might run a HELP command that returns a dot-body
-// by using:
-//
-//	id, err := c.Cmd("HELP")
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	c.StartResponse(id)
-//	defer c.EndResponse(id)
-//
-//	if _, _, err = c.ReadCodeLine(110); err != nil {
-//		return nil, err
-//	}
-//	text, err := c.ReadDotBytes()
-//	if err != nil {
-//		return nil, err
-//	}
-//	return c.ReadCodeLine(250)
-func (t *Textproto) Cmd(format string, args ...any) (id uint, err error) {
-	id = t.Next()
-	t.StartRequest(id)
-	err = t.PrintfLineAndFlush(format, args...)
-	t.EndRequest(id)
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
-}
 
 // PrintfLine writes the formatted output followed by \r\n.
 func (t *Textproto) PrintfLine(format string, args ...any) error {
