@@ -245,7 +245,7 @@ func (c *Mailer) SendAdvanced(
 	_, err = io.Copy(w.Writer(), in)
 	if err != nil {
 		// if err isn't smtp.Status we are in an unknown state, close connection
-		if _, ok := err.(*smtp.Status); !ok {
+		if !smtp.IsStatusError(err) {
 			err = errors.Join(err, c.client.Close())
 		}
 		return 0, "", failures, err
@@ -254,7 +254,7 @@ func (c *Mailer) SendAdvanced(
 	code, msg, err = w.CloseWithResponse()
 
 	// if err isn't smtp.Status we are in an unknown state, close connection
-	if _, ok := err.(*smtp.Status); err != nil && !ok {
+	if !smtp.IsStatusError(err) {
 		err = errors.Join(err, c.client.Close())
 	}
 

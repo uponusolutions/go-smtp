@@ -878,15 +878,16 @@ func (c *Conn) handleData(arg string) error {
 		// We have recipients, go to accept data
 		c.writeResponse(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>")
 
-		r := textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
+		// r gets exposed to be able to discard the rest of the message
+		r = textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
 		return r
 	}
 
 	uuid, err := c.session.Data(c.ctx, rstart)
 	if err != nil {
-		// an error which isn't a SMTPStatus error will always terminate the connection
-		// if it is an SMTPStatus then wi need to make sure the stream ist read to the end
-		if _, ok := err.(*smtp.Status); ok && r != nil {
+		// an error which isn't a smtp status error will always terminate the connection
+		// if it is an smtp status then we need to make sure the stream ist read to the end
+		if smtp.IsStatusError(err) && r != nil {
 			_, _ = io.Copy(io.Discard, r)
 		}
 		return err

@@ -70,6 +70,15 @@ func (err *statusBase) Error() string {
 	return fmt.Sprintf("SMTP error %03d", err.Code)
 }
 
+// IsStatusError checks if error is a status error.
+func IsStatusError(v error) bool {
+	switch v.(type) {
+	case *Status, *StatusMultiline:
+		return true
+	}
+	return false
+}
+
 // Error returns a error string.
 func (err *Status) Error() string {
 	if err.Message != "" {

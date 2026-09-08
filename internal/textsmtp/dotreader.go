@@ -55,11 +55,26 @@ const (
 	stateEOF              // Reached .\r\n end marker line.
 )
 
+func (r *dotReader) peekMin5(blen int) ([]byte, error) {
+	// IMPORTANT: We cannot wait on read,
+	// because no EOL returns. So we call peek with 5 to fill the buffer probably with more
+	// to get as much data as possible in the second peek.
+	if r.r.Buffered() < 5 {
+		_, _ = r.r.Peek(5)
+	}
+	// min 5, max buffer size, default len(b)
+	return r.r.Peek(max(min(blen, r.r.Buffered()), 5))
+}
+
 // Read reads in some more bytes.
 // Run data through a simple state machine to
 // elide leading dots and detect End-of-Data
 // (<CR><LF>.<CR><LF>) line.
 func (r *dotReader) Read(b []byte) (int, error) {
+	if r.state == stateEOF {
+		return 0, io.EOF
+	}
+
 	if r.limited {
 		if r.n <= 0 {
 			return 0, smtp.ErrDataTooLarge
@@ -73,14 +88,7 @@ func (r *dotReader) Read(b []byte) (int, error) {
 	var n int       // Data written to b.
 	var skipped int // How many.
 
-	// IMPORTANT: We cannot wait on read,
-	// because no EOL returns.
-	if r.r.Buffered() < 5 {
-		_, _ = r.r.Peek(5)
-	}
-
-	// min 5, max buffer size, default len(b)
-	c, err := r.r.Peek(max(min(len(b), r.r.Buffered()), 5))
+	c, err := r.peekMin5(len(b))
 
 	// write \n
 	if r.state == stateCR {
