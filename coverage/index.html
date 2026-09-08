@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/uponusolutions/go-smtp/client/client.go (75.9%)</option>
+				<option value="file0">github.com/uponusolutions/go-smtp/client/client.go (75.7%)</option>
 				
 				<option value="file1">github.com/uponusolutions/go-smtp/client/config.go (23.8%)</option>
 				
@@ -79,7 +79,7 @@
 				
 				<option value="file11">github.com/uponusolutions/go-smtp/internal/textsmtp/dotwriter.go (79.1%)</option>
 				
-				<option value="file12">github.com/uponusolutions/go-smtp/internal/textsmtp/textproto.go (87.3%)</option>
+				<option value="file12">github.com/uponusolutions/go-smtp/internal/textsmtp/textproto.go (87.5%)</option>
 				
 				<option value="file13">github.com/uponusolutions/go-smtp/internal/textsmtp/util.go (68.8%)</option>
 				
@@ -390,14 +390,11 @@ func (c *Client) cmd(expectCode int, format string, args ...any) (int, string, e
         timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
         defer timeout()
 
-        id, err := c.cfg.text.Cmd(format, args...)
+        err := c.cfg.text.PrintfLineAndFlush(format, args...)
         if err != nil </span><span class="cov0" title="0">{
                 return 0, "", err
         }</span>
-        <span class="cov9" title="103">c.cfg.text.StartResponse(id)
-        defer c.cfg.text.EndResponse(id)
-
-        return c.readResponse(expectCode)</span>
+        <span class="cov9" title="103">return c.readResponse(expectCode)</span>
 }
 
 // helo sends the HELO greeting to the server. It should be used only when the
@@ -2200,22 +2197,22 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span c
         <span class="cov6" title="8130">return dr</span>
 }
 
-func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="1169822">{
-        if err == nil </span><span class="cov9" title="1165767">{
+func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="1169818">{
+        if err == nil </span><span class="cov9" title="1165763">{
                 l := len(c)
 
-                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="10643">{
+                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="10640">{
                         // Ends with \r\n, write everything before.
                         return copy(b, c[:l-2])
                 }</span>
 
-                <span class="cov9" title="1155124">if l &gt; 0 &amp;&amp; c[l-1] == '\r' </span><span class="cov6" title="2943">{
+                <span class="cov9" title="1155123">if l &gt; 0 &amp;&amp; c[l-1] == '\r' </span><span class="cov6" title="2943">{
                         // Ends with \r, write everything before.
                         return copy(b, c[:l-1])
                 }</span>
         }
 
-        <span class="cov9" title="1156236">return copy(b, c)</span>
+        <span class="cov9" title="1156235">return copy(b, c)</span>
 }
 
 const (
@@ -2224,27 +2221,27 @@ const (
         stateEOF              // Reached .\r\n end marker line.
 )
 
-func (r *dotReader) peekMin5(blen int) ([]byte, error) <span class="cov9" title="1174332">{
+func (r *dotReader) peekMin5(blen int) ([]byte, error) <span class="cov9" title="1174328">{
         // IMPORTANT: We cannot wait on read,
         // because no EOL returns. So we call peek with 5 to fill the buffer probably with more
         // to get as much data as possible in the second peek.
-        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="1032226">{
+        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="1032222">{
                 _, _ = r.r.Peek(5)
         }</span>
         // min 5, max buffer size, default len(b)
-        <span class="cov9" title="1174332">return r.r.Peek(max(min(blen, r.r.Buffered()), 5))</span>
+        <span class="cov9" title="1174328">return r.r.Peek(max(min(blen, r.r.Buffered()), 5))</span>
 }
 
 // Read reads in some more bytes.
 // Run data through a simple state machine to
 // elide leading dots and detect End-of-Data
 // (&lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;) line.
-func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1174357">{
+func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1174353">{
         if r.state == stateEOF </span><span class="cov3" title="23">{
                 return 0, io.EOF
         }</span>
 
-        <span class="cov9" title="1174334">if r.limited </span><span class="cov2" title="15">{
+        <span class="cov9" title="1174330">if r.limited </span><span class="cov2" title="15">{
                 if r.n &lt;= 0 </span><span class="cov1" title="2">{
                         return 0, smtp.ErrDataTooLarge
                 }</span>
@@ -2254,7 +2251,7 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117435
                 }</span>
         }
 
-        <span class="cov9" title="1174332">var n int       // Data written to b.
+        <span class="cov9" title="1174328">var n int       // Data written to b.
         var skipped int // How many.
 
         c, err := r.peekMin5(len(b))
@@ -2274,12 +2271,12 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117435
                 }</span>
         }
 
-        <span class="cov9" title="1174332">if r.state != stateEOF </span><span class="cov9" title="1174330">{
-                for </span><span class="cov10" title="1239091">{
+        <span class="cov9" title="1174328">if r.state != stateEOF </span><span class="cov9" title="1174326">{
+                for </span><span class="cov10" title="1239087">{
                         i := bytes.Index(c, crlfdot)
 
                         // No full \r\n. found.
-                        if i == -1 </span><span class="cov9" title="1169822">{
+                        if i == -1 </span><span class="cov9" title="1169818">{
                                 n += noCrlfDotFound(err, b, c)
                                 break</span>
                         }
@@ -2327,19 +2324,19 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117435
 
         // n + skipped is always smaller then what was peeked,
         // so it is guaranteed to work
-        <span class="cov9" title="1174332">_, _ = r.r.Discard(n + skipped)
+        <span class="cov9" title="1174328">_, _ = r.r.Discard(n + skipped)
 
         if err == io.EOF &amp;&amp; r.state != stateEOF </span><span class="cov6" title="4055">{
                 err = io.ErrUnexpectedEOF
-        }</span> else<span class="cov9" title="1170277"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov6" title="4075">{
+        }</span> else<span class="cov9" title="1170273"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov6" title="4075">{
                 err = io.EOF
         }</span>
 
-        <span class="cov9" title="1174332">if r.limited </span><span class="cov2" title="13">{
+        <span class="cov9" title="1174328">if r.limited </span><span class="cov2" title="13">{
                 r.n -= int64(n)
         }</span>
 
-        <span class="cov9" title="1174332">return n, err</span>
+        <span class="cov9" title="1174328">return n, err</span>
 }
 </pre>
 		
@@ -2498,7 +2495,6 @@ type Textproto struct {
         conn               io.ReadWriteCloser
         maxLineLength      int
         lineLengthExceeded bool
-        textproto.Pipeline
 }
 
 // NewTextproto creates a new connection wrapper.
@@ -2527,41 +2523,6 @@ func NewTextproto(
 
 // ErrTooLongLine occurs if the smtp line is too long.
 var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
-
-// Cmd is a convenience method that sends a command after
-// waiting its turn in the pipeline. The command text is the
-// result of formatting format with args and appending \r\n.
-// Cmd returns the id of the command, for use with StartResponse and EndResponse.
-//
-// For example, a client might run a HELP command that returns a dot-body
-// by using:
-//
-//        id, err := c.Cmd("HELP")
-//        if err != nil {
-//                return nil, err
-//        }
-//
-//        c.StartResponse(id)
-//        defer c.EndResponse(id)
-//
-//        if _, _, err = c.ReadCodeLine(110); err != nil {
-//                return nil, err
-//        }
-//        text, err := c.ReadDotBytes()
-//        if err != nil {
-//                return nil, err
-//        }
-//        return c.ReadCodeLine(250)
-func (t *Textproto) Cmd(format string, args ...any) (id uint, err error) <span class="cov7" title="103">{
-        id = t.Next()
-        t.StartRequest(id)
-        err = t.PrintfLineAndFlush(format, args...)
-        t.EndRequest(id)
-        if err != nil </span><span class="cov0" title="0">{
-                return 0, err
-        }</span>
-        <span class="cov7" title="103">return id, nil</span>
-}
 
 // PrintfLine writes the formatted output followed by \r\n.
 func (t *Textproto) PrintfLine(format string, args ...any) error <span class="cov7" title="104">{
@@ -3979,10 +3940,10 @@ func (c *Conn) Close(err error) <span class="cov6" title="67">{
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="40">{
+        if closeErr != nil </span><span class="cov5" title="39">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="40"> {
+                }</span> else<span class="cov5" title="39"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
@@ -5305,7 +5266,7 @@ func (s *Server) Close() error <span class="cov8" title="47">{
                 }</span>
         }
 
-        <span class="cov8" title="47">for conn := range s.conns </span><span class="cov7" title="41">{
+        <span class="cov8" title="47">for conn := range s.conns </span><span class="cov7" title="39">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
