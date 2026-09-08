@@ -28,7 +28,7 @@ func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
 
 // toSMTPErr converts textproto.Error into smtp, parsing
 // enhanced status code if it is present.
-func toSMTPErr(protoErr *textproto.Error) *smtp.Status {
+func toSMTPErr(protoErr *textproto.Error) *smtp.StatusSingle {
 	parts := strings.SplitN(protoErr.Msg, " ", 2)
 	if len(parts) != 2 {
 		return smtp.NewStatus(protoErr.Code, smtp.EnhancedCode{}, protoErr.Msg)

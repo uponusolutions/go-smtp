@@ -216,7 +216,7 @@ func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error 
 	}
 }
 
-func (c *Conn) commandUnknown(cmd string) *smtp.Status {
+func (c *Conn) commandUnknown(cmd string) *smtp.StatusSingle {
 	return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, fmt.Sprintf("%s command unknown, state %d", cmd, c.state))
 }
 
@@ -344,7 +344,7 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 	return c.handleGreetResponse()
 }
 
-func (c *Conn) handleGreetResponse() *smtp.StatusMultiline {
+func (c *Conn) handleGreetResponse() *smtp.StatusMulti {
 	return smtp.NewStatusMultiline(250, smtp.NoEnhancedCode, func(yield func(string) bool) {
 		yield("Hello " + c.helo)
 		yield("PIPELINING")
@@ -887,7 +887,7 @@ func (c *Conn) handleData(arg string) error {
 	if err != nil {
 		// an error which isn't a smtp status error will always terminate the connection
 		// if it is an smtp status then we need to make sure the stream ist read to the end
-		if smtp.IsStatusError(err) && r != nil {
+		if _, ok := err.(*smtp.Status); ok && r != nil {
 			_, _ = io.Copy(io.Discard, r)
 		}
 		return err
@@ -928,7 +928,7 @@ func (c *Conn) handleBdat(arg string) error {
 		return data
 	})
 	if err != nil {
-		if smtpErr, ok := err.(*smtp.Status); ok {
+		if smtpErr, ok := err.(*smtp.StatusSingle); ok {
 			// read anything left to continue after this failure, ignore any read error
 			// https://www.rfc-editor.org/rfc/rfc3030.html
 			// If a 5XX or 4XX code is received by the sender-SMTP in response to a BDAT
@@ -956,7 +956,7 @@ func (c *Conn) handleBdat(arg string) error {
 	return c.accepted(queueid)
 }
 
-func (*Conn) accepted(queueid string) *smtp.Status {
+func (*Conn) accepted(queueid string) *smtp.StatusSingle {
 	if queueid != "" {
 		// limit length if queueid is too long (< 1000)
 		if len(queueid) > 977 {
@@ -974,7 +974,7 @@ func (c *Conn) greet() {
 
 func (c *Conn) writeResponseStatus(err error, allowQuit bool) int {
 	switch s := err.(type) {
-	case *smtp.Status:
+	case *smtp.StatusSingle:
 		// Service closing transmission channel, after quit
 		if !allowQuit && s.Code == 221 {
 			return 0
@@ -982,7 +982,7 @@ func (c *Conn) writeResponseStatus(err error, allowQuit bool) int {
 		// ToDo: close connection on repeated errors (e.g. authentication tries)
 		c.writeStatus(s)
 		return s.Code
-	case *smtp.StatusMultiline:
+	case *smtp.StatusMulti:
 		// Service closing transmission channel, after quit
 		if !allowQuit && s.Code == 221 {
 			return 0
@@ -1034,11 +1034,11 @@ func (c *Conn) writeLine(code, enhCode, message string, last bool) {
 	_, _ = w.WriteString("\r\n")
 }
 
-func (c *Conn) writeStatus(status *smtp.Status) {
+func (c *Conn) writeStatus(status *smtp.StatusSingle) {
 	c.writeResponse(status.Code, status.EnhancedCode, status.Message)
 }
 
-func (c *Conn) writeStatusMultiline(status *smtp.StatusMultiline) {
+func (c *Conn) writeStatusMultiline(status *smtp.StatusMulti) {
 	c.logger().DebugContext(
 		c.ctx, "statusMultiline", slog.Int("code", status.Code), slog.Any("enhCode", status.EnhancedCode),
 	)
@@ -1102,8 +1102,8 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	}
 }
 
-func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, err error) *smtp.Status {
-	if smtpErr, ok := err.(*smtp.Status); ok {
+func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, err error) *smtp.StatusSingle {
+	if smtpErr, ok := err.(*smtp.StatusSingle); ok {
 		return smtpErr
 	}
 	c.logger().ErrorContext(c.ctx, msg, slog.Any("err", err))

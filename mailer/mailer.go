@@ -169,7 +169,7 @@ func (c *Mailer) prepare(
 		}
 
 		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
-			smtpErr := &smtp.Status{}
+			smtpErr := &smtp.StatusSingle{}
 
 			// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
 			if c.cfg.abortOnRcptReject || !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
@@ -244,8 +244,8 @@ func (c *Mailer) SendAdvanced(
 
 	_, err = io.Copy(w.Writer(), in)
 	if err != nil {
-		// if err isn't smtp.Status we are in an unknown state, close connection
-		if !smtp.IsStatusError(err) {
+		// if err isn't smtp.StatusBase we are in an unknown state, close connection
+		if _, ok := err.(*smtp.Status); !ok {
 			err = errors.Join(err, c.client.Close())
 		}
 		return 0, "", failures, err
@@ -253,8 +253,8 @@ func (c *Mailer) SendAdvanced(
 
 	code, msg, err = w.CloseWithResponse()
 
-	// if err isn't smtp.Status we are in an unknown state, close connection
-	if !smtp.IsStatusError(err) {
+	// if err isn't smtp.StatusBase we are in an unknown state, close connection
+	if _, ok := err.(*smtp.Status); err != nil && !ok {
 		err = errors.Join(err, c.client.Close())
 	}
 

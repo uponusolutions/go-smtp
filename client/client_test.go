@@ -172,7 +172,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok := err.(*smtp.Status)
+	smtpErr, ok := err.(*smtp.StatusSingle)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -190,7 +190,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*smtp.Status)
+	smtpErr, ok = err.(*smtp.StatusSingle)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -205,7 +205,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*smtp.Status)
+	smtpErr, ok = err.(*smtp.StatusSingle)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -571,7 +571,7 @@ func TestHello_421Response(t *testing.T) {
 		t.Error("Expected Hello to fail")
 	}
 
-	var smtp *smtp.Status
+	var smtp *smtp.StatusSingle
 	if !errors.As(err, &smtp) || smtp.Code != 421 ||
 		smtp.Message != "Service not available, closing transmission channel" {
 		t.Errorf("Expected error 421, got %v", err)
