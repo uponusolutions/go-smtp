@@ -117,15 +117,6 @@ func (t *Textproto) ReadResponse(expectCode int) (code int, message string, err 
 	return code, message, err
 }
 
-// ReadCodeLine reads a code line.
-func (t *Textproto) ReadCodeLine(expectCode int) (int, string, error) {
-	code, continued, message, err := t.readCodeLine(expectCode)
-	if err == nil && continued {
-		err = textproto.ProtocolError(fmt.Sprintf("unexpected multi-line response: %q", message))
-	}
-	return code, message, err
-}
-
 func (t *Textproto) readCodeLine(expectCode int) (code int, continued bool, message string, err error) {
 	line, err := t.ReadLine()
 	if err != nil {

@@ -1,4 +1,4 @@
-package tester
+package testserver
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uponusolutions/go-smtp/tester"
 )
 
 var srv = Standard()
@@ -44,7 +45,7 @@ func TestMain(m *testing.M) {
 func TestBackend_AddLoad(t *testing.T) {
 	b := Backend{}
 
-	m := &Mail{
+	m := &tester.Mail{
 		From:       "alice@i.com",
 		Recipients: []string{"bob@e.com"},
 		Data:       []byte("test"),

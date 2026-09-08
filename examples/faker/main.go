@@ -10,14 +10,14 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/uponusolutions/go-smtp/tester"
+	"github.com/uponusolutions/go-smtp/tester/testserver"
 )
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	s := tester.Standard()
+	s := testserver.Standard()
 
 	listen, err := s.Listen()
 	if err != nil {
@@ -47,6 +47,6 @@ func main() {
 	}
 
 	// Lookup email.
-	m, found := tester.GetBackend(s).Load(from, to)
+	m, found := testserver.GetBackend(s).Load(from, to)
 	fmt.Printf("Found %t, mail %+v\n", found, m)
 }

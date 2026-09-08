@@ -6,7 +6,7 @@
 // Mails to the same sender and recipients will overwrite a previous
 // received mail, when the recipients slice has the same order as
 // in the mail received before.
-package tester
+package testserver
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/server"
+	"github.com/uponusolutions/go-smtp/tester"
 )
 
 // Standard returns a standard SMTP server listening on a random Port.
@@ -74,19 +75,19 @@ func GetBackend(s *server.Server) *Backend {
 }
 
 // Add adds mail to backends map.
-func (b *Backend) Add(m *Mail) {
+func (b *Backend) Add(m *tester.Mail) {
 	b.Mails.Store(m.LookupKey(), m)
 }
 
 // Load loads mail from 'from' to recipients 'recipients'. The ok
 // result indicates whether value was found in the map.
-func (b *Backend) Load(from string, recipients []string) (*Mail, bool) {
-	i, ok := b.Mails.Load(LookupKey(from, recipients))
+func (b *Backend) Load(from string, recipients []string) (*tester.Mail, bool) {
+	i, ok := b.Mails.Load(tester.LookupKey(from, recipients))
 	if !ok {
 		return nil, ok
 	}
 
-	return i.(*Mail), ok //nolint
+	return i.(*tester.Mail), ok //nolint
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -96,26 +97,26 @@ func (b *Backend) Load(from string, recipients []string) (*Mail, bool) {
 // A Session is returned after successful login.
 type Session struct {
 	backend *Backend
-	mail    *Mail
+	mail    *tester.Mail
 }
 
 func newSession(b *Backend) *Session {
 	return &Session{
 		backend: b,
-		mail:    &Mail{},
+		mail:    &tester.Mail{},
 	}
 }
 
 // Reset implements Reset interface.
 func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) {
-	s.mail = &Mail{}
+	s.mail = &tester.Mail{}
 
 	return ctx, nil
 }
 
 // Close implements the Close interface.
 func (s *Session) Close(_ context.Context, _ error) {
-	s.mail = &Mail{}
+	s.mail = &tester.Mail{}
 }
 
 // Logger implements the Logger interface.

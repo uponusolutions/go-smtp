@@ -1,4 +1,4 @@
-package textsmtp_test
+package textsmtp
 
 import (
 	"bytes"
@@ -6,12 +6,11 @@ import (
 	"net/textproto"
 	"testing"
 
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
-func reader(in string, out *bytes.Buffer) *textsmtp.Textproto {
-	return textsmtp.NewTextproto(tester.NewFakeConn(in, out), 4096, 4096, 0)
+func reader(in string, out *bytes.Buffer) *Textproto {
+	return NewTextproto(tester.NewFakeConn(in, out), 4096, 4096, 0)
 }
 
 func TestPrintfLine(t *testing.T) {
@@ -40,24 +39,28 @@ func TestReadLine(t *testing.T) {
 }
 
 func TestReadCodeLine(t *testing.T) {
-	r := reader("123 hi\n234 bye\n345 no way\n", &bytes.Buffer{})
-	code, msg, err := r.ReadCodeLine(0)
-	if code != 123 || msg != "hi" || err != nil {
+	r := reader("123 hi\n234 bye\n345 no way\n345-no way continued\n", &bytes.Buffer{})
+	code, continued, msg, err := r.readCodeLine(0)
+	if code != 123 || continued || msg != "hi" || err != nil {
 		t.Fatalf("Line 1: %d, %s, %v", code, msg, err)
 	}
-	code, msg, err = r.ReadCodeLine(23)
-	if code != 234 || msg != "bye" || err != nil {
+	code, continued, msg, err = r.readCodeLine(23)
+	if code != 234 || continued || msg != "bye" || err != nil {
 		t.Fatalf("Line 2: %d, %s, %v", code, msg, err)
 	}
-	code, msg, err = r.ReadCodeLine(346)
-	if code != 345 || msg != "no way" || err == nil {
+	code, continued, msg, err = r.readCodeLine(346)
+	if code != 345 || continued || msg != "no way" || err == nil {
+		t.Fatalf("Line 3: %d, %s, %v", code, msg, err)
+	}
+	code, continued, msg, err = r.readCodeLine(346)
+	if code != 345 || !continued || msg != "no way continued" || err == nil {
 		t.Fatalf("Line 3: %d, %s, %v", code, msg, err)
 	}
 	if e, ok := err.(*textproto.Error); !ok || e.Code != code || e.Msg != msg {
 		t.Fatalf("Line 3: wrong error %v\n", err)
 	}
-	code, msg, err = r.ReadCodeLine(1)
-	if code != 0 || msg != "" || err != io.EOF {
+	code, continued, msg, err = r.readCodeLine(1)
+	if code != 0 || continued || msg != "" || err != io.EOF {
 		t.Fatalf("EOF: %d, %s, %v", code, msg, err)
 	}
 }

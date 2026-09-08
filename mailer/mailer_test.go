@@ -12,14 +12,14 @@ import (
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/server"
+	"github.com/uponusolutions/go-smtp/tester/testserver"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-smtp/client"
-	"github.com/uponusolutions/go-smtp/tester"
 )
 
-var backend = tester.Backend{
+var backend = testserver.Backend{
 	Mails: sync.Map{},
 	Rcpt: func(_ context.Context, to string, _ *smtp.RcptOptions) error {
 		if to == "notfound@external.com" {
@@ -29,7 +29,7 @@ var backend = tester.Backend{
 	},
 }
 
-var s = tester.Standard(
+var s = testserver.Standard(
 	server.WithBackend(&backend),
 )
 
@@ -109,7 +109,7 @@ func TestClient_SendMailAutoconnect(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := tester.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -137,7 +137,7 @@ func TestClient_SendMail(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := tester.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -158,7 +158,7 @@ func TestClient_SendMailDirect(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := tester.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -183,7 +183,7 @@ func TestClient_SendMailDirectFail(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := tester.GetBackend(s).Load(from, []string{"Bob@external.com"})
+	m, found := testserver.GetBackend(s).Load(from, []string{"Bob@external.com"})
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -292,7 +292,7 @@ func TestClient_Send(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := tester.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
