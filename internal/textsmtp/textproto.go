@@ -105,7 +105,7 @@ func (t *Textproto) readResponseExtra(status *smtp.Status, continued bool, appen
 
 	encCodePart := EnhancedCodeToPart(status.EnhancedCode, status.Code)
 	for continued {
-		continued, message, err = t.readExtraCodeLine(strconv.FormatInt(int64(status.Code), 10), encCodePart)
+		continued, message, err = t.readExtraCodeLine(strconv.Itoa(status.Code), encCodePart)
 		if err != nil {
 			return err
 		}
@@ -151,14 +151,14 @@ func EnhancedCodeToPart(enhCode smtp.EnhancedCode, code int) string {
 		cat := code / 100
 		switch cat {
 		case 2, 4, 5:
-			return strconv.FormatInt(int64(cat), 10) + ".0.0 "
+			return strconv.Itoa(cat) + ".0.0 "
 		default:
 			return ""
 		}
 	}
-	return strconv.FormatInt(int64(enhCode[0]), 10) + "." +
-		strconv.FormatInt(int64(enhCode[1]), 10) + "." +
-		strconv.FormatInt(int64(enhCode[2]), 10) + " "
+	return strconv.Itoa(enhCode[0]) + "." +
+		strconv.Itoa(enhCode[1]) + "." +
+		strconv.Itoa(enhCode[2]) + " "
 }
 
 func (t *Textproto) readFirstCodeLine() (*smtp.Status, bool, error) {

@@ -217,7 +217,7 @@ func (c *Client) greet() error {
 		c.connName = status.Lines[0]
 	}
 
-	return err
+	return nil
 }
 
 // Hello runs a hello exchange
@@ -275,12 +275,7 @@ func (c *Client) cmdValid(expectCode int, format string, args ...any) error {
 		return err
 	}
 
-	err = c.cfg.text.ReadResponseValid(expectCode)
-	if err != nil {
-		return err
-	}
-
-	return err
+	return c.cfg.text.ReadResponseValid(expectCode)
 }
 
 // helo sends the HELO greeting to the server. It should be used only when the

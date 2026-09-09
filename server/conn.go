@@ -355,64 +355,67 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 }
 
 func (c *Conn) handleGreetResponse() *smtp.Status {
-	message := []string{}
-
-	message = append(message, "Hello "+c.helo)
-	message = append(message, "PIPELINING")
-	message = append(message, "8BITMIME")
-	message = append(message, "ENHANCEDSTATUSCODES")
-	if c.server.enableCHUNKING {
-		message = append(message, "CHUNKING")
-	}
 	isTLS := c.IsTLS()
+
+	// 17 lines is the current maximum
+	lines := make([]string, 0, 17)
+
+	lines = append(lines, "Hello "+c.helo)
+	lines = append(lines, "PIPELINING")
+	lines = append(lines, "8BITMIME")
+	lines = append(lines, "ENHANCEDSTATUSCODES")
+
+	if c.server.enableCHUNKING {
+		lines = append(lines, "CHUNKING")
+	}
 	if !isTLS && c.server.tlsConfig != nil {
-		message = append(message, "STARTTLS")
+		lines = append(lines, "STARTTLS")
 	}
 	if len(c.mechanisms) > 0 {
-		message = append(message, "AUTH "+strings.Join(c.mechanisms, " "))
+		lines = append(lines, "AUTH "+strings.Join(c.mechanisms, " "))
 	}
 	if c.server.enableSMTPUTF8 {
-		message = append(message, "SMTPUTF8")
+		lines = append(lines, "SMTPUTF8")
 	}
 	if isTLS && c.server.enableREQUIRETLS {
-		message = append(message, "REQUIRETLS")
+		lines = append(lines, "REQUIRETLS")
 	}
 	if c.server.enableBINARYMIME {
-		message = append(message, "BINARYMIME")
+		lines = append(lines, "BINARYMIME")
 	}
 	if c.server.enableDSN {
-		message = append(message, "DSN")
+		lines = append(lines, "DSN")
 	}
 	if c.server.enableXOORG {
-		message = append(message, "XOORG")
+		lines = append(lines, "XOORG")
 	}
 	if c.server.maxMessageBytes > 0 {
-		message = append(message, "SIZE "+strconv.FormatInt(c.server.maxMessageBytes, 10))
+		lines = append(lines, "SIZE "+strconv.FormatInt(c.server.maxMessageBytes, 10))
 	} else {
-		message = append(message, "SIZE")
+		lines = append(lines, "SIZE")
 	}
 	if c.server.maxRecipients > 0 {
-		message = append(message, "LIMITS RCPTMAX="+strconv.FormatInt(int64(c.server.maxRecipients), 10))
+		lines = append(lines, "LIMITS RCPTMAX="+strconv.Itoa(c.server.maxRecipients))
 	}
 	if c.server.enableRRVS {
-		message = append(message, "RRVS")
+		lines = append(lines, "RRVS")
 	}
 	if c.server.enableDELIVERBY {
 		if c.server.minimumDeliverByTime > 0 {
-			message = append(message, "DELIVERBY "+strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10))
+			lines = append(lines, "DELIVERBY "+strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10))
 		} else {
-			message = append(message, "DELIVERBY")
+			lines = append(lines, "DELIVERBY")
 		}
 	}
 	if c.server.enableMTPRIORITY {
 		if c.server.mtPriorityProfile != smtp.PriorityUnspecified {
-			message = append(message, "MT-PRIORITY "+string(c.server.mtPriorityProfile))
+			lines = append(lines, "MT-PRIORITY "+string(c.server.mtPriorityProfile))
 		} else {
-			message = append(message, "MT-PRIORITY")
+			lines = append(lines, "MT-PRIORITY")
 		}
 	}
 
-	return smtp.NewStatusM(250, smtp.NoEnhancedCode, message)
+	return smtp.NewStatusM(250, smtp.NoEnhancedCode, lines)
 }
 
 // handleError handles error and closes the connection afterwards.
@@ -1022,7 +1025,7 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, message []stri
 		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
 	}
 
-	codeString := strconv.FormatInt(int64(code), 10)
+	codeString := strconv.Itoa(code)
 	enhCodeString := textsmtp.EnhancedCodeToPart(enhCode, code)
 
 	for i, m := range message {
