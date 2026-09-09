@@ -377,7 +377,10 @@ func (c *Conn) handleGreetResponse() *smtp.Status {
 	if c.server.enableSMTPUTF8 {
 		lines = append(lines, "SMTPUTF8")
 	}
-	if isTLS && c.server.enableREQUIRETLS {
+	// We explicit allow require tls to be set if the connection is unencrypted
+	// because if the server runs in a fully trusted zone
+	// then the encryption is only relevant when it leaves this zone.
+	if c.server.enableREQUIRETLS {
 		lines = append(lines, "REQUIRETLS")
 	}
 	if c.server.enableBINARYMIME {

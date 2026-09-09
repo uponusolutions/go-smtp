@@ -358,7 +358,7 @@ func (c *Client) StartTLS(config *tls.Config, serverName string) error {
 func (c *Client) TLSConnectionState() (tls.ConnectionState, bool) {
 	tc, ok := c.conn.(*tls.Conn)
 	if !ok {
-		return tls.ConnectionState{}, ok
+		return tls.ConnectionState{}, false
 	}
 	return tc.ConnectionState(), true
 }
