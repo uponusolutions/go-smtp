@@ -429,13 +429,13 @@ func (c *Conn) handleError(err error) {
 	}
 
 	if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-		c.writeResponseSingle(421, smtp.EnhancedCode{4, 4, 2}, "Idle timeout, bye bye")
+		c.writeStatus(smtp.NewStatusS(421, smtp.EnhancedCode{4, 4, 2}, "Idle timeout, bye bye"))
 		c.Close(fmt.Errorf("idle timeout: %w", err))
 		return
 	}
 
 	if smtpErr, ok := err.(*smtp.Status); ok {
-		c.writeResponse(smtpErr.Code, smtpErr.EnhancedCode, smtpErr.Lines)
+		c.writeStatus(smtpErr)
 
 		if smtpErr.Code != 221 {
 			c.Close(fmt.Errorf("smtp error: %w", err))
@@ -447,7 +447,7 @@ func (c *Conn) handleError(err error) {
 	}
 
 	if err == textsmtp.ErrTooLongLine {
-		c.writeResponseSingle(500, smtp.EnhancedCode{5, 4, 0}, "Too long line")
+		c.writeStatus(smtp.NewStatusS(500, smtp.EnhancedCode{5, 4, 0}, "Too long line"))
 		c.Close(errors.New("line too long"))
 		return
 	}
@@ -815,7 +815,7 @@ func (c *Conn) handleAuth(arg string) error {
 		if len(challenge) > 0 {
 			encoded = base64.StdEncoding.EncodeToString(challenge)
 		}
-		c.writeResponseSingle(334, smtp.NoEnhancedCode, encoded)
+		c.writeStatus(smtp.NewStatusS(334, smtp.NoEnhancedCode, encoded))
 
 		encoded, err = c.readLine()
 		if err != nil {
@@ -859,7 +859,7 @@ func (c *Conn) handleStartTLS() error {
 		return smtp.NewStatusS(451, smtp.EnhancedCode{4, 0, 0}, "TLS config retrieval nil returned")
 	}
 
-	c.writeResponseSingle(220, smtp.EnhancedCode{2, 0, 0}, "Ready to start TLS")
+	c.writeStatus(smtp.NewStatusS(220, smtp.EnhancedCode{2, 0, 0}, "Ready to start TLS"))
 
 	// Upgrade to TLS
 	tlsConn := tls.Server(c.conn, tlsConfig)
@@ -897,7 +897,7 @@ func (c *Conn) handleData(arg string) error {
 			return r
 		}
 		// We have recipients, go to accept data
-		c.writeResponseSingle(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>")
+		c.writeStatus(smtp.NewStatusS(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>"))
 
 		// r gets exposed to be able to discard the rest of the message
 		r = textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
@@ -938,7 +938,7 @@ func (c *Conn) handleBdat(arg string) error {
 		if closed {
 			return "", "", io.EOF
 		}
-		c.writeResponseSingle(250, smtp.EnhancedCode{2, 0, 0}, "Continue")
+		c.writeStatus(smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, "Continue"))
 		return c.nextCommand()
 	})
 	if err != nil {
@@ -990,37 +990,14 @@ func (*Conn) accepted(queueid string) *smtp.Status {
 
 func (c *Conn) greet() {
 	protocol := "ESMTP"
-	c.writeResponseSingle(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.hostname, protocol))
-}
-
-// writeLine writes a single reply line. last selects the terminating form.
-func (c *Conn) writeLine(code, enhCode, message string, last bool) {
-	w := c.text.W
-	_, _ = w.WriteString(code)
-	if last {
-		// RFC 5321 permits omitting the space when there is no text, but
-		// RFC 4954 requires it for the 334 challenge and net/textproto
-		// rejects any reply shorter than four bytes. Always emit it.
-		_ = w.WriteByte(' ')
-	} else {
-		_ = w.WriteByte('-')
-	}
-	_, _ = w.WriteString(enhCode)
-	_, _ = w.WriteString(strings.TrimSuffix(message, "\r"))
-	_, _ = w.WriteString("\r\n")
+	c.writeStatus(
+		smtp.NewStatusS(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.hostname, protocol)),
+	)
 }
 
 func (c *Conn) writeStatus(status *smtp.Status) {
-	c.writeResponse(status.Code, status.EnhancedCode, status.Lines)
-}
-
-func (c *Conn) writeResponseSingle(code int, enhCode smtp.EnhancedCode, message string) {
-	c.writeResponse(code, enhCode, []string{message})
-}
-
-func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, message []string) {
 	c.logger().DebugContext(
-		c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", message),
+		c.ctx, "write status", slog.Any("status", status),
 	)
 
 	// TODO: error handling
@@ -1028,12 +1005,8 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, message []stri
 		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
 	}
 
-	codeString := strconv.Itoa(code)
-	enhCodeString := textsmtp.EnhancedCodeToPart(enhCode, code)
-
-	for i, m := range message {
-		c.writeLine(codeString, enhCodeString, m, i+1 == len(message))
-	}
+	// TODO: error handling
+	_, _ = status.WriteTo(c.text.W)
 
 	// PIPELINE support
 	// If there is something buffered in c.text.R then we can assume another command is following.

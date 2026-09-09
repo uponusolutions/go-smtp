@@ -90,7 +90,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	defer func() {
 		if err := recover(); err != nil {
-			c.writeResponseSingle(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error")
+			c.writeStatus(smtp.NewStatusS(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error"))
 			stack := debug.Stack()
 			c.logger().ErrorContext(
 				c.ctx,

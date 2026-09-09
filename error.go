@@ -2,6 +2,9 @@ package smtp
 
 import (
 	"fmt"
+	"io"
+	"log/slog"
+	"strconv"
 	"strings"
 )
 
@@ -29,6 +32,30 @@ var NoEnhancedCode = EnhancedCode{-1, -1, -1}
 // be used (X is derived from error code).
 var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
 
+// ToPart returns the part of the string after the code
+// which is defined by the enhanced code with the trailing whitespace.
+// E.g. "5.1.1 "
+func (enhCode EnhancedCode) ToPart(code int) string {
+	if enhCode == NoEnhancedCode {
+		return ""
+	}
+
+	// All responses must include an enhanced code, if it is missing - use
+	// a generic code X.0.0.
+	if enhCode == EnhancedCodeNotSet {
+		cat := code / 100
+		switch cat {
+		case 2, 4, 5:
+			return strconv.Itoa(cat) + ".0.0 "
+		default:
+			return ""
+		}
+	}
+	return strconv.Itoa(enhCode[0]) + "." +
+		strconv.Itoa(enhCode[1]) + "." +
+		strconv.Itoa(enhCode[2]) + " "
+}
+
 // NewStatusM creates a new status with multiple message lines.
 func NewStatusM(code int, enhCode EnhancedCode, msg []string) *Status {
 	return &Status{
@@ -48,35 +75,102 @@ func NewStatusS(code int, enhCode EnhancedCode, msg string) *Status {
 }
 
 // Error returns a error string.
-func (err *Status) Error() string {
-	base := fmt.Sprintf("SMTP error %03d", err.Code)
-	if err.EnhancedCode != NoEnhancedCode && err.EnhancedCode != EnhancedCodeNotSet {
-		base += fmt.Sprintf(" %d.%d.%d", err.EnhancedCode[0], err.EnhancedCode[1], err.EnhancedCode[2])
+func (s *Status) Error() string {
+	base := fmt.Sprintf("SMTP error %03d", s.Code)
+	if s.EnhancedCode != NoEnhancedCode && s.EnhancedCode != EnhancedCodeNotSet {
+		base += fmt.Sprintf(" %d.%d.%d", s.EnhancedCode[0], s.EnhancedCode[1], s.EnhancedCode[2])
 	}
-	if len(err.Lines) > 0 {
-		return base + ": " + err.Text()
+	if len(s.Lines) > 0 {
+		return base + ": " + s.Text()
 	}
 	return base
 }
 
 // Positive returns true if the status code is 2xx.
-func (err *Status) Positive() bool {
-	return err.Code/100 == 2
+func (s *Status) Positive() bool {
+	return s.Code/100 == 2
 }
 
 // Temporary returns true if the status code is 4xx.
-func (err *Status) Temporary() bool {
-	return err.Code/100 == 4
+func (s *Status) Temporary() bool {
+	return s.Code/100 == 4
 }
 
 // Permanent returns true if the status code is 5xx.
-func (err *Status) Permanent() bool {
-	return err.Code/100 == 5
+func (s *Status) Permanent() bool {
+	return s.Code/100 == 5
 }
 
 // Text returns all lines joined by \n in a single string.
-func (err *Status) Text() string {
-	return strings.Join(err.Lines, "\n")
+func (s *Status) Text() string {
+	return strings.Join(s.Lines, "\n")
+}
+
+// writeLine writes a single reply line. last selects the terminating form.
+func writeLine(w io.Writer, code []byte, enhCode []byte, message string, last bool) (i int, err error) {
+	var p int
+
+	i, err = w.Write(code)
+	if err != nil {
+		return i, err
+	}
+
+	if last {
+		// RFC 5321 permits omitting the space when there is no text, but
+		// RFC 4954 requires it for the 334 challenge and net/textproto
+		// rejects any reply shorter than four bytes. Always emit it.
+		p, err = w.Write([]byte{' '})
+	} else {
+		p, err = w.Write([]byte{'-'})
+	}
+	i += p
+	if err != nil {
+		return i, err
+	}
+
+	p, err = w.Write(enhCode)
+	i += p
+	if err != nil {
+		return i, err
+	}
+
+	p, err = w.Write([]byte(strings.TrimSuffix(message, "\r")))
+	i += p
+	if err != nil {
+		return i, err
+	}
+
+	p, err = w.Write([]byte{'\r', '\n'})
+	i += p
+
+	return i, err
+}
+
+// WriteTo writes the smtp status reply.
+func (s *Status) WriteTo(w io.Writer) (int64, error) {
+	codeString := []byte(strconv.Itoa(s.Code))
+	enhCodeString := []byte(s.EnhancedCode.ToPart(s.Code))
+
+	var i int
+	for q, m := range s.Lines {
+		p, err := writeLine(w, codeString, enhCodeString, m, q+1 == len(s.Lines))
+		i += p
+		if err != nil {
+			return int64(i), err
+		}
+	}
+
+	return int64(i), nil
+}
+
+// LogValue implements slog.LogValuer so that formatting a Status is deferred
+// to the handler and skipped entirely when the record is dropped.
+func (s *Status) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.Int("code", s.Code),
+		slog.String("enhCode", fmt.Sprintf("%d.%d.%d", s.EnhancedCode[0], s.EnhancedCode[1], s.EnhancedCode[2])),
+		slog.String("text", s.Text()),
+	)
 }
 
 var (

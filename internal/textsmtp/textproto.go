@@ -103,7 +103,7 @@ func (t *Textproto) readResponseExtra(status *smtp.Status, continued bool, appen
 	var message string
 	var err error
 
-	encCodePart := EnhancedCodeToPart(status.EnhancedCode, status.Code)
+	encCodePart := status.EnhancedCode.ToPart(status.Code)
 	for continued {
 		continued, message, err = t.readExtraCodeLine(strconv.Itoa(status.Code), encCodePart)
 		if err != nil {
@@ -135,30 +135,6 @@ func (t *Textproto) ReadResponseValid(expectCode int) error {
 	}
 
 	return nil
-}
-
-// EnhancedCodeToPart returns the part of the string after the code
-// which is defined by the enhanced code with the trailing whitespace.
-// E.g. "5.1.1 "
-func EnhancedCodeToPart(enhCode smtp.EnhancedCode, code int) string {
-	if enhCode == smtp.NoEnhancedCode {
-		return ""
-	}
-
-	// All responses must include an enhanced code, if it is missing - use
-	// a generic code X.0.0.
-	if enhCode == smtp.EnhancedCodeNotSet {
-		cat := code / 100
-		switch cat {
-		case 2, 4, 5:
-			return strconv.Itoa(cat) + ".0.0 "
-		default:
-			return ""
-		}
-	}
-	return strconv.Itoa(enhCode[0]) + "." +
-		strconv.Itoa(enhCode[1]) + "." +
-		strconv.Itoa(enhCode[2]) + " "
 }
 
 func (t *Textproto) readFirstCodeLine() (*smtp.Status, bool, error) {
