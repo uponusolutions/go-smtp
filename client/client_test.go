@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net"
@@ -897,4 +898,55 @@ func TestClientDSN(t *testing.T) {
 
 func (c *Client) Test() map[string]string {
 	return c.ext
+}
+
+// A SASL initial response too large to inline within the 512-octet command-line
+// limit must be deferred to the first challenge instead of being appended to the
+// AUTH command line. https://github.com/emersion/go-smtp/issues/301
+func TestClientAuthLargeInitialResponse(t *testing.T) {
+	// didHello is set below, so the first server line is the AUTH response.
+	server := "334 \r\n" +
+		"235 2.0.0 OK\r\n"
+	var wrote bytes.Buffer
+
+	fake := tester.NewFakeConnStream(
+		strings.NewReader(server),
+		&wrote,
+	)
+
+	c := New()
+	c.setConn(fake)
+
+	resp := bytes.Repeat([]byte("x"), 600)
+	if err := c.Auth(largeInitialRespAuth{resp: resp}); err != nil {
+		t.Fatalf("Auth: %v", err)
+	}
+	_ = c.Close()
+
+	written := wrote.String()
+	firstLine, _, _ := strings.Cut(written, "\r\n")
+	if firstLine != "AUTH LARGE" {
+		t.Errorf("AUTH command line = %q; want the initial response deferred (%q)", firstLine, "AUTH LARGE")
+	}
+	if len(firstLine)+2 > 512 {
+		t.Errorf("AUTH command line is %d octets, exceeding the 512-octet limit", len(firstLine)+2)
+	}
+	// The initial response must still be sent, on its own line.
+	resp64 := base64.StdEncoding.EncodeToString(resp)
+	if !strings.Contains(written, "\r\n"+resp64+"\r\n") {
+		t.Errorf("deferred initial response was not sent; wrote %q", written)
+	}
+}
+
+// largeInitialRespAuth returns a large SASL initial response from Start.
+type largeInitialRespAuth struct {
+	resp []byte
+}
+
+func (a largeInitialRespAuth) Start() (proto string, toServer []byte, err error) {
+	return "LARGE", a.resp, nil
+}
+
+func (largeInitialRespAuth) Next(_ []byte) (toServer []byte, err error) {
+	return nil, nil
 }

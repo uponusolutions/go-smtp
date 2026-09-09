@@ -418,7 +418,22 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 	} else if resp != nil {
 		resp64 = []byte{'='}
 	}
-	status, err := c.cmd(0, "%s", strings.TrimSpace(fmt.Sprintf("AUTH %s %s", mech, resp64)))
+
+	var status *smtp.Status
+
+	// 512 - len("AUTH") - 2 * len(" ") - len(\r\n)
+	if len(mech)+len(resp64) > 504 || len(resp64) == 0 {
+		// The initial response (if any) does not fit in the 512-octet command line (RFC 5321
+		// section 4.5.3.1.4), so send it as the reply to the first challenge instead
+		// (RFC 4954 section 4). https://github.com/emersion/go-smtp/issues/301
+		status, err = c.cmd(0, "AUTH %s", mech)
+		if err == nil && status.Code == 334 && len(resp64) > 0 {
+			status, err = c.cmd(0, "%s", resp64)
+		}
+	} else {
+		status, err = c.cmd(0, "AUTH %s %s", mech, resp64)
+	}
+
 	for err == nil {
 		var msg []byte
 		switch status.Code {
