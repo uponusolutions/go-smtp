@@ -80,6 +80,7 @@ type Server struct {
 	// may specify in the BY argument with return mode.
 	// A zero value indicates no set minimum.
 	// Only use if DELIVERBY is enabled.
+	// 99999999999 is the maximum and 1 the minimum value allowed.
 	minimumDeliverInSeconds int
 
 	// Advertise MT-PRIORITY (RFC 6710) capability.
