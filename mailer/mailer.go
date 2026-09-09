@@ -204,7 +204,7 @@ func (c *Mailer) prepare(
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
 // parameter but not including it in the in headers.
-func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (code int, msg string, failures []resolve.Failure, err error) {
+func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Reader) (status *smtp.Status, failures []resolve.Failure, err error) {
 	return c.SendAdvanced(ctx, from, nil, rcpt, nil, in)
 }
 
@@ -231,7 +231,7 @@ func (c *Mailer) SendAdvanced(
 	rcpts []string,
 	rcptsOptions []*smtp.RcptOptions,
 	in io.Reader,
-) (code int, msg string, failures []resolve.Failure, err error) {
+) (status *smtp.Status, failures []resolve.Failure, err error) {
 	size := 0
 	if wt, ok := in.(Len); ok {
 		size = wt.Len()
@@ -239,7 +239,7 @@ func (c *Mailer) SendAdvanced(
 
 	w, failures, err := c.prepare(ctx, from, mailOptions, rcpts, rcptsOptions, size)
 	if err != nil {
-		return 0, "", failures, err
+		return nil, failures, err
 	}
 
 	_, err = io.Copy(w.Writer(), in)
@@ -248,19 +248,19 @@ func (c *Mailer) SendAdvanced(
 		if _, ok := err.(*smtp.Status); !ok {
 			err = errors.Join(err, c.client.Close())
 		}
-		return 0, "", failures, err
+		return nil, failures, err
 	}
 
-	status, err := w.CloseWithResponse()
+	status, err = w.CloseWithResponse()
 	// if err isn't smtp.StatusBase we are in an unknown state, close connection
 	if _, ok := err.(*smtp.Status); err != nil && !ok {
 		err = errors.Join(err, c.client.Close())
 	}
 	if err != nil {
-		return 0, "", nil, err
+		return nil, nil, err
 	}
 
-	return status.Code, status.Text(), failures, err
+	return status, failures, err
 }
 
 // Verify checks the validity of an email address on the server.
@@ -306,9 +306,8 @@ type Report struct {
 
 // Response contains the response of a smtp server for specific recipients.
 type Response struct {
-	Code  int
-	Msg   string
-	Rcpts []string
+	Status *smtp.Status
+	Rcpts  []string
 }
 
 // Send just sends a mail.
@@ -339,7 +338,7 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 	res.Failures = mx.Failures
 
 	for _, server := range mx.Servers {
-		code, msg, failures, err := send(ctx, server, from, config, in())
+		status, failures, err := send(ctx, server, from, config, in())
 		if err != nil {
 			res.Failures = append(res.Failures, resolve.Failure{
 				Rcpts: server.Rcpts,
@@ -365,17 +364,17 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 		}
 
 		res.Responses = append(res.Responses, Response{
-			Code:  code,
-			Msg:   msg,
-			Rcpts: server.Rcpts,
+			Status: status,
+			Rcpts:  server.Rcpts,
 		})
 	}
 	return res, nil
 }
 
-func send(ctx context.Context, server resolve.Server, from string, config Config, in io.Reader) (code int, msg string, failures []resolve.Failure, err error) {
+func send(ctx context.Context, server resolve.Server, from string, config Config, in io.Reader) (status *smtp.Status, failures []resolve.Failure, err error) {
 	config.extra.serverAddresses = server.Addresses
 	client := NewFromConfig(config)
 	defer func() { _ = client.Disconnect() }()
+
 	return client.Send(ctx, from, server.Rcpts, in)
 }

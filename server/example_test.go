@@ -67,7 +67,7 @@ func Example_plainAuth() {
 		mailer.WithSASLClient(auth),
 	)
 
-	_, _, _, err := c.Send(context.Background(), from, recipients, msg)
+	_, _, err := c.Send(context.Background(), from, recipients, msg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func Example() {
 		mailer.WithSASLClient(auth),
 	)
 
-	_, _, _, err := c.Send(context.Background(), "sender@example.org", to, msg)
+	_, _, err := c.Send(context.Background(), "sender@example.org", to, msg)
 	if err != nil {
 		log.Fatal(err)
 	}

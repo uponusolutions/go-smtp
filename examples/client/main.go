@@ -33,6 +33,6 @@ func main() {
 	}
 
 	for _, res := range res.Responses {
-		fmt.Printf("Success to send mail to %s: %d %s \n", res.Rcpts, res.Code, res.Msg)
+		fmt.Printf("Success to send mail to %s: %d %s \n", res.Rcpts, res.Status.Code, res.Status.Text())
 	}
 }
