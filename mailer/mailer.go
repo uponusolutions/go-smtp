@@ -169,26 +169,59 @@ func (c *Mailer) prepare(
 		}
 
 		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
-			smtpErr := &smtp.Status{}
-
-			// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
-			if c.cfg.abortOnRcptReject || !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
+			failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
+			if err != nil {
 				return nil, nil, err
 			}
-
-			failures = append(failures, resolve.Failure{
-				Rcpts: []string{addr},
-				Error: err,
-			})
 		}
 	}
 
 	// DATA
-	w, err := c.client.Content(size)
+	w, err := c.client.Data() // (size)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// pipelining is active
+	if w == nil {
+		if err := c.client.MailResponse(); err != nil {
+			if responseErr := c.client.ClearResponses(len(rcpt) + 1); responseErr != nil {
+				return nil, nil, errors.Join(err, responseErr)
+			}
+			return nil, nil, err
+		}
+		for i, addr := range rcpt {
+			if err := c.client.RcptResponse(); err != nil {
+				failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
+				if err != nil {
+					if responseErr := c.client.ClearResponses(len(rcpt) + 1 - i); responseErr != nil {
+						return nil, nil, errors.Join(err, responseErr)
+					}
+					return nil, nil, err
+				}
+			}
+		}
+		w, err = c.client.DataResponse()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
 	return w, failures, nil
+}
+
+func rcptError(addr string, abortOnRcptReject bool, failures []resolve.Failure, err error) ([]resolve.Failure, error) {
+	// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
+	if smtpErr, ok := err.(*smtp.Status); !ok || abortOnRcptReject || smtpErr.Code != 550 {
+		return nil, err
+	}
+
+	failures = append(failures, resolve.Failure{
+		Rcpts: []string{addr},
+		Error: err,
+	})
+
+	return failures, nil
 }
 
 // Send send an email from
@@ -275,7 +308,16 @@ func (c *Mailer) Verify(addr string, opts *client.VrfyOptions) error {
 
 // Disconnect ends current connection gracefully, if any exists.
 func (c *Mailer) Disconnect() error {
-	return c.client.Quit()
+	err := c.client.Quit()
+	if err != nil {
+		return err
+	}
+
+	if c.client.PipeliningActive() {
+		err = c.client.QuitResponse()
+	}
+
+	return err
 }
 
 // Terminate ends current connection forcefully.

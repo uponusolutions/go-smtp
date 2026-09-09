@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/client"
 	"github.com/uponusolutions/go-smtp/mailer"
 	"github.com/uponusolutions/go-smtp/server"
 	"github.com/uponusolutions/go-smtp/tester"
@@ -145,10 +146,11 @@ func sendMailCon(c *mailer.Mailer, data []byte, simplereader bool) error {
 	return err
 }
 
-func sendMail(addr string, data []byte, simplereader bool) error {
+func sendMail(addr string, data []byte, simplereader bool, pipelining bool) error {
 	c := mailer.New(
 		mailer.WithServerAddresses(addr),
 		mailer.WithSecurity(mailer.SecurityPlain),
+		mailer.WithBasic(client.WithPipelining(pipelining)),
 	)
 
 	err := c.Connect(context.Background())
@@ -251,7 +253,7 @@ func s1(b *testing.B, t testcase) {
 			b.SetBytes(int64(len(t.eml)))
 		}
 		for b.Loop() {
-			_ = sendMail(addr1, t.eml, false)
+			_ = sendMail(addr1, t.eml, false, false)
 		}
 	})
 
@@ -260,7 +262,7 @@ func s1(b *testing.B, t testcase) {
 			b.SetBytes(int64(len(t.eml)))
 		}
 		for b.Loop() {
-			_ = sendMail(addr1, t.eml, true)
+			_ = sendMail(addr1, t.eml, true, false)
 		}
 	})
 
@@ -320,7 +322,16 @@ func s2(b *testing.B, t testcase) {
 			b.SetBytes(int64(len(t.eml)))
 		}
 		for b.Loop() {
-			_ = sendMail(addr2, t.eml, false)
+			_ = sendMail(addr2, t.eml, false, false)
+		}
+	})
+
+	b.Run(t.name+"WithoutChunkingWithPipelining", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(t.eml)))
+		}
+		for b.Loop() {
+			_ = sendMail(addr2, t.eml, false, true)
 		}
 	})
 
@@ -329,7 +340,7 @@ func s2(b *testing.B, t testcase) {
 			b.SetBytes(int64(len(t.eml)))
 		}
 		for b.Loop() {
-			_ = sendMail(addr2, t.eml, true)
+			_ = sendMail(addr2, t.eml, true, false)
 		}
 	})
 
