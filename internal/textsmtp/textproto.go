@@ -8,6 +8,8 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
+
+	"github.com/uponusolutions/go-smtp"
 )
 
 // Textproto is used as a wrapper around a connection to read and write to it
@@ -84,65 +86,164 @@ func (t *Textproto) PrintfLineAndFlush(format string, args ...any) error {
 //	message line 2
 //	...
 //	code message line n
-//
+func (t *Textproto) ReadResponse() (*smtp.Status, error) {
+	status, continued, err := t.readFirstCodeLine()
+	if err != nil {
+		return nil, err
+	}
+
+	if err = t.readResponseExtra(status, continued, true); err != nil {
+		return nil, err
+	}
+
+	return status, nil
+}
+
+func (t *Textproto) readResponseExtra(status *smtp.Status, continued bool, appendMessage bool) error {
+	var message string
+	var err error
+
+	encCodePart := EnhancedCodeToPart(status.EnhancedCode, status.Code)
+	for continued {
+		continued, message, err = t.readExtraCodeLine(strconv.FormatInt(int64(status.Code), 10), encCodePart)
+		if err != nil {
+			return err
+		}
+		if appendMessage {
+			status.Lines = append(status.Lines, message)
+		}
+	}
+	return nil
+}
+
+// ReadResponseValid returns an error if the code does not match expectation.
+func (t *Textproto) ReadResponseValid(expectCode int) error {
+	status, continued, err := t.readFirstCodeLine()
+	if err != nil {
+		return err
+	}
+
+	unexpected := IsCodeUnexpected(status.Code, expectCode)
+
+	err = t.readResponseExtra(status, continued, unexpected)
+	if err != nil {
+		return err
+	}
+
+	if unexpected {
+		return status
+	}
+
+	return nil
+}
+
+// EnhancedCodeToPart returns the part of the string after the code
+// which is defined by the enhanced code with the trailing whitespace.
+// E.g. "5.1.1 "
+func EnhancedCodeToPart(enhCode smtp.EnhancedCode, code int) string {
+	if enhCode == smtp.NoEnhancedCode {
+		return ""
+	}
+
+	// All responses must include an enhanced code, if it is missing - use
+	// a generic code X.0.0.
+	if enhCode == smtp.EnhancedCodeNotSet {
+		cat := code / 100
+		switch cat {
+		case 2, 4, 5:
+			return strconv.FormatInt(int64(cat), 10) + ".0.0 "
+		default:
+			return ""
+		}
+	}
+	return strconv.FormatInt(int64(enhCode[0]), 10) + "." +
+		strconv.FormatInt(int64(enhCode[1]), 10) + "." +
+		strconv.FormatInt(int64(enhCode[2]), 10) + " "
+}
+
+func (t *Textproto) readFirstCodeLine() (*smtp.Status, bool, error) {
+	line, err := t.ReadLine()
+	if err != nil {
+		return nil, false, err
+	}
+	return parseFirstCodeLine(line)
+}
+
+func parseFirstCodeLine(line string) (*smtp.Status, bool, error) {
+	if len(line) < 4 || line[3] != ' ' && line[3] != '-' {
+		return nil, false, textproto.ProtocolError(fmt.Sprintf("short response: %q", line))
+	}
+	continued := line[3] == '-'
+	code, err := strconv.Atoi(line[0:3])
+	if err != nil || code < 100 {
+		return nil, false, textproto.ProtocolError(fmt.Sprintf("invalid response code: %q", line))
+	}
+	message := line[4:]
+
+	// all 2xx, 4xx, and 5xx response lines
+	if code >= 300 && code < 400 {
+		return smtp.NewStatusS(code, smtp.NoEnhancedCode, message), continued, nil
+	}
+
+	index := strings.Index(message, " ")
+	if index == -1 {
+		return smtp.NewStatusS(code, smtp.NoEnhancedCode, message), continued, nil
+	}
+	enhCode, err := parseEnhancedCode(message[:index])
+	if err != nil {
+		return smtp.NewStatusS(code, smtp.NoEnhancedCode, message), continued, nil
+	}
+
+	message = message[index+1:]
+
+	return smtp.NewStatusS(code, enhCode, message), continued, nil
+}
+
+func (t *Textproto) readExtraCodeLine(codeString string, enhCodePart string) (continued bool, message string, err error) {
+	line, err := t.ReadLine()
+	if err != nil {
+		return false, "", err
+	}
+	return parseExtraCodeLine(line, codeString, enhCodePart)
+}
+
+// parseExtraCodeLine does strict verification like described in RFC 5321
+func parseExtraCodeLine(line string, codeString string, enhCodePart string) (bool, string, error) {
+	if len(line) < 4+len(enhCodePart) ||
+		(line[3] != ' ' && line[3] != '-') ||
+		line[0:3] != codeString ||
+		line[4:(4+len(enhCodePart))] != enhCodePart {
+		return false, "", textproto.ProtocolError(fmt.Sprintf("invalid response: %q", line))
+	}
+	return line[3] == '-', line[4+len(enhCodePart):], nil
+}
+
+func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
+	parts := strings.Split(s, ".")
+	if len(parts) != 3 {
+		return smtp.EnhancedCodeNotSet, errors.New("wrong amount of enhanced code parts")
+	}
+
+	code := smtp.EnhancedCodeNotSet
+	for i, part := range parts {
+		num, err := strconv.Atoi(part)
+		if err != nil {
+			return smtp.EnhancedCodeNotSet, err
+		}
+		code[i] = num
+	}
+	return code, nil
+}
+
+// IsCodeUnexpected validates if the code is unexpected.
 // If the prefix of the status does not match the digits in expectCode,
 // ReadResponse returns with err set to &Error{code, message}.
 // For example, if expectCode is 31, an error will be returned if
 // the status is not in the range [310,319].
-//
-// An expectCode <= 0 disables the check of the status code.
-func (t *Textproto) ReadResponse(expectCode int) (code int, message string, err error) {
-	code, continued, message, err := t.readCodeLine(expectCode)
-	multi := continued
-	for continued {
-		line, err := t.ReadLine()
-		if err != nil {
-			return 0, "", err
-		}
-
-		var code2 int
-		var moreMessage string
-		code2, continued, moreMessage, err = parseCodeLine(line, 0)
-		if err != nil || code2 != code {
-			message += "\n" + strings.TrimRight(line, "\r\n")
-			continued = true
-			continue
-		}
-		message += "\n" + moreMessage
-	}
-	if err != nil && multi && message != "" {
-		// replace one line error message with all lines (full message)
-		err = &textproto.Error{Code: code, Msg: message}
-	}
-	return code, message, err
-}
-
-func (t *Textproto) readCodeLine(expectCode int) (code int, continued bool, message string, err error) {
-	line, err := t.ReadLine()
-	if err != nil {
-		return code, continued, message, err
-	}
-	return parseCodeLine(line, expectCode)
-}
-
-func parseCodeLine(line string, expectCode int) (code int, continued bool, message string, err error) {
-	if len(line) < 4 || line[3] != ' ' && line[3] != '-' {
-		err = textproto.ProtocolError(fmt.Sprintf("short response: %q", line))
-		return code, continued, message, err
-	}
-	continued = line[3] == '-'
-	code, err = strconv.Atoi(line[0:3])
-	if err != nil || code < 100 {
-		err = textproto.ProtocolError(fmt.Sprintf("invalid response code: %q", line))
-		return code, continued, message, err
-	}
-	message = line[4:]
-	if 1 <= expectCode && expectCode < 10 && code/100 != expectCode ||
+func IsCodeUnexpected(code int, expectCode int) bool {
+	return 1 <= expectCode && expectCode < 10 && code/100 != expectCode ||
 		10 <= expectCode && expectCode < 100 && code/10 != expectCode ||
-		100 <= expectCode && expectCode < 1000 && code != expectCode {
-		err = &textproto.Error{Code: code, Msg: message}
-	}
-	return code, continued, message, err
+		100 <= expectCode && expectCode < 1000 && code != expectCode
 }
 
 // ReadLine reads a single line from r,

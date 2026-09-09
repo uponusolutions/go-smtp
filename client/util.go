@@ -2,50 +2,9 @@ package client
 
 import (
 	"errors"
-	"net/textproto"
 	"strconv"
 	"strings"
-
-	"github.com/uponusolutions/go-smtp"
 )
-
-func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
-	parts := strings.Split(s, ".")
-	if len(parts) != 3 {
-		return smtp.EnhancedCode{}, errors.New("wrong amount of enhanced code parts")
-	}
-
-	code := smtp.EnhancedCode{}
-	for i, part := range parts {
-		num, err := strconv.Atoi(part)
-		if err != nil {
-			return code, err
-		}
-		code[i] = num
-	}
-	return code, nil
-}
-
-// toSMTPErr converts textproto.Error into smtp, parsing
-// enhanced status code if it is present.
-func toSMTPErr(protoErr *textproto.Error) *smtp.StatusSingle {
-	parts := strings.SplitN(protoErr.Msg, " ", 2)
-	if len(parts) != 2 {
-		return smtp.NewStatus(protoErr.Code, smtp.EnhancedCode{}, protoErr.Msg)
-	}
-
-	enchCode, err := parseEnhancedCode(parts[0])
-	if err != nil {
-		return smtp.NewStatus(protoErr.Code, smtp.EnhancedCode{}, protoErr.Msg)
-	}
-
-	msg := parts[1]
-
-	// Per RFC 2034, enhanced code should be prepended to each line.
-	msg = strings.ReplaceAll(msg, "\n"+parts[0]+" ", "\n")
-
-	return smtp.NewStatus(protoErr.Code, enchCode, msg)
-}
 
 // validateLine checks to see if a line has CR or LF.
 func validateLine(line string) error {

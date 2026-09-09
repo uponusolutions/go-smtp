@@ -27,7 +27,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
@@ -199,16 +198,24 @@ func (c *Client) greet() error {
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	_, msg, err := c.readResponse(220)
+	status, err := c.cfg.text.ReadResponse()
+	// probably connectivity error
 	if err != nil {
 		_ = c.Close()
+		return err
 	}
 
-	if idx := strings.IndexRune(msg, ' '); idx >= 0 {
-		msg = msg[:idx]
+	// status unexpected or no message received
+	if status.Code != 220 || len(status.Lines) == 0 {
+		_ = c.Close()
+		return status
 	}
 
-	c.connName = msg
+	if idx := strings.IndexRune(status.Lines[0], ' '); idx >= 0 {
+		c.connName = status.Lines[0][:idx]
+	} else {
+		c.connName = status.Lines[0]
+	}
 
 	return err
 }
@@ -223,7 +230,7 @@ func (c *Client) Hello() error {
 
 	err := c.ehlo()
 
-	var smtp *smtp.StatusSingle
+	var smtp *smtp.Status
 	if err != nil && errors.As(err, &smtp) && (smtp.Code == 500 || smtp.Code == 502) {
 		// The server doesn't support EHLO, fallback to HELO
 		err = c.helo()
@@ -236,33 +243,51 @@ func (c *Client) Hello() error {
 	return err
 }
 
-func (c *Client) readResponse(expectCode int) (int, string, error) {
-	code, msg, err := c.cfg.text.ReadResponse(expectCode)
-	if protoErr, ok := err.(*textproto.Error); ok {
-		err = toSMTPErr(protoErr)
-	}
-	return code, msg, err
-}
-
 // cmd is a convenience function that sends a command and returns the response
-// textproto.Error returned by c.text.ReadResponse is converted into smtp.
-func (c *Client) cmd(expectCode int, format string, args ...any) (int, string, error) {
+func (c *Client) cmd(expectCode int, format string, args ...any) (*smtp.Status, error) {
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
 	err := c.cfg.text.PrintfLineAndFlush(format, args...)
 	if err != nil {
-		return 0, "", err
+		return nil, err
 	}
-	return c.readResponse(expectCode)
+
+	status, err := c.cfg.text.ReadResponse()
+	if err != nil {
+		return nil, err
+	}
+
+	if textsmtp.IsCodeUnexpected(status.Code, expectCode) {
+		return nil, status
+	}
+
+	return status, nil
+}
+
+// cmdValid is a convenience function that sends a command and returns an error if the expected code doesn't match
+func (c *Client) cmdValid(expectCode int, format string, args ...any) error {
+	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
+	defer timeout()
+
+	err := c.cfg.text.PrintfLineAndFlush(format, args...)
+	if err != nil {
+		return err
+	}
+
+	err = c.cfg.text.ReadResponseValid(expectCode)
+	if err != nil {
+		return err
+	}
+
+	return err
 }
 
 // helo sends the HELO greeting to the server. It should be used only when the
 // server does not support ehlo.
 func (c *Client) helo() error {
 	c.ext = nil
-	_, _, err := c.cmd(250, "HELO %s", c.cfg.localName)
-	return err
+	return c.cmdValid(250, "HELO %s", c.cfg.localName)
 }
 
 // ehlo sends the EHLO (extended hello) greeting to the server. It
@@ -270,15 +295,14 @@ func (c *Client) helo() error {
 func (c *Client) ehlo() error {
 	cmd := "EHLO"
 
-	_, msg, err := c.cmd(250, "%s %s", cmd, c.cfg.localName)
+	status, err := c.cmd(250, "%s %s", cmd, c.cfg.localName)
 	if err != nil {
 		return err
 	}
 	ext := make(map[string]string)
-	extList := strings.Split(msg, "\n")
-	if len(extList) > 1 {
-		extList = extList[1:]
-		for _, line := range extList {
+
+	if len(status.Lines) > 1 {
+		for _, line := range status.Lines[1:] {
 			i := strings.IndexByte(line, ' ')
 			if i < 0 {
 				ext[line] = ""
@@ -299,8 +323,7 @@ func (c *Client) ehlo() error {
 // If server returns an error, it will be of type *smtp.
 // if an error occurred the connection is closed
 func (c *Client) StartTLS(config *tls.Config, serverName string) error {
-	_, _, err := c.cmd(220, "STARTTLS")
-	if err != nil {
+	if err := c.cmdValid(220, "STARTTLS"); err != nil {
 		_ = c.Quit()
 		return err
 	}
@@ -320,7 +343,7 @@ func (c *Client) StartTLS(config *tls.Config, serverName string) error {
 	timeout := smtp.Timeout(conn, c.cfg.tlsHandshakeTimeout)
 	defer timeout()
 
-	err = conn.Handshake()
+	err := conn.Handshake()
 	if err != nil {
 		_ = c.Close()
 		return err
@@ -370,8 +393,7 @@ func (c *Client) Verify(addr string, opts *VrfyOptions) error {
 		}
 	}
 
-	_, _, err := c.cmd(250, "%s", sb.String())
-	return err
+	return c.cmdValid(250, "%s", sb.String())
 }
 
 // Auth authenticates a client using the provided authentication mechanism.
@@ -395,20 +417,20 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 	} else if resp != nil {
 		resp64 = []byte{'='}
 	}
-	code, msg64, err := c.cmd(0, "%s", strings.TrimSpace(fmt.Sprintf("AUTH %s %s", mech, resp64)))
+	status, err := c.cmd(0, "%s", strings.TrimSpace(fmt.Sprintf("AUTH %s %s", mech, resp64)))
 	for err == nil {
 		var msg []byte
-		switch code {
+		switch status.Code {
 		case 334:
-			msg, err = encoding.DecodeString(msg64)
+			msg, err = encoding.DecodeString(strings.Join(status.Lines, "\n"))
 		case 235:
 			// the last message isn't base64 because it isn't a challenge
-			msg = []byte(msg64)
+			msg = []byte(strings.Join(status.Lines, "\n"))
 		default:
-			err = toSMTPErr(&textproto.Error{Code: code, Msg: msg64})
+			err = status
 		}
 		if err == nil {
-			if code == 334 {
+			if status.Code == 334 {
 				resp, err = saslClient.Next(msg)
 			} else {
 				resp = nil
@@ -416,7 +438,7 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 		}
 		if err != nil {
 			// abort the AUTH
-			_, _, _ = c.cmd(501, "*")
+			_ = c.cmdValid(501, "*")
 			break
 		}
 		if resp == nil {
@@ -424,7 +446,7 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 		}
 		resp64 = make([]byte, encoding.EncodedLen(len(resp)))
 		encoding.Encode(resp64, resp)
-		code, msg64, err = c.cmd(0, "%s", string(resp64))
+		status, err = c.cmd(0, "%s", string(resp64))
 	}
 	return err
 }
@@ -497,8 +519,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		// We can safely discard parameter if server does not support AUTH.
 	}
 
-	_, _, err := c.cmd(250, "%s", sb.String())
-	return err
+	return c.cmdValid(250, "%s", sb.String())
 }
 
 // Rcpt issues a RCPT command to the server using the provided email address.
@@ -541,10 +562,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 		}
 		fmt.Fprintf(&sb, " MT-PRIORITY=%d", *opts.MTPriority)
 	}
-	if _, _, err := c.cmd(25, "%s", sb.String()); err != nil {
-		return err
-	}
-	return nil
+	return c.cmdValid(25, "%s", sb.String())
 }
 
 func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string) error {
@@ -603,7 +621,7 @@ func (c *Client) Content(size int) (*DataCloser, error) {
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Data() (*DataCloser, error) {
-	_, _, err := c.cmd(354, "DATA")
+	err := c.cmdValid(354, "DATA")
 	if err != nil {
 		return nil, err
 	}
@@ -636,14 +654,12 @@ func (c *Client) Bdat(size int) (*DataCloser, error) {
 		}
 
 		return &DataCloser{c: c, writer: textsmtp.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
-			_, _, err := c.cfg.text.ReadResponse(250)
-			return err
+			return c.cfg.text.ReadResponseValid(250)
 		}, size, c.chunkingBuffer[:bufferSize])}, nil
 	}
 
 	return &DataCloser{c: c, writer: textsmtp.NewBdatWriter(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
-		_, _, err := c.cfg.text.ReadResponse(250)
-		return err
+		return c.cfg.text.ReadResponseValid(250)
 	}, size)}, nil
 }
 
@@ -690,17 +706,13 @@ func (c *Client) MaxMessageSize() (size int, ok bool) {
 // Reset sends the RSET command to the server, aborting the current mail
 // transaction.
 func (c *Client) Reset() error {
-	if _, _, err := c.cmd(250, "RSET"); err != nil {
-		return err
-	}
-	return nil
+	return c.cmdValid(250, "RSET")
 }
 
 // Noop sends the NOOP command to the server. It does nothing but check
 // that the connection to the server is okay.
 func (c *Client) Noop() error {
-	_, _, err := c.cmd(250, "NOOP")
-	return err
+	return c.cmdValid(250, "NOOP")
 }
 
 // Quit sends the QUIT command and closes the connection to the server.
@@ -709,8 +721,7 @@ func (c *Client) Quit() error {
 	if c.conn == nil {
 		return nil
 	}
-	_, _, err := c.cmd(221, "QUIT")
-	if err != nil {
+	if err := c.cmdValid(221, "QUIT"); err != nil {
 		_ = c.Close()
 		return err
 	}

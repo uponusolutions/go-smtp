@@ -23,7 +23,7 @@ var backend = testserver.Backend{
 	Mails: sync.Map{},
 	Rcpt: func(_ context.Context, to string, _ *smtp.RcptOptions) error {
 		if to == "notfound@external.com" {
-			return smtp.NewStatus(550, smtp.EnhancedCodeNotSet, "not found")
+			return smtp.NewStatusS(550, smtp.EnhancedCodeNotSet, "not found")
 		}
 		return nil
 	},

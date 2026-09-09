@@ -21,16 +21,16 @@ type bdatReader struct {
 func bdatArg(arg string) (int64, bool, error) {
 	args := strings.Fields(arg)
 	if len(args) == 0 {
-		return 0, true, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Missing chunk size argument")
+		return 0, true, smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Missing chunk size argument")
 	}
 	if len(args) > 2 {
-		return 0, true, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Too many arguments")
+		return 0, true, smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Too many arguments")
 	}
 
 	last := false
 	if len(args) == 2 {
 		if !strings.EqualFold(args[1], "LAST") {
-			return 0, true, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unknown BDAT argument")
+			return 0, true, smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Unknown BDAT argument")
 		}
 		last = true
 	}
@@ -38,7 +38,7 @@ func bdatArg(arg string) (int64, bool, error) {
 	// ParseUint instead of Atoi so we will not accept negative values.
 	size, err := strconv.ParseUint(args[0], 10, 32)
 	if err != nil || (size == 0 && !last) {
-		return 0, true, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed size argument")
+		return 0, true, smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed size argument")
 	}
 
 	return int64(size), last, nil
@@ -92,7 +92,7 @@ func (d *bdatReader) Read(b []byte) (int, error) {
 		case "QUIT":
 			return 0, smtp.Quit
 		default:
-			return 0, smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "BDAT, RSET or QUIT command expected")
+			return 0, smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "BDAT, RSET or QUIT command expected")
 		}
 	}
 

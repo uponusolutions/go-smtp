@@ -1440,7 +1440,7 @@ func TestServer_Chunking_EarlyError(t *testing.T) {
 		_ = c.Close()
 	}()
 
-	be.dataErr = smtp.NewStatus(555, smtp.EnhancedCode{5, 0, 0}, "I failed")
+	be.dataErr = smtp.NewStatusS(555, smtp.EnhancedCode{5, 0, 0}, "I failed")
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()
@@ -1469,7 +1469,7 @@ func TestServer_Chunking_EarlyErrorDuringChunk(t *testing.T) {
 		_ = c.Close()
 	}()
 
-	be.dataErr = smtp.NewStatus(555, smtp.EnhancedCode{5, 0, 0}, "I failed")
+	be.dataErr = smtp.NewStatusS(555, smtp.EnhancedCode{5, 0, 0}, "I failed")
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanner.Scan()

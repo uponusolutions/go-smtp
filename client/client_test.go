@@ -172,7 +172,7 @@ func TestBasic_smtp(t *testing.T) {
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok := err.(*smtp.StatusSingle)
+	smtpErr, ok := err.(*smtp.Status)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
@@ -182,38 +182,38 @@ func TestBasic_smtp(t *testing.T) {
 	if smtpErr.EnhancedCode != (smtp.EnhancedCode{5, 0, 0}) {
 		t.Fatalf("Wrong enhanced code, got %v, want %v", smtpErr.EnhancedCode, smtp.EnhancedCode{5, 0, 0})
 	}
-	if smtpErr.Message != "Failing with enhanced code" {
-		t.Fatalf("Wrong message, got %s, want %s", smtpErr.Message, "Failing with enhanced code")
+	if smtpErr.Lines[0] != "Failing with enhanced code" {
+		t.Fatalf("Wrong message, got %s, want %s", smtpErr.Lines, "Failing with enhanced code")
 	}
 
 	err = c.Mail("whatever", nil)
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*smtp.StatusSingle)
+	smtpErr, ok = err.(*smtp.Status)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
 	if smtpErr.Code != 500 {
 		t.Fatalf("Wrong status code, got %d, want %d", smtpErr.Code, 500)
 	}
-	if smtpErr.Message != "Failing without enhanced code" {
-		t.Fatalf("Wrong message, got %s, want %s", smtpErr.Message, "Failing without enhanced code")
+	if smtpErr.Lines[0] != "Failing without enhanced code" {
+		t.Fatalf("Wrong message, got %s, want %s", smtpErr.Lines[0], "Failing without enhanced code")
 	}
 
 	err = c.Mail("whatever", nil)
 	if err == nil {
 		t.Fatal("MAIL succeeded")
 	}
-	smtpErr, ok = err.(*smtp.StatusSingle)
+	smtpErr, ok = err.(*smtp.Status)
 	if !ok {
 		t.Fatal("Returned error is not smtp")
 	}
 	if smtpErr.Code != 500 {
 		t.Fatalf("Wrong status code, got %d, want %d", smtpErr.Code, 500)
 	}
-	if want := "Failing with multiline and enhanced code\n... still failing"; smtpErr.Message != want {
-		t.Fatalf("Wrong message, got %s, want %s", smtpErr.Message, want)
+	if want := "Failing with multiline and enhanced code\n... still failing"; strings.Join(smtpErr.Lines, "\n") != want {
+		t.Fatalf("Wrong message, got %s, want %s", strings.Join(smtpErr.Lines, "\n"), want)
 	}
 }
 
@@ -571,9 +571,9 @@ func TestHello_421Response(t *testing.T) {
 		t.Error("Expected Hello to fail")
 	}
 
-	var smtp *smtp.StatusSingle
+	var smtp *smtp.Status
 	if !errors.As(err, &smtp) || smtp.Code != 421 ||
-		smtp.Message != "Service not available, closing transmission channel" {
+		smtp.Lines[0] != "Service not available, closing transmission channel" {
 		t.Errorf("Expected error 421, got %v", err)
 	}
 

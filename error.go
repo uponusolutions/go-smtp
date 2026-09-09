@@ -2,31 +2,18 @@ package smtp
 
 import (
 	"fmt"
-	"iter"
 	"strings"
 )
 
 // EnhancedCode is the SMTP enhanced code
 type EnhancedCode [3]int
 
-// Status specifies the error code, enhanced error code (if any)
+// Status specifies the error code, enhanced error code (if any) and
+// message returned by the server.
 type Status struct {
 	Code         int
 	EnhancedCode EnhancedCode
-}
-
-// StatusSingle specifies the error code, enhanced error code (if any) and
-// message returned by the server.
-type StatusSingle struct {
-	Status
-	Message string
-}
-
-// StatusMulti specifies the error code, enhanced error code (if any) and
-// message as stream returned by the server.
-type StatusMulti struct {
-	Status
-	Message iter.Seq[string]
+	Lines        []string
 }
 
 // NoEnhancedCode is used to indicate that enhanced error code should not be
@@ -42,61 +29,34 @@ var NoEnhancedCode = EnhancedCode{-1, -1, -1}
 // be used (X is derived from error code).
 var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
 
-// NewStatus creates a new status.
-func NewStatus(code int, enhCode EnhancedCode, msg string) *StatusSingle {
-	return &StatusSingle{
-		Status: Status{
-			Code:         code,
-			EnhancedCode: enhCode,
-		},
-		Message: msg,
+// NewStatusM creates a new status with multiple message lines.
+func NewStatusM(code int, enhCode EnhancedCode, msg []string) *Status {
+	return &Status{
+		Code:         code,
+		EnhancedCode: enhCode,
+		Lines:        msg,
 	}
 }
 
-// NewStatusMultiline creates a new status multiline.
-// You should only use this, if you are return more then one line and you must set Message.
-func NewStatusMultiline(code int, enhCode EnhancedCode, msg iter.Seq[string]) *StatusMulti {
-	return &StatusMulti{
-		Status: Status{
-			Code:         code,
-			EnhancedCode: enhCode,
-		},
-		Message: msg,
+// NewStatusS creates a new status with a single message line.
+func NewStatusS(code int, enhCode EnhancedCode, msg string) *Status {
+	return &Status{
+		Code:         code,
+		EnhancedCode: enhCode,
+		Lines:        []string{msg},
 	}
 }
 
 // Error returns a error string.
 func (err *Status) Error() string {
-	return fmt.Sprintf("SMTP error %03d", err.Code)
-}
-
-// Error returns a error string.
-func (err *StatusSingle) Error() string {
-	if err.Message != "" {
-		return err.Status.Error() + ": " + err.Message
+	base := fmt.Sprintf("SMTP error %03d", err.Code)
+	if err.EnhancedCode != NoEnhancedCode && err.EnhancedCode != EnhancedCodeNotSet {
+		base += fmt.Sprintf(" %d.%d.%d", err.EnhancedCode[0], err.EnhancedCode[1], err.EnhancedCode[2])
 	}
-	return err.Status.Error()
-}
-
-// Error returns a error string.
-func (err *StatusMulti) Error() string {
-	if err.Message != nil {
-		sb := strings.Builder{}
-		first := true
-		for message := range err.Message {
-			if first {
-				first = false
-			} else {
-				sb.WriteByte('\n')
-			}
-			sb.WriteString(message)
-		}
-		message := sb.String()
-		if message != "" {
-			return err.Status.Error() + ": " + message
-		}
+	if len(err.Lines) > 0 {
+		return base + ": " + err.Text()
 	}
-	return err.Status.Error()
+	return base
 }
 
 // Positive returns true if the status code is 2xx.
@@ -114,95 +74,78 @@ func (err *Status) Permanent() bool {
 	return err.Code/100 == 5
 }
 
+// Text returns all lines joined by \n in a single string.
+func (err *Status) Text() string {
+	return strings.Join(err.Lines, "\n")
+}
+
 var (
 	// Reset is returned by Reader passed to Data function if client does not
 	// send another BDAT command and instead issues RSET command.
-	Reset = &StatusSingle{
-		Status: Status{
-			Code:         250,
-			EnhancedCode: EnhancedCode{2, 0, 0},
-		},
-		Message: "Session reset",
+	Reset = &Status{
+		Code:         250,
+		EnhancedCode: EnhancedCode{2, 0, 0},
+		Lines:        []string{"Session reset"},
 	}
 	// VRFY default return.
-	VRFY = &StatusSingle{
-		Status: Status{
-			Code:         252,
-			EnhancedCode: EnhancedCode{2, 5, 0},
-		},
-		Message: "Cannot VRFY user, but will accept message",
+	VRFY = &Status{
+		Code:         252,
+		EnhancedCode: EnhancedCode{2, 5, 0},
+		Lines:        []string{"Cannot VRFY user, but will accept message"},
 	}
 	// Noop default return.
-	Noop = &StatusSingle{
-		Status: Status{
-			Code:         250,
-			EnhancedCode: EnhancedCode{2, 0, 0},
-		},
-		Message: "I have successfully done nothing",
+	Noop = &Status{
+		Code:         250,
+		EnhancedCode: EnhancedCode{2, 0, 0},
+		Lines:        []string{"I have successfully done nothing"},
 	}
 	// Quit is returned by Reader passed to Data function if client does not
 	// send another BDAT command and instead issues QUIT command.
-	Quit = &StatusSingle{
-		Status: Status{
-			Code:         221,
-			EnhancedCode: EnhancedCode{2, 0, 0},
-		},
-		Message: "Bye",
+	Quit = &Status{
+		Code:         221,
+		EnhancedCode: EnhancedCode{2, 0, 0},
+		Lines:        []string{"Bye"},
 	}
 	// ErrConnection is returned if a connection error occurs.
-	ErrConnection = &StatusSingle{
-		Status: Status{
-			Code:         421,
-			EnhancedCode: EnhancedCode{4, 4, 0},
-		},
-		Message: "Connection error, sorry",
+	ErrConnection = &Status{
+		Code:         421,
+		EnhancedCode: EnhancedCode{4, 4, 0},
+		Lines:        []string{"Connection error, sorry"},
 	}
 	// ErrDataTooLarge is returned if the maximum message size is exceeded.
-	ErrDataTooLarge = &StatusSingle{
-		Status: Status{
-			Code:         552,
-			EnhancedCode: EnhancedCode{5, 3, 4},
-		},
-		Message: "Maximum message size exceeded",
+	ErrDataTooLarge = &Status{
+		Code:         552,
+		EnhancedCode: EnhancedCode{5, 3, 4},
+		Lines:        []string{"Maximum message size exceeded"},
 	}
 	// ErrAuthFailed is returned if the authentication failed.
-	ErrAuthFailed = &StatusSingle{
-		Status: Status{
-			Code:         535,
-			EnhancedCode: EnhancedCode{5, 7, 8},
-		},
-		Message: "Authentication failed",
+	ErrAuthFailed = &Status{
+		Code:         535,
+		EnhancedCode: EnhancedCode{5, 7, 8},
+		Lines:        []string{"Authentication failed"},
 	}
 	// ErrAuthRequired is returned if the authentication is required.
-	ErrAuthRequired = &StatusSingle{
-		Status: Status{
-			Code:         502,
-			EnhancedCode: EnhancedCode{5, 7, 0},
-		},
-		Message: "Please authenticate first",
+	ErrAuthRequired = &Status{
+		Code:         502,
+		EnhancedCode: EnhancedCode{5, 7, 0},
+		Lines:        []string{"Please authenticate first"},
 	}
 	// ErrAuthUnsupported is returned if the authentication is not supported.
-	ErrAuthUnsupported = &StatusSingle{
-		Status: Status{
-			Code:         502,
-			EnhancedCode: EnhancedCode{5, 7, 0},
-		},
-		Message: "Authentication not supported",
+	ErrAuthUnsupported = &Status{
+		Code:         502,
+		EnhancedCode: EnhancedCode{5, 7, 0},
+		Lines:        []string{"Authentication not supported"},
 	}
 	// ErrAuthUnknownMechanism is returned if the authentication unsupported.
-	ErrAuthUnknownMechanism = &StatusSingle{
-		Status: Status{
-			Code:         504,
-			EnhancedCode: EnhancedCode{5, 7, 4},
-		},
-		Message: "Unsupported authentication mechanism",
+	ErrAuthUnknownMechanism = &Status{
+		Code:         504,
+		EnhancedCode: EnhancedCode{5, 7, 4},
+		Lines:        []string{"Unsupported authentication mechanism"},
 	}
 	// ErrNoRecipients is returned if no recipients are set.
-	ErrNoRecipients = &StatusSingle{
-		Status: Status{
-			Code:         502,
-			EnhancedCode: EnhancedCode{5, 5, 1},
-		},
-		Message: "Missing RCPT TO command.",
+	ErrNoRecipients = &Status{
+		Code:         502,
+		EnhancedCode: EnhancedCode{5, 5, 1},
+		Lines:        []string{"Missing RCPT TO command."},
 	}
 )

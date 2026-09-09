@@ -67,9 +67,19 @@ func (c *Conn) run() (err error) {
 
 		err = c.handle(cmd, arg)
 		if err != nil {
-			if c.writeResponseStatus(err, false) > 0 {
+			// if error is a smtp status it isn't necessary to close the connection
+			if smtpErr, ok := err.(*smtp.Status); ok {
+				// Service closing transmission channel, after quit
+				if smtpErr.Code == 221 {
+					return smtpErr
+				}
+
+				// ToDo: close connection on repeated errors (e.g. authentication tries)
+
+				c.writeStatus(smtpErr)
 				continue
 			}
+
 			return err
 		}
 	}
@@ -88,7 +98,7 @@ func (c *Conn) nextCommand() (cmd string, arg string, err error) {
 // Commands are dispatched to the appropriate handler functions.
 func (c *Conn) handle(cmd string, arg string) error {
 	if cmd == "" {
-		return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
+		return smtp.NewStatusS(500, smtp.EnhancedCode{5, 5, 2}, "Error: bad syntax")
 	}
 	switch c.state {
 	case stateInit, stateUpgrade:
@@ -141,7 +151,7 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 	case "STARTTLS":
 		return c.handleStartTLS()
 	default:
-		return smtp.NewStatus(530, smtp.EnhancedCode{5, 7, 0}, "Authentication required")
+		return smtp.NewStatusS(530, smtp.EnhancedCode{5, 7, 0}, "Authentication required")
 	}
 }
 
@@ -185,7 +195,7 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 		return c.handleRSET()
 	case "BDAT":
 		if !c.server.enableCHUNKING {
-			return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "CHUNKING is not implemented")
+			return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "CHUNKING is not implemented")
 		}
 		return c.handleBdat(arg)
 	case "DATA":
@@ -212,12 +222,12 @@ func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error 
 	case "QUIT":
 		return smtp.Quit
 	default:
-		return smtp.NewStatus(530, smtp.EnhancedCode{5, 7, 0}, "Must issue a STARTTLS command first")
+		return smtp.NewStatusS(530, smtp.EnhancedCode{5, 7, 0}, "Must issue a STARTTLS command first")
 	}
 }
 
-func (c *Conn) commandUnknown(cmd string) *smtp.StatusSingle {
-	return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, fmt.Sprintf("%s command unknown, state %d", cmd, c.state))
+func (c *Conn) commandUnknown(cmd string) *smtp.Status {
+	return smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 1}, fmt.Sprintf("%s command unknown, state %d", cmd, c.state))
 }
 
 // Server returns the server this connection comes from.
@@ -300,7 +310,7 @@ func (c *Conn) handleRSET() error {
 func (c *Conn) handleGreet(esmtp bool, arg string) error {
 	domain, err := parse.HelloArgument(arg)
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Domain/address argument required for HELO")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 2}, "Domain/address argument required for HELO")
 	}
 
 	// c.helo is populated before NewSession so
@@ -330,7 +340,7 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 	}
 
 	if !esmtp {
-		return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "Hello "+c.helo)
+		return smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, "Hello "+c.helo)
 	}
 
 	c.mechanisms = c.session.AuthMechanisms(c.ctx)
@@ -344,63 +354,65 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 	return c.handleGreetResponse()
 }
 
-func (c *Conn) handleGreetResponse() *smtp.StatusMulti {
-	return smtp.NewStatusMultiline(250, smtp.NoEnhancedCode, func(yield func(string) bool) {
-		yield("Hello " + c.helo)
-		yield("PIPELINING")
-		yield("8BITMIME")
-		yield("ENHANCEDSTATUSCODES")
-		if c.server.enableCHUNKING {
-			yield("CHUNKING")
-		}
-		isTLS := c.IsTLS()
-		if !isTLS && c.server.tlsConfig != nil {
-			yield("STARTTLS")
-		}
-		if len(c.mechanisms) > 0 {
-			yield("AUTH " + strings.Join(c.mechanisms, " "))
-		}
-		if c.server.enableSMTPUTF8 {
-			yield("SMTPUTF8")
-		}
-		if isTLS && c.server.enableREQUIRETLS {
-			yield("REQUIRETLS")
-		}
-		if c.server.enableBINARYMIME {
-			yield("BINARYMIME")
-		}
-		if c.server.enableDSN {
-			yield("DSN")
-		}
-		if c.server.enableXOORG {
-			yield("XOORG")
-		}
-		if c.server.maxMessageBytes > 0 {
-			yield("SIZE " + strconv.FormatInt(c.server.maxMessageBytes, 10))
+func (c *Conn) handleGreetResponse() *smtp.Status {
+	message := []string{}
+
+	message = append(message, "Hello "+c.helo)
+	message = append(message, "PIPELINING")
+	message = append(message, "8BITMIME")
+	message = append(message, "ENHANCEDSTATUSCODES")
+	if c.server.enableCHUNKING {
+		message = append(message, "CHUNKING")
+	}
+	isTLS := c.IsTLS()
+	if !isTLS && c.server.tlsConfig != nil {
+		message = append(message, "STARTTLS")
+	}
+	if len(c.mechanisms) > 0 {
+		message = append(message, "AUTH "+strings.Join(c.mechanisms, " "))
+	}
+	if c.server.enableSMTPUTF8 {
+		message = append(message, "SMTPUTF8")
+	}
+	if isTLS && c.server.enableREQUIRETLS {
+		message = append(message, "REQUIRETLS")
+	}
+	if c.server.enableBINARYMIME {
+		message = append(message, "BINARYMIME")
+	}
+	if c.server.enableDSN {
+		message = append(message, "DSN")
+	}
+	if c.server.enableXOORG {
+		message = append(message, "XOORG")
+	}
+	if c.server.maxMessageBytes > 0 {
+		message = append(message, "SIZE "+strconv.FormatInt(c.server.maxMessageBytes, 10))
+	} else {
+		message = append(message, "SIZE")
+	}
+	if c.server.maxRecipients > 0 {
+		message = append(message, "LIMITS RCPTMAX="+strconv.FormatInt(int64(c.server.maxRecipients), 10))
+	}
+	if c.server.enableRRVS {
+		message = append(message, "RRVS")
+	}
+	if c.server.enableDELIVERBY {
+		if c.server.minimumDeliverByTime > 0 {
+			message = append(message, "DELIVERBY "+strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10))
 		} else {
-			yield("SIZE")
+			message = append(message, "DELIVERBY")
 		}
-		if c.server.maxRecipients > 0 {
-			yield("LIMITS RCPTMAX=" + strconv.FormatInt(int64(c.server.maxRecipients), 10))
+	}
+	if c.server.enableMTPRIORITY {
+		if c.server.mtPriorityProfile != smtp.PriorityUnspecified {
+			message = append(message, "MT-PRIORITY "+string(c.server.mtPriorityProfile))
+		} else {
+			message = append(message, "MT-PRIORITY")
 		}
-		if c.server.enableRRVS {
-			yield("RRVS")
-		}
-		if c.server.enableDELIVERBY {
-			if c.server.minimumDeliverByTime > 0 {
-				yield("DELIVERBY " + strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10))
-			} else {
-				yield("DELIVERBY")
-			}
-		}
-		if c.server.enableMTPRIORITY {
-			if c.server.mtPriorityProfile != smtp.PriorityUnspecified {
-				yield("MT-PRIORITY " + string(c.server.mtPriorityProfile))
-			} else {
-				yield("MT-PRIORITY")
-			}
-		}
-	})
+	}
+
+	return smtp.NewStatusM(250, smtp.NoEnhancedCode, message)
 }
 
 // handleError handles error and closes the connection afterwards.
@@ -411,22 +423,25 @@ func (c *Conn) handleError(err error) {
 	}
 
 	if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-		c.writeResponse(421, smtp.EnhancedCode{4, 4, 2}, "Idle timeout, bye bye")
+		c.writeResponseSingle(421, smtp.EnhancedCode{4, 4, 2}, "Idle timeout, bye bye")
 		c.Close(fmt.Errorf("idle timeout: %w", err))
 		return
 	}
 
-	if code := c.writeResponseStatus(err, true); code > 0 {
-		if code != 221 {
+	if smtpErr, ok := err.(*smtp.Status); ok {
+		c.writeResponse(smtpErr.Code, smtpErr.EnhancedCode, smtpErr.Lines)
+
+		if smtpErr.Code != 221 {
 			c.Close(fmt.Errorf("smtp error: %w", err))
 		} else {
 			c.Close(nil)
 		}
+
 		return
 	}
 
 	if err == textsmtp.ErrTooLongLine {
-		c.writeResponse(500, smtp.EnhancedCode{5, 4, 0}, "Too long line")
+		c.writeResponseSingle(500, smtp.EnhancedCode{5, 4, 0}, "Too long line")
 		c.Close(errors.New("line too long"))
 		return
 	}
@@ -452,7 +467,7 @@ func (c *Conn) logger() *slog.Logger {
 func (c *Conn) handleMail(arg string) error {
 	arg, ok := parse.CutPrefixFold(arg, "FROM:")
 	if !ok {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting MAIL arg syntax of FROM:<address>")
 	}
 
 	p := parse.Parser{S: strings.TrimSpace(arg)}
@@ -475,7 +490,7 @@ func (c *Conn) handleMail(arg string) error {
 		case "SIZE":
 			size, err := strconv.ParseUint(arg.Value, 10, 32)
 			if err != nil {
-				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse SIZE as an integer")
+				return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Unable to parse SIZE as an integer")
 			}
 
 			if c.server.maxMessageBytes > 0 && int64(size) > c.server.maxMessageBytes {
@@ -486,20 +501,20 @@ func (c *Conn) handleMail(arg string) error {
 		case "XOORG":
 			value, err := decodeXtext(arg.Value)
 			if err != nil || value == "" {
-				return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Malformed XOORG parameter value")
+				return smtp.NewStatusS(500, smtp.EnhancedCode{5, 5, 4}, "Malformed XOORG parameter value")
 			}
 			if !c.server.enableXOORG {
-				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "EnableXOORG is not implemented")
+				return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "EnableXOORG is not implemented")
 			}
 			opts.XOORG = &value
 		case "SMTPUTF8":
 			if !c.server.enableSMTPUTF8 {
-				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
+				return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
 			}
 			opts.UTF8 = true
 		case "REQUIRETLS":
 			if !c.server.enableREQUIRETLS {
-				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "REQUIRETLS is not implemented")
+				return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "REQUIRETLS is not implemented")
 			}
 			opts.RequireTLS = true
 		case "BODY":
@@ -507,40 +522,40 @@ func (c *Conn) handleMail(arg string) error {
 			switch smtp.BodyType(value) {
 			case smtp.BodyBinaryMIME:
 				if !c.server.enableBINARYMIME {
-					return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "BINARYMIME is not implemented")
+					return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "BINARYMIME is not implemented")
 				}
 				c.binarymime = true
 			case smtp.Body7Bit, smtp.Body8BitMIME:
 				// This space is intentionally left blank
 			default:
-				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unknown BODY value")
+				return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Unknown BODY value")
 			}
 			opts.Body = smtp.BodyType(value)
 		case "RET":
 			if !c.server.enableDSN {
-				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "RET is not implemented")
+				return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "RET is not implemented")
 			}
 			value := strings.ToUpper(arg.Value)
 			switch smtp.DSNReturn(value) {
 			case smtp.DSNReturnFull, smtp.DSNReturnHeaders:
 				// This space is intentionally left blank
 			default:
-				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Unknown RET value")
+				return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Unknown RET value")
 			}
 			opts.Return = smtp.DSNReturn(value)
 		case "ENVID":
 			if !c.server.enableDSN {
-				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ENVID is not implemented")
+				return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "ENVID is not implemented")
 			}
 			value, err := decodeXtext(arg.Value)
 			if err != nil || value == "" || !textsmtp.IsPrintableASCII(value) {
-				return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ENVID parameter value")
+				return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ENVID parameter value")
 			}
 			opts.EnvelopeID = value
 		case "AUTH":
 			value, err := decodeXtext(arg.Value)
 			if err != nil || value == "" {
-				return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter value")
+				return smtp.NewStatusS(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter value")
 			}
 			if value == "<>" {
 				value = ""
@@ -548,12 +563,12 @@ func (c *Conn) handleMail(arg string) error {
 				p := parse.Parser{S: value}
 				value, err = p.Mailbox()
 				if err != nil || p.S != "" {
-					return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter mailbox")
+					return smtp.NewStatusS(500, smtp.EnhancedCode{5, 5, 4}, "Malformed AUTH parameter mailbox")
 				}
 			}
 			opts.Auth = &value
 		default:
-			return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Unknown MAIL FROM argument")
+			return smtp.NewStatusS(500, smtp.EnhancedCode{5, 5, 4}, "Unknown MAIL FROM argument")
 		}
 	}
 
@@ -569,24 +584,24 @@ func (c *Conn) handleMail(arg string) error {
 	}
 
 	c.state = stateMail
-	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
+	return smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
 }
 
 // MAIL state -> waiting for RCPTs followed by DATA
 func (c *Conn) handleRcpt(arg string) error {
 	arg, ok := parse.CutPrefixFold(arg, "TO:")
 	if !ok {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
 	}
 
 	p := parse.Parser{S: strings.TrimSpace(arg)}
 	recipient, err := p.Path()
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting RCPT arg syntax of TO:<address>")
 	}
 
 	if c.server.maxRecipients > 0 && c.recipients >= c.server.maxRecipients {
-		return smtp.NewStatus(452, smtp.EnhancedCode{4, 5, 3},
+		return smtp.NewStatusS(452, smtp.EnhancedCode{4, 5, 3},
 			fmt.Sprintf("Maximum limit of %v recipients reached", c.server.maxRecipients),
 		)
 	}
@@ -621,7 +636,7 @@ func (c *Conn) handleRcpt(arg string) error {
 				return err
 			}
 		default:
-			return smtp.NewStatus(500, smtp.EnhancedCode{5, 5, 4}, "Unknown RCPT TO argument")
+			return smtp.NewStatusS(500, smtp.EnhancedCode{5, 5, 4}, "Unknown RCPT TO argument")
 		}
 	}
 
@@ -637,19 +652,19 @@ func (c *Conn) handleRcpt(arg string) error {
 	}
 
 	c.recipients++
-	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
+	return smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
 }
 
 func handleRcptNotify(server *Server, opts *smtp.RcptOptions, value string) error {
 	if !server.enableDSN {
-		return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
+		return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "NOTIFY is not implemented")
 	}
 	notify := []smtp.DSNNotify{}
 	for val := range strings.SplitSeq(value, ",") {
 		notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
 	}
 	if err := textsmtp.CheckNotifySet(notify); err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
 	}
 	opts.Notify = notify
 	return nil
@@ -657,11 +672,11 @@ func handleRcptNotify(server *Server, opts *smtp.RcptOptions, value string) erro
 
 func handleRcptORCPT(server *Server, opts *smtp.RcptOptions, value string) error {
 	if !server.enableDSN {
-		return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
+		return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "ORCPT is not implemented")
 	}
 	aType, aAddr, err := decodeTypedAddress(value)
 	if err != nil || aAddr == "" {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ORCPT parameter value")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ORCPT parameter value")
 	}
 	opts.OriginalRecipientType = aType
 	opts.OriginalRecipient = aAddr
@@ -670,12 +685,12 @@ func handleRcptORCPT(server *Server, opts *smtp.RcptOptions, value string) error
 
 func handleRcptRRVS(server *Server, opts *smtp.RcptOptions, value string) error {
 	if !server.enableRRVS {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "RRVS is not implemented")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "RRVS is not implemented")
 	}
 	value, _, _ = strings.Cut(value, ";") // discard the no-support action
 	rrvsTime, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed RRVS parameter value")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed RRVS parameter value")
 	}
 	opts.RequireRecipientValidSince = rrvsTime
 	return nil
@@ -683,16 +698,16 @@ func handleRcptRRVS(server *Server, opts *smtp.RcptOptions, value string) error 
 
 func handleRcptBY(server *Server, opts *smtp.RcptOptions, value string) error {
 	if !server.enableDELIVERBY {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "DELIVERBY is not implemented")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "DELIVERBY is not implemented")
 	}
 	deliverBy := parseDeliverByArgument(value)
 	if deliverBy == nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed BY parameter value")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed BY parameter value")
 	}
 	if server.minimumDeliverByTime != 0 &&
 		deliverBy.Mode == smtp.DeliverByReturn &&
 		deliverBy.Time < server.minimumDeliverByTime {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "BY parameter is below server minimum")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "BY parameter is below server minimum")
 	}
 	opts.DeliverBy = deliverBy
 	return nil
@@ -700,14 +715,14 @@ func handleRcptBY(server *Server, opts *smtp.RcptOptions, value string) error {
 
 func handleRcptMTPRIORITY(server *Server, opts *smtp.RcptOptions, value string) error {
 	if !server.enableMTPRIORITY {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is not implemented")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is not implemented")
 	}
 	mtPriority, err := strconv.Atoi(value)
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "Malformed MT-PRIORITY parameter value")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed MT-PRIORITY parameter value")
 	}
 	if mtPriority < -9 || mtPriority > 9 {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is outside valid range")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is outside valid range")
 	}
 	opts.MTPriority = &mtPriority
 	return nil
@@ -717,7 +732,7 @@ func (c *Conn) handleVrfy(arg string) error {
 	p := parse.Parser{S: strings.TrimSpace(arg)}
 	vrfy, err := p.Path()
 	if err != nil {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting <address>")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 2}, "Was expecting <address>")
 	}
 	args, err := parse.Args(p.S)
 	if err != nil {
@@ -729,7 +744,7 @@ func (c *Conn) handleVrfy(arg string) error {
 	for _, arg := range args {
 		if arg.Key == "SMTPUTF8" {
 			if !c.server.enableSMTPUTF8 {
-				return smtp.NewStatus(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
+				return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "SMTPUTF8 is not implemented")
 			}
 			opts.UTF8 = true
 		}
@@ -746,18 +761,18 @@ func (c *Conn) handleVrfy(arg string) error {
 
 func (c *Conn) handleAuth(arg string) error {
 	if c.didAuth {
-		return smtp.NewStatus(503, smtp.EnhancedCode{5, 5, 1}, "Already authenticated")
+		return smtp.NewStatusS(503, smtp.EnhancedCode{5, 5, 1}, "Already authenticated")
 	}
 	parts := strings.Fields(arg)
 	if len(parts) == 0 {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 4}, "Missing parameter")
+		return smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 4}, "Missing parameter")
 	}
 
 	mechanism := strings.ToUpper(parts[0])
 
 	// Is mechanism allowed?
 	if !slices.Contains(c.mechanisms, mechanism) {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 4}, "Invalid mechanism")
+		return smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 4}, "Invalid mechanism")
 	}
 
 	// Parse client initial response if there is one
@@ -766,7 +781,7 @@ func (c *Conn) handleAuth(arg string) error {
 		var err error
 		ir, err = decodeSASLResponse(parts[1])
 		if err != nil {
-			return smtp.NewStatus(454, smtp.EnhancedCode{4, 7, 0}, "Invalid base64 data")
+			return smtp.NewStatusS(454, smtp.EnhancedCode{4, 7, 0}, "Invalid base64 data")
 		}
 	}
 
@@ -794,7 +809,7 @@ func (c *Conn) handleAuth(arg string) error {
 		if len(challenge) > 0 {
 			encoded = base64.StdEncoding.EncodeToString(challenge)
 		}
-		c.writeResponse(334, smtp.NoEnhancedCode, encoded)
+		c.writeResponseSingle(334, smtp.NoEnhancedCode, encoded)
 
 		encoded, err = c.readLine()
 		if err != nil {
@@ -803,12 +818,12 @@ func (c *Conn) handleAuth(arg string) error {
 
 		if encoded == "*" {
 			// https://tools.ietf.org/html/rfc4954#page-4
-			return smtp.NewStatus(501, smtp.EnhancedCode{5, 0, 0}, "Negotiation cancelled")
+			return smtp.NewStatusS(501, smtp.EnhancedCode{5, 0, 0}, "Negotiation cancelled")
 		}
 
 		response, err = decodeSASLResponse(encoded)
 		if err != nil {
-			return smtp.NewStatus(454, smtp.EnhancedCode{4, 7, 0}, "Invalid base64 data")
+			return smtp.NewStatusS(454, smtp.EnhancedCode{4, 7, 0}, "Invalid base64 data")
 		}
 	}
 
@@ -817,16 +832,16 @@ func (c *Conn) handleAuth(arg string) error {
 		c.state = stateGreeted
 	}
 
-	return smtp.NewStatus(235, smtp.EnhancedCode{2, 0, 0}, "Authentication succeeded")
+	return smtp.NewStatusS(235, smtp.EnhancedCode{2, 0, 0}, "Authentication succeeded")
 }
 
 func (c *Conn) handleStartTLS() error {
 	if _, isTLS := c.TLSConnectionState(); isTLS {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "Already running in TLS")
+		return smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 1}, "Already running in TLS")
 	}
 
 	if c.server.tlsConfig == nil {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "TLS not supported")
+		return smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 1}, "TLS not supported")
 	}
 
 	// allow the session to change tlsConfig
@@ -835,10 +850,10 @@ func (c *Conn) handleStartTLS() error {
 		return c.newStatusError(451, smtp.EnhancedCode{4, 0, 0}, "TLS config retrieval failed", err)
 	}
 	if tlsConfig == nil {
-		return smtp.NewStatus(451, smtp.EnhancedCode{4, 0, 0}, "TLS config retrieval nil returned")
+		return smtp.NewStatusS(451, smtp.EnhancedCode{4, 0, 0}, "TLS config retrieval nil returned")
 	}
 
-	c.writeResponse(220, smtp.EnhancedCode{2, 0, 0}, "Ready to start TLS")
+	c.writeResponseSingle(220, smtp.EnhancedCode{2, 0, 0}, "Ready to start TLS")
 
 	// Upgrade to TLS
 	tlsConn := tls.Server(c.conn, tlsConfig)
@@ -863,10 +878,10 @@ func (c *Conn) handleData(arg string) error {
 	}
 
 	if arg != "" {
-		return smtp.NewStatus(501, smtp.EnhancedCode{5, 5, 4}, "DATA command should not have any arguments")
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "DATA command should not have any arguments")
 	}
 	if c.binarymime {
-		return smtp.NewStatus(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed for BINARYMIME messages")
+		return smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 1}, "DATA not allowed for BINARYMIME messages")
 	}
 
 	var r io.Reader
@@ -876,7 +891,7 @@ func (c *Conn) handleData(arg string) error {
 			return r
 		}
 		// We have recipients, go to accept data
-		c.writeResponse(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>")
+		c.writeResponseSingle(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>")
 
 		// r gets exposed to be able to discard the rest of the message
 		r = textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
@@ -917,7 +932,7 @@ func (c *Conn) handleBdat(arg string) error {
 		if closed {
 			return "", "", io.EOF
 		}
-		c.writeResponse(250, smtp.EnhancedCode{2, 0, 0}, "Continue")
+		c.writeResponseSingle(250, smtp.EnhancedCode{2, 0, 0}, "Continue")
 		return c.nextCommand()
 	})
 	if err != nil {
@@ -928,7 +943,7 @@ func (c *Conn) handleBdat(arg string) error {
 		return data
 	})
 	if err != nil {
-		if smtpErr, ok := err.(*smtp.StatusSingle); ok {
+		if smtpErr, ok := err.(*smtp.Status); ok {
 			// read anything left to continue after this failure, ignore any read error
 			// https://www.rfc-editor.org/rfc/rfc3030.html
 			// If a 5XX or 4XX code is received by the sender-SMTP in response to a BDAT
@@ -956,65 +971,20 @@ func (c *Conn) handleBdat(arg string) error {
 	return c.accepted(queueid)
 }
 
-func (*Conn) accepted(queueid string) *smtp.StatusSingle {
+func (*Conn) accepted(queueid string) *smtp.Status {
 	if queueid != "" {
 		// limit length if queueid is too long (< 1000)
 		if len(queueid) > 977 {
 			queueid = queueid[:974] + "..."
 		}
-		return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued as "+queueid)
+		return smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued as "+queueid)
 	}
-	return smtp.NewStatus(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")
+	return smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, "OK: queued")
 }
 
 func (c *Conn) greet() {
 	protocol := "ESMTP"
-	c.writeResponse(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.hostname, protocol))
-}
-
-func (c *Conn) writeResponseStatus(err error, allowQuit bool) int {
-	switch s := err.(type) {
-	case *smtp.StatusSingle:
-		// Service closing transmission channel, after quit
-		if !allowQuit && s.Code == 221 {
-			return 0
-		}
-		// ToDo: close connection on repeated errors (e.g. authentication tries)
-		c.writeStatus(s)
-		return s.Code
-	case *smtp.StatusMulti:
-		// Service closing transmission channel, after quit
-		if !allowQuit && s.Code == 221 {
-			return 0
-		}
-		// ToDo: close connection on repeated errors (e.g. authentication tries)
-		c.writeStatusMultiline(s)
-		return s.Code
-	default:
-		return 0
-	}
-}
-
-// enhancedCodeToPart returns the part of the response defined by enhanced code.
-func enhancedCodeToPart(enhCode smtp.EnhancedCode, code int) string {
-	if enhCode == smtp.NoEnhancedCode {
-		return ""
-	}
-
-	// All responses must include an enhanced code, if it is missing - use
-	// a generic code X.0.0.
-	if enhCode == smtp.EnhancedCodeNotSet {
-		cat := code / 100
-		switch cat {
-		case 2, 4, 5:
-			return strconv.FormatInt(int64(cat), 10) + ".0.0 "
-		default:
-			return ""
-		}
-	}
-	return strconv.FormatInt(int64(enhCode[0]), 10) + "." +
-		strconv.FormatInt(int64(enhCode[1]), 10) + "." +
-		strconv.FormatInt(int64(enhCode[2]), 10) + " "
+	c.writeResponseSingle(220, smtp.NoEnhancedCode, fmt.Sprintf("%v %s Service Ready", c.server.hostname, protocol))
 }
 
 // writeLine writes a single reply line. last selects the terminating form.
@@ -1034,13 +1004,17 @@ func (c *Conn) writeLine(code, enhCode, message string, last bool) {
 	_, _ = w.WriteString("\r\n")
 }
 
-func (c *Conn) writeStatus(status *smtp.StatusSingle) {
-	c.writeResponse(status.Code, status.EnhancedCode, status.Message)
+func (c *Conn) writeStatus(status *smtp.Status) {
+	c.writeResponse(status.Code, status.EnhancedCode, status.Lines)
 }
 
-func (c *Conn) writeStatusMultiline(status *smtp.StatusMulti) {
+func (c *Conn) writeResponseSingle(code int, enhCode smtp.EnhancedCode, message string) {
+	c.writeResponse(code, enhCode, []string{message})
+}
+
+func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, message []string) {
 	c.logger().DebugContext(
-		c.ctx, "statusMultiline", slog.Int("code", status.Code), slog.Any("enhCode", status.EnhancedCode),
+		c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", message),
 	)
 
 	// TODO: error handling
@@ -1048,50 +1022,11 @@ func (c *Conn) writeStatusMultiline(status *smtp.StatusMulti) {
 		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
 	}
 
-	codeString := strconv.FormatInt(int64(status.Code), 10)
-	enhCodeString := enhancedCodeToPart(status.EnhancedCode, status.Code)
-
-	var pending string
-	var havePending bool
-
-	if status.Message != nil {
-		for message := range status.Message {
-			if havePending {
-				c.writeLine(codeString, enhCodeString, pending, false)
-			}
-			pending, havePending = message, true
-		}
-	}
-
-	c.writeLine(codeString, enhCodeString, pending, true)
-
-	// PIPELINE support
-	// If there is something buffered in c.text.R then we can assume another command is following.
-	// This means the client is doing pipelining and we don't need to respond just now.
-	if c.text.R.Buffered() == 0 {
-		_ = c.text.W.Flush()
-	}
-}
-
-func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
-	c.logger().DebugContext(c.ctx, "write", slog.Int("code", code), slog.Any("enhCode", enhCode), slog.Any("text", text))
-
-	// TODO: error handling
-	if c.server.writeTimeout != 0 {
-		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
-	}
-
 	codeString := strconv.FormatInt(int64(code), 10)
-	enhCodeString := enhancedCodeToPart(enhCode, code)
+	enhCodeString := textsmtp.EnhancedCodeToPart(enhCode, code)
 
-	for {
-		i := strings.IndexByte(text, '\n')
-		if i < 0 {
-			c.writeLine(codeString, enhCodeString, text, true)
-			break
-		}
-		c.writeLine(codeString, enhCodeString, text[:i], false)
-		text = text[i+1:]
+	for i, m := range message {
+		c.writeLine(codeString, enhCodeString, m, i+1 == len(message))
 	}
 
 	// PIPELINE support
@@ -1102,12 +1037,12 @@ func (c *Conn) writeResponse(code int, enhCode smtp.EnhancedCode, text string) {
 	}
 }
 
-func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, err error) *smtp.StatusSingle {
-	if smtpErr, ok := err.(*smtp.StatusSingle); ok {
+func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, err error) *smtp.Status {
+	if smtpErr, ok := err.(*smtp.Status); ok {
 		return smtpErr
 	}
 	c.logger().ErrorContext(c.ctx, msg, slog.Any("err", err))
-	return smtp.NewStatus(code, enhCode, msg)
+	return smtp.NewStatusS(code, enhCode, msg)
 }
 
 // Reads a line of input

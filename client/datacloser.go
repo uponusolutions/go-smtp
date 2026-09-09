@@ -26,26 +26,31 @@ func (d *DataCloser) Write(p []byte) (n int, err error) {
 }
 
 // CloseWithResponse closes the data closer and returns code, msg.
-func (d *DataCloser) CloseWithResponse() (code int, msg string, err error) {
+func (d *DataCloser) CloseWithResponse() (*smtp.Status, error) {
 	if d.closed {
-		return 0, "", errors.New("smtp: data writer closed twice")
+		return nil, errors.New("smtp: data writer closed twice")
 	}
 
 	if err := d.writer.Close(); err != nil {
-		return 0, "", err
+		return nil, err
 	}
 
 	timeout := smtp.Timeout(d.c.conn, d.c.cfg.submissionTimeout)
 	defer timeout()
 
-	code, msg, err = d.c.readResponse(250)
+	status, err := d.c.cfg.text.ReadResponse()
+
+	if err == nil && status.Code != 250 {
+		err = status
+		status = nil
+	}
 
 	d.closed = true
-	return code, msg, err
+	return status, err
 }
 
 // Close closes the data closer.
 func (d *DataCloser) Close() error {
-	_, _, err := d.CloseWithResponse()
+	_, err := d.CloseWithResponse()
 	return err
 }

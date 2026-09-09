@@ -169,7 +169,7 @@ func (c *Mailer) prepare(
 		}
 
 		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
-			smtpErr := &smtp.StatusSingle{}
+			smtpErr := &smtp.Status{}
 
 			// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
 			if c.cfg.abortOnRcptReject || !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
@@ -251,14 +251,16 @@ func (c *Mailer) SendAdvanced(
 		return 0, "", failures, err
 	}
 
-	code, msg, err = w.CloseWithResponse()
-
+	status, err := w.CloseWithResponse()
 	// if err isn't smtp.StatusBase we are in an unknown state, close connection
 	if _, ok := err.(*smtp.Status); err != nil && !ok {
 		err = errors.Join(err, c.client.Close())
 	}
+	if err != nil {
+		return 0, "", nil, err
+	}
 
-	return code, msg, failures, err
+	return status.Code, status.Text(), failures, err
 }
 
 // Verify checks the validity of an email address on the server.

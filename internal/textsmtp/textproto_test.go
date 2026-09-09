@@ -3,9 +3,12 @@ package textsmtp
 import (
 	"bytes"
 	"io"
-	"net/textproto"
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
@@ -38,67 +41,157 @@ func TestReadLine(t *testing.T) {
 	}
 }
 
-func TestReadCodeLine(t *testing.T) {
-	r := reader("123 hi\n234 bye\n345 no way\n345-no way continued\n", &bytes.Buffer{})
-	code, continued, msg, err := r.readCodeLine(0)
-	if code != 123 || continued || msg != "hi" || err != nil {
-		t.Fatalf("Line 1: %d, %s, %v", code, msg, err)
+type parseFirstCodeLineTest struct {
+	codeLine        string
+	wantCode        int
+	wantContinued   bool
+	wantEnhCode     smtp.EnhancedCode
+	wantMsg         string
+	wantErrContains string
+}
+
+var parseFirstCodeLineTests = []parseFirstCodeLineTest{
+	{
+		"123 test",
+		123,
+		false,
+		smtp.EnhancedCodeNotSet,
+		"test",
+		"",
+	},
+	{
+		"123-test",
+		123,
+		true,
+		smtp.EnhancedCodeNotSet,
+		"test",
+		"",
+	},
+	{
+		"123-1.2 test",
+		123,
+		true,
+		smtp.EnhancedCodeNotSet,
+		"1.2 test",
+		"",
+	},
+	{
+		"123-1.2.3 test",
+		123,
+		true,
+		smtp.EnhancedCode{1, 2, 3},
+		"test",
+		"",
+	},
+	{
+		"323-1.2.3 test",
+		323,
+		true,
+		smtp.NoEnhancedCode,
+		"1.2.3 test",
+		"",
+	},
+}
+
+func TestParseFirstCodeLine(t *testing.T) {
+	for _, d := range parseFirstCodeLineTests {
+		t.Run(d.codeLine, func(t *testing.T) {
+			status, continued, err := parseFirstCodeLine(d.codeLine)
+			require.Equal(t, d.wantCode, status.Code)
+			require.Equal(t, d.wantContinued, continued)
+			require.Equal(t, d.wantEnhCode, status.EnhancedCode)
+			require.Equal(t, []string{d.wantMsg}, status.Lines)
+			if d.wantErrContains == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, d.wantErrContains)
+			}
+		})
 	}
-	code, continued, msg, err = r.readCodeLine(23)
-	if code != 234 || continued || msg != "bye" || err != nil {
-		t.Fatalf("Line 2: %d, %s, %v", code, msg, err)
-	}
-	code, continued, msg, err = r.readCodeLine(346)
-	if code != 345 || continued || msg != "no way" || err == nil {
-		t.Fatalf("Line 3: %d, %s, %v", code, msg, err)
-	}
-	code, continued, msg, err = r.readCodeLine(346)
-	if code != 345 || !continued || msg != "no way continued" || err == nil {
-		t.Fatalf("Line 3: %d, %s, %v", code, msg, err)
-	}
-	if e, ok := err.(*textproto.Error); !ok || e.Code != code || e.Msg != msg {
-		t.Fatalf("Line 3: wrong error %v\n", err)
-	}
-	code, continued, msg, err = r.readCodeLine(1)
-	if code != 0 || continued || msg != "" || err != io.EOF {
-		t.Fatalf("EOF: %d, %s, %v", code, msg, err)
+}
+
+type parseExtraCodeLineTest struct {
+	line             string
+	codeString       string
+	enhancedCodePart string
+	wantContinued    bool
+	wantMsg          string
+	wantErrContains  string
+}
+
+var parseExtraCodeLineTests = []parseExtraCodeLineTest{
+	{
+		"123-1.1.0 test",
+		"123",
+		"1.1.0 ",
+		true,
+		"test",
+		"",
+	},
+	{
+		"123 1.2.0 test",
+		"123",
+		"1.2.0 ",
+		false,
+		"test",
+		"",
+	},
+	{
+		"123 test",
+		"123",
+		"",
+		false,
+		"test",
+		"",
+	},
+}
+
+func TestParseExtraCodeLine(t *testing.T) {
+	for i, d := range parseExtraCodeLineTests {
+		t.Run(strconv.Itoa(i)+": "+d.line, func(t *testing.T) {
+			continued, msg, err := parseExtraCodeLine(d.line, d.codeString, d.enhancedCodePart)
+			require.Equal(t, d.wantContinued, continued)
+			require.Equal(t, d.wantMsg, msg)
+			if d.wantErrContains == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, d.wantErrContains)
+			}
+		})
 	}
 }
 
 type readResponseTest struct {
 	in       string
-	inCode   int
 	wantCode int
 	wantMsg  string
 }
 
 var readResponseTests = []readResponseTest{
-	{
-		"230-Anonymous access granted, restrictions apply\n" +
-			"Read the file README.txt,\n" +
-			"230  please",
-		23,
-		230,
-		"Anonymous access granted, restrictions apply\nRead the file README.txt,\n please",
-	},
-
+	/*
+		 	// invalid by RFC 5321
+			{
+				"230-Anonymous access granted, restrictions apply\n" +
+					"Read the file README.txt,\n" +
+					"230  please",
+				230,
+				"Anonymous access granted, restrictions apply\nRead the file README.txt,\n please",
+			},
+	*/
 	{
 		"230 Anonymous access granted, restrictions apply\n",
-		23,
 		230,
 		"Anonymous access granted, restrictions apply",
 	},
 
 	{
 		"400-A\n400-B\n400 C",
-		4,
 		400,
 		"A\nB\nC",
 	},
 
 	{
 		"400-A\r\n400-B\r\n400 C\r\n",
-		4,
 		400,
 		"A\nB\nC",
 	},
@@ -108,21 +201,21 @@ var readResponseTests = []readResponseTest{
 func TestRFC959Lines(t *testing.T) {
 	for i, tt := range readResponseTests {
 		r := reader(tt.in+"\nFOLLOWING DATA", &bytes.Buffer{})
-		code, msg, err := r.ReadResponse(tt.inCode)
+		status, err := r.ReadResponse()
 		if err != nil {
 			t.Errorf("#%d: ReadResponse: %v", i, err)
 			continue
 		}
-		if code != tt.wantCode {
-			t.Errorf("#%d: code=%d, want %d", i, code, tt.wantCode)
+		if status.Code != tt.wantCode {
+			t.Errorf("#%d: code=%d, want %d", i, status.Code, tt.wantCode)
 		}
-		if msg != tt.wantMsg {
-			t.Errorf("#%d: msg=%q, want %q", i, msg, tt.wantMsg)
+		if strings.Join(status.Lines, "\n") != tt.wantMsg {
+			t.Errorf("#%d: msg=%q, want %q", i, strings.Join(status.Lines, "\n"), tt.wantMsg)
 		}
 	}
 }
 
-// Test that multi-line errors are appropriately and fully read. Issue 10230.
+// Test that multi-line errors are appropriately and fully read.
 func TestReadMultiLineError(t *testing.T) {
 	r := reader("550-5.1.1 The email account that you tried to reach does not exist. Please try\n"+
 		"550-5.1.1 double-checking the recipient's email address for typos or\n"+
@@ -130,29 +223,34 @@ func TestReadMultiLineError(t *testing.T) {
 		"Unexpected but legal text!\n"+
 		"550 5.1.1 https://support.google.com/mail/answer/6596 h20si25154304pfd.166 - gsmtp\n", &bytes.Buffer{})
 
-	wantMsg := "5.1.1 The email account that you tried to reach does not exist. Please try\n" +
-		"5.1.1 double-checking the recipient's email address for typos or\n" +
-		"5.1.1 unnecessary spaces. Learn more at\n" +
-		"Unexpected but legal text!\n" +
-		"5.1.1 https://support.google.com/mail/answer/6596 h20si25154304pfd.166 - gsmtp"
-
-	wantError := `550 "5.1.1 The email account that you tried to reach does not exist. Please try\n` +
-		`5.1.1 double-checking the recipient's email address for typos or\n` +
-		`5.1.1 unnecessary spaces. Learn more at\n` +
-		`Unexpected but legal text!\n` +
-		`5.1.1 https://support.google.com/mail/answer/6596 h20si25154304pfd.166 - gsmtp"`
-
-	code, msg, err := r.ReadResponse(250)
+	err := r.ReadResponseValid(250)
 	if err == nil {
 		t.Error("ReadResponse: no error, want error")
 	}
-	if code != 550 {
-		t.Errorf("ReadResponse: code=%d, want %d", code, 550)
+
+	require.ErrorContains(t, err, "invalid response")
+}
+
+// Test that multi-line errors are appropriately and fully read.
+func TestReadMultiLine(t *testing.T) {
+	r := reader("550-5.1.1 The email account that you tried to reach does not exist. Please try\n"+
+		"550-5.1.1 double-checking the recipient's email address for typos or\n"+
+		"550-5.1.1 unnecessary spaces. Learn more at\n"+
+		"550 5.1.1 https://support.google.com/mail/answer/6596 h20si25154304pfd.166 - gsmtp\n", &bytes.Buffer{})
+
+	expectedText := "The email account that you tried to reach does not exist. Please try\n" +
+		"double-checking the recipient's email address for typos or\n" +
+		"unnecessary spaces. Learn more at\n" +
+		"https://support.google.com/mail/answer/6596 h20si25154304pfd.166 - gsmtp"
+
+	err := r.ReadResponseValid(250)
+	if err == nil {
+		t.Error("ReadResponse: no error, want error")
 	}
-	if msg != wantMsg {
-		t.Errorf("ReadResponse: msg=%q, want %q", msg, wantMsg)
-	}
-	if err != nil && err.Error() != wantError {
-		t.Errorf("ReadResponse: error=%q, want %q", err.Error(), wantError)
-	}
+
+	status, ok := err.(*smtp.Status)
+	require.True(t, ok)
+
+	require.Equal(t, expectedText, status.Text())
+	require.Equal(t, "SMTP error 550 5.1.1: "+expectedText, status.Error())
 }
