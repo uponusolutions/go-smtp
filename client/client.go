@@ -103,6 +103,12 @@ type MailOptions struct {
 	//
 	// Defined in RFC 4954.
 	Auth *string
+
+	// Value of BY= argument or nil if unset.
+	DeliverBy *smtp.DeliverByOptions
+
+	// Value of MT-PRIORITY= or nil if unset.
+	MTPriority *int
 }
 
 // VrfyOptions contains parameters for the VRFY command.
@@ -513,7 +519,22 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		}
 		// We can safely discard parameter if server does not support AUTH.
 	}
-
+	if _, ok := c.ext["DELIVERBY"]; ok && opts != nil && opts.DeliverBy != nil {
+		if opts.DeliverBy.Mode == smtp.DeliverByReturn && opts.DeliverBy.Time < 1 {
+			return errors.New("smtp: DELIVERBY mode must be greater than zero with return mode")
+		}
+		arg := fmt.Sprintf(" BY=%d;%s", int(opts.DeliverBy.Time.Seconds()), opts.DeliverBy.Mode)
+		if opts.DeliverBy.Trace {
+			arg += "T"
+		}
+		sb.WriteString(arg)
+	}
+	if _, ok := c.ext["MT-PRIORITY"]; ok && opts != nil && opts.MTPriority != nil {
+		if *opts.MTPriority < -9 || *opts.MTPriority > 9 {
+			return errors.New("smtp: MT-PRIORITY must be between -9 and 9")
+		}
+		fmt.Fprintf(&sb, " MT-PRIORITY=%d", *opts.MTPriority)
+	}
 	return c.cmdValid(250, "%s", sb.String())
 }
 
@@ -540,22 +561,6 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	}
 	if _, ok := c.ext["RRVS"]; ok && opts != nil && !opts.RequireRecipientValidSince.IsZero() {
 		fmt.Fprintf(&sb, " RRVS=%s", opts.RequireRecipientValidSince.Format(time.RFC3339))
-	}
-	if _, ok := c.ext["DELIVERBY"]; ok && opts != nil && opts.DeliverBy != nil {
-		if opts.DeliverBy.Mode == smtp.DeliverByReturn && opts.DeliverBy.Time < 1 {
-			return errors.New("smtp: DELIVERBY mode must be greater than zero with return mode")
-		}
-		arg := fmt.Sprintf(" BY=%d;%s", int(opts.DeliverBy.Time.Seconds()), opts.DeliverBy.Mode)
-		if opts.DeliverBy.Trace {
-			arg += "T"
-		}
-		sb.WriteString(arg)
-	}
-	if _, ok := c.ext["MT-PRIORITY"]; ok && opts != nil && opts.MTPriority != nil {
-		if *opts.MTPriority < -9 || *opts.MTPriority > 9 {
-			return errors.New("smtp: MT-PRIORITY must be between -9 and 9")
-		}
-		fmt.Fprintf(&sb, " MT-PRIORITY=%d", *opts.MTPriority)
 	}
 	return c.cmdValid(25, "%s", sb.String())
 }

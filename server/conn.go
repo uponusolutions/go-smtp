@@ -573,6 +573,14 @@ func (c *Conn) handleMail(arg string) error {
 				}
 			}
 			opts.Auth = &value
+		case "BY":
+			if err := handleMailBY(c.server, opts, arg.Value); err != nil {
+				return err
+			}
+		case "MT-PRIORITY":
+			if err := handleMailMTPRIORITY(c.server, opts, arg.Value); err != nil {
+				return err
+			}
 		default:
 			return smtp.NewStatusS(500, smtp.EnhancedCode{5, 5, 4}, "Unknown MAIL FROM argument")
 		}
@@ -591,6 +599,38 @@ func (c *Conn) handleMail(arg string) error {
 
 	c.state = stateMail
 	return smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("Roger, accepting mail from <%v>", from))
+}
+
+func handleMailBY(server *Server, opts *smtp.MailOptions, value string) error {
+	if !server.enableDELIVERBY {
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "DELIVERBY is not implemented")
+	}
+	deliverBy := parseDeliverByArgument(value)
+	if deliverBy == nil {
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed BY parameter value")
+	}
+	if server.minimumDeliverByTime != 0 &&
+		deliverBy.Mode == smtp.DeliverByReturn &&
+		deliverBy.Time < server.minimumDeliverByTime {
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "BY parameter is below server minimum")
+	}
+	opts.DeliverBy = deliverBy
+	return nil
+}
+
+func handleMailMTPRIORITY(server *Server, opts *smtp.MailOptions, value string) error {
+	if !server.enableMTPRIORITY {
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is not implemented")
+	}
+	mtPriority, err := strconv.Atoi(value)
+	if err != nil {
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed MT-PRIORITY parameter value")
+	}
+	if mtPriority < -9 || mtPriority > 9 {
+		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is outside valid range")
+	}
+	opts.MTPriority = &mtPriority
+	return nil
 }
 
 // MAIL state -> waiting for RCPTs followed by DATA
@@ -631,14 +671,6 @@ func (c *Conn) handleRcpt(arg string) error {
 			}
 		case "RRVS":
 			if err := handleRcptRRVS(c.server, opts, arg.Value); err != nil {
-				return err
-			}
-		case "BY":
-			if err := handleRcptBY(c.server, opts, arg.Value); err != nil {
-				return err
-			}
-		case "MT-PRIORITY":
-			if err := handleRcptMTPRIORITY(c.server, opts, arg.Value); err != nil {
 				return err
 			}
 		default:
@@ -699,38 +731,6 @@ func handleRcptRRVS(server *Server, opts *smtp.RcptOptions, value string) error 
 		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed RRVS parameter value")
 	}
 	opts.RequireRecipientValidSince = rrvsTime
-	return nil
-}
-
-func handleRcptBY(server *Server, opts *smtp.RcptOptions, value string) error {
-	if !server.enableDELIVERBY {
-		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "DELIVERBY is not implemented")
-	}
-	deliverBy := parseDeliverByArgument(value)
-	if deliverBy == nil {
-		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed BY parameter value")
-	}
-	if server.minimumDeliverByTime != 0 &&
-		deliverBy.Mode == smtp.DeliverByReturn &&
-		deliverBy.Time < server.minimumDeliverByTime {
-		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "BY parameter is below server minimum")
-	}
-	opts.DeliverBy = deliverBy
-	return nil
-}
-
-func handleRcptMTPRIORITY(server *Server, opts *smtp.RcptOptions, value string) error {
-	if !server.enableMTPRIORITY {
-		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is not implemented")
-	}
-	mtPriority, err := strconv.Atoi(value)
-	if err != nil {
-		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed MT-PRIORITY parameter value")
-	}
-	if mtPriority < -9 || mtPriority > 9 {
-		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is outside valid range")
-	}
-	opts.MTPriority = &mtPriority
 	return nil
 }
 
