@@ -11,11 +11,8 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-)
 
-var (
-	crnl    = []byte{'\r', '\n'}
-	dotcrnl = []byte{'.', '\r', '\n'}
+	"github.com/uponusolutions/go-smtp"
 )
 
 // NewDotWriter returns a writer that can be used to write a dot-encoding to w.
@@ -98,7 +95,7 @@ func (d *dotWriter) Write(b []byte) (n int, err error) {
 				if _, err = bw.Write(p[:pLen-1]); err != nil {
 					return n, err
 				}
-				if _, err = bw.Write(crnl); err != nil {
+				if _, err = bw.Write(smtp.Crnl); err != nil {
 					return n, err
 				}
 			}
@@ -126,7 +123,7 @@ func (d *dotWriter) Close() error {
 		}
 		fallthrough
 	case wstateBeginLine:
-		if _, err := bw.Write(dotcrnl); err != nil {
+		if _, err := bw.Write(smtp.Dotcrnl); err != nil {
 			return err
 		}
 	}

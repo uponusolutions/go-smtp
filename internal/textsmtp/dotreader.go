@@ -8,8 +8,6 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-var crlfdot = []byte{'\r', '\n', '.'}
-
 type dotReader struct {
 	r       *bufio.Reader
 	state   int
@@ -107,7 +105,7 @@ func (r *dotReader) Read(b []byte) (int, error) {
 
 	if r.state != stateEOF {
 		for {
-			i := bytes.Index(c, crlfdot)
+			i := bytes.Index(c, smtp.Crlfdot)
 
 			// No full \r\n. found.
 			if i == -1 {

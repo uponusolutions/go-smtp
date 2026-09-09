@@ -8,6 +8,15 @@ import (
 	"strings"
 )
 
+var (
+	// Crnl \r\n
+	Crnl = []byte{'\r', '\n'}
+	// Dotcrnl .\r\n
+	Dotcrnl = []byte{'.', '\r', '\n'}
+	// Crlfdot \r\n.
+	Crlfdot = []byte{'\r', '\n', '.'}
+)
+
 // EnhancedCode is the SMTP enhanced code
 type EnhancedCode [3]int
 
@@ -23,37 +32,24 @@ type Status struct {
 // included in response.
 //
 // Note that RFC 2034 requires an enhanced code to be included in all 2xx, 4xx
-// and 5xx responses. This constant is exported for use by extensions, you
-// should probably use EnhancedCodeNotSet instead.
-var NoEnhancedCode = EnhancedCode{-1, -1, -1}
-
-// EnhancedCodeNotSet is a nil value of EnhancedCode field in smtp, used
-// to indicate that backend failed to provide enhanced status code. X.0.0 will
-// be used (X is derived from error code).
-var EnhancedCodeNotSet = EnhancedCode{0, 0, 0}
+// and 5xx responses.
+var NoEnhancedCode = EnhancedCode{0, 0, 0}
 
 // ToPart returns the part of the string after the code
 // which is defined by the enhanced code with the trailing whitespace.
 // E.g. "5.1.1 "
-func (enhCode EnhancedCode) ToPart(code int) string {
+func (enhCode EnhancedCode) ToPart() []byte {
 	if enhCode == NoEnhancedCode {
-		return ""
+		return nil
 	}
-
-	// All responses must include an enhanced code, if it is missing - use
-	// a generic code X.0.0.
-	if enhCode == EnhancedCodeNotSet {
-		cat := code / 100
-		switch cat {
-		case 2, 4, 5:
-			return strconv.Itoa(cat) + ".0.0 "
-		default:
-			return ""
-		}
+	return []byte{
+		strconv.Itoa(enhCode[0])[0],
+		'.',
+		strconv.Itoa(enhCode[1])[0],
+		'.',
+		strconv.Itoa(enhCode[2])[0],
+		' ',
 	}
-	return strconv.Itoa(enhCode[0]) + "." +
-		strconv.Itoa(enhCode[1]) + "." +
-		strconv.Itoa(enhCode[2]) + " "
 }
 
 // NewStatusM creates a new status with multiple message lines.
@@ -77,7 +73,7 @@ func NewStatusS(code int, enhCode EnhancedCode, msg string) *Status {
 // Error returns a error string.
 func (s *Status) Error() string {
 	base := fmt.Sprintf("SMTP error %03d", s.Code)
-	if s.EnhancedCode != NoEnhancedCode && s.EnhancedCode != EnhancedCodeNotSet {
+	if s.EnhancedCode != NoEnhancedCode {
 		base += fmt.Sprintf(" %d.%d.%d", s.EnhancedCode[0], s.EnhancedCode[1], s.EnhancedCode[2])
 	}
 	if len(s.Lines) > 0 {
@@ -106,11 +102,18 @@ func (s *Status) Text() string {
 	return strings.Join(s.Lines, "\n")
 }
 
+// StatusWriter is an interface which needs to be implemented by a writer to be used by Status.WriteTo.
+type StatusWriter interface {
+	io.ByteWriter
+	io.StringWriter
+	io.Writer
+}
+
 // writeLine writes a single reply line. last selects the terminating form.
-func writeLine(w io.Writer, code []byte, enhCode []byte, message string, last bool) (i int, err error) {
+func writeLine(w StatusWriter, code string, enhCode []byte, message string, last bool) (i int, err error) {
 	var p int
 
-	i, err = w.Write(code)
+	i, err = w.WriteString(code)
 	if err != nil {
 		return i, err
 	}
@@ -119,14 +122,14 @@ func writeLine(w io.Writer, code []byte, enhCode []byte, message string, last bo
 		// RFC 5321 permits omitting the space when there is no text, but
 		// RFC 4954 requires it for the 334 challenge and net/textproto
 		// rejects any reply shorter than four bytes. Always emit it.
-		p, err = w.Write([]byte{' '})
+		err = w.WriteByte(' ')
 	} else {
-		p, err = w.Write([]byte{'-'})
+		err = w.WriteByte('-')
 	}
-	i += p
 	if err != nil {
 		return i, err
 	}
+	i++ // single byte added
 
 	p, err = w.Write(enhCode)
 	i += p
@@ -134,22 +137,28 @@ func writeLine(w io.Writer, code []byte, enhCode []byte, message string, last bo
 		return i, err
 	}
 
-	p, err = w.Write([]byte(strings.TrimSuffix(message, "\r")))
+	p, err = w.WriteString(message)
 	i += p
 	if err != nil {
 		return i, err
 	}
 
-	p, err = w.Write([]byte{'\r', '\n'})
+	p, err = w.Write(Crnl)
 	i += p
 
 	return i, err
 }
 
 // WriteTo writes the smtp status reply.
-func (s *Status) WriteTo(w io.Writer) (int64, error) {
-	codeString := []byte(strconv.Itoa(s.Code))
-	enhCodeString := []byte(s.EnhancedCode.ToPart(s.Code))
+func (s *Status) WriteTo(w StatusWriter) (int64, error) {
+	codeString := strconv.Itoa(s.Code)
+	enhCodeString := s.EnhancedCode.ToPart()
+
+	// no message set
+	if len(s.Lines) == 0 {
+		p, err := writeLine(w, codeString, enhCodeString, "", true)
+		return int64(p), err
+	}
 
 	var i int
 	for q, m := range s.Lines {

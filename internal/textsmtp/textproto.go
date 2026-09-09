@@ -54,7 +54,7 @@ func (t *Textproto) PrintfLine(format string, args ...any) error {
 		return err
 	}
 
-	_, err := t.W.Write(crnl)
+	_, err := t.W.Write(smtp.Crnl)
 	return err
 }
 
@@ -103,7 +103,7 @@ func (t *Textproto) readResponseExtra(status *smtp.Status, continued bool, appen
 	var message string
 	var err error
 
-	encCodePart := status.EnhancedCode.ToPart(status.Code)
+	encCodePart := status.EnhancedCode.ToPart()
 	for continued {
 		continued, message, err = t.readExtraCodeLine(strconv.Itoa(status.Code), encCodePart)
 		if err != nil {
@@ -175,7 +175,7 @@ func parseFirstCodeLine(line string) (*smtp.Status, bool, error) {
 	return smtp.NewStatusS(code, enhCode, message), continued, nil
 }
 
-func (t *Textproto) readExtraCodeLine(codeString string, enhCodePart string) (continued bool, message string, err error) {
+func (t *Textproto) readExtraCodeLine(codeString string, enhCodePart []byte) (continued bool, message string, err error) {
 	line, err := t.ReadLine()
 	if err != nil {
 		return false, "", err
@@ -184,11 +184,11 @@ func (t *Textproto) readExtraCodeLine(codeString string, enhCodePart string) (co
 }
 
 // parseExtraCodeLine does strict verification like described in RFC 5321
-func parseExtraCodeLine(line string, codeString string, enhCodePart string) (bool, string, error) {
+func parseExtraCodeLine(line string, codeString string, enhCodePart []byte) (bool, string, error) {
 	if len(line) < 4+len(enhCodePart) ||
 		(line[3] != ' ' && line[3] != '-') ||
 		line[0:3] != codeString ||
-		line[4:(4+len(enhCodePart))] != enhCodePart {
+		line[4:(4+len(enhCodePart))] != string(enhCodePart) {
 		return false, "", textproto.ProtocolError(fmt.Sprintf("invalid response: %q", line))
 	}
 	return line[3] == '-', line[4+len(enhCodePart):], nil
@@ -197,14 +197,14 @@ func parseExtraCodeLine(line string, codeString string, enhCodePart string) (boo
 func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
 	parts := strings.Split(s, ".")
 	if len(parts) != 3 {
-		return smtp.EnhancedCodeNotSet, errors.New("wrong amount of enhanced code parts")
+		return smtp.NoEnhancedCode, errors.New("wrong amount of enhanced code parts")
 	}
 
-	code := smtp.EnhancedCodeNotSet
+	code := smtp.NoEnhancedCode
 	for i, part := range parts {
 		num, err := strconv.Atoi(part)
 		if err != nil {
-			return smtp.EnhancedCodeNotSet, err
+			return smtp.NoEnhancedCode, err
 		}
 		code[i] = num
 	}

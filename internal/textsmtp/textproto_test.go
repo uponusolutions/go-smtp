@@ -113,7 +113,7 @@ func TestParseFirstCodeLine(t *testing.T) {
 type parseExtraCodeLineTest struct {
 	line             string
 	codeString       string
-	enhancedCodePart string
+	enhancedCodePart []byte
 	wantContinued    bool
 	wantMsg          string
 	wantErrContains  string
@@ -123,7 +123,7 @@ var parseExtraCodeLineTests = []parseExtraCodeLineTest{
 	{
 		"123-1.1.0 test",
 		"123",
-		"1.1.0 ",
+		[]byte("1.1.0 "),
 		true,
 		"test",
 		"",
@@ -131,7 +131,7 @@ var parseExtraCodeLineTests = []parseExtraCodeLineTest{
 	{
 		"123 1.2.0 test",
 		"123",
-		"1.2.0 ",
+		[]byte("1.2.0 "),
 		false,
 		"test",
 		"",
@@ -139,7 +139,7 @@ var parseExtraCodeLineTests = []parseExtraCodeLineTest{
 	{
 		"123 test",
 		"123",
-		"",
+		nil,
 		false,
 		"test",
 		"",
