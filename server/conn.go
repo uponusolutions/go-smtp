@@ -404,8 +404,8 @@ func (c *Conn) handleGreetResponse() *smtp.Status {
 		lines = append(lines, "RRVS")
 	}
 	if c.server.enableDELIVERBY {
-		if c.server.minimumDeliverByTime > 0 {
-			lines = append(lines, "DELIVERBY "+strconv.FormatInt(int64(c.server.minimumDeliverByTime.Seconds()), 10))
+		if c.server.minimumDeliverInSeconds > 0 {
+			lines = append(lines, "DELIVERBY "+strconv.Itoa(c.server.minimumDeliverInSeconds))
 		} else {
 			lines = append(lines, "DELIVERBY")
 		}
@@ -609,9 +609,9 @@ func handleMailBY(server *Server, opts *smtp.MailOptions, value string) error {
 	if deliverBy == nil {
 		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed BY parameter value")
 	}
-	if server.minimumDeliverByTime != 0 &&
+	if server.minimumDeliverInSeconds != 0 &&
 		deliverBy.Mode == smtp.DeliverByReturn &&
-		deliverBy.Time < server.minimumDeliverByTime {
+		deliverBy.Seconds < server.minimumDeliverInSeconds {
 		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "BY parameter is below server minimum")
 	}
 	opts.DeliverBy = deliverBy

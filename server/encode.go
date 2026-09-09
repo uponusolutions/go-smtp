@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
@@ -29,9 +28,9 @@ func parseDeliverByArgument(arg string) *smtp.DeliverByOptions {
 		return nil
 	}
 	return &smtp.DeliverByOptions{
-		Time:  time.Duration(secondsValue) * time.Second,
-		Mode:  modeValue,
-		Trace: traceValue,
+		Seconds: secondsValue,
+		Mode:    modeValue,
+		Trace:   traceValue,
 	}
 }
 

@@ -111,9 +111,9 @@ const (
 
 // DeliverByOptions defines the deliver by options
 type DeliverByOptions struct {
-	Time  time.Duration
-	Mode  DeliverByMode
-	Trace bool
+	Seconds int
+	Mode    DeliverByMode
+	Trace   bool
 }
 
 // PriorityProfile sets the priority profile (RFC6710)

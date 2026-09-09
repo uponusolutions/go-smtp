@@ -1662,7 +1662,7 @@ func readReply(t *testing.T, scanner *bufio.Scanner) string {
 func TestServerDELIVERBY(t *testing.T) {
 	be, s, c, scanner, caps := testServerEhlo(t, nil,
 		server.WithEnableDELIVERBY(true),
-		server.WithMinimumDeliverByTime(50*time.Second),
+		server.WithMinimumDeliverInSeconds(50),
 	)
 	defer func() {
 		_ = s.Close()
@@ -1747,9 +1747,9 @@ func TestServerDELIVERBY(t *testing.T) {
 	}
 
 	want := smtp.DeliverByOptions{
-		Time:  100 * time.Second,
-		Mode:  smtp.DeliverByNotify,
-		Trace: true,
+		Seconds: 100,
+		Mode:    smtp.DeliverByNotify,
+		Trace:   true,
 	}
 	if *opts.DeliverBy != want {
 		t.Fatalf("DeliverBy: want %#v, got %#v", want, *opts.DeliverBy)

@@ -80,7 +80,7 @@ type Server struct {
 	// may specify in the BY argument with return mode.
 	// A zero value indicates no set minimum.
 	// Only use if DELIVERBY is enabled.
-	minimumDeliverByTime time.Duration
+	minimumDeliverInSeconds int
 
 	// Advertise MT-PRIORITY (RFC 6710) capability.
 	// Should only be used if backend supports it.
@@ -301,13 +301,13 @@ func WithEnableDELIVERBY(enableDELIVERBY bool) Option {
 	}
 }
 
-// WithMinimumDeliverByTime defines the minimum time, with seconds precision, that a client
+// WithMinimumDeliverInSeconds defines the minimum time, with seconds precision, that a client
 // may specify in the BY argument with return mode.
 // A zero value indicates no set minimum.
 // Only use if DELIVERBY is enabled.
-func WithMinimumDeliverByTime(minimumDeliverByTime time.Duration) Option {
+func WithMinimumDeliverInSeconds(minimumDeliverInSeconds int) Option {
 	return func(s *Server) {
-		s.minimumDeliverByTime = minimumDeliverByTime
+		s.minimumDeliverInSeconds = minimumDeliverInSeconds
 	}
 }
 

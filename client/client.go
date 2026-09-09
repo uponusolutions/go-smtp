@@ -461,6 +461,7 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 // to the command. Handling of unsupported options depends on the extension.
 //
 // If server returns an error, it will be of type *smtp.
+// nolint:revive
 func (c *Client) Mail(from string, opts *MailOptions) error {
 	if err := validateLine(from); err != nil {
 		return err
@@ -520,10 +521,10 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		// We can safely discard parameter if server does not support AUTH.
 	}
 	if _, ok := c.ext["DELIVERBY"]; ok && opts != nil && opts.DeliverBy != nil {
-		if opts.DeliverBy.Mode == smtp.DeliverByReturn && opts.DeliverBy.Time < 1 {
+		if opts.DeliverBy.Mode == smtp.DeliverByReturn && opts.DeliverBy.Seconds < 1 {
 			return errors.New("smtp: DELIVERBY mode must be greater than zero with return mode")
 		}
-		arg := fmt.Sprintf(" BY=%d;%s", int(opts.DeliverBy.Time.Seconds()), opts.DeliverBy.Mode)
+		arg := fmt.Sprintf(" BY=%d;%s", int(opts.DeliverBy.Seconds), opts.DeliverBy.Mode)
 		if opts.DeliverBy.Trace {
 			arg += "T"
 		}
