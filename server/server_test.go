@@ -274,7 +274,7 @@ func testServerEhlo(t *testing.T, bei *backend, opts ...server.Option) (be *back
 	_, _ = io.WriteString(c, "EHLO localhost\r\n")
 
 	scanner.Scan()
-	if scanner.Text() != "250-Hello localhost" {
+	if scanner.Text() != "250-localhost greets localhost" {
 		t.Fatal("Invalid EHLO response:", scanner.Text())
 	}
 

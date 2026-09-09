@@ -340,7 +340,7 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 	}
 
 	if !esmtp {
-		return smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, "Hello "+c.helo)
+		return smtp.NewStatusS(250, smtp.NoEnhancedCode, c.server.hostname+" greets "+c.helo)
 	}
 
 	c.mechanisms = c.session.AuthMechanisms(c.ctx)
@@ -360,7 +360,7 @@ func (c *Conn) handleGreetResponse() *smtp.Status {
 	// 17 lines is the current maximum
 	lines := make([]string, 0, 17)
 
-	lines = append(lines, "Hello "+c.helo)
+	lines = append(lines, c.server.hostname+" greets "+c.helo)
 	lines = append(lines, "PIPELINING")
 	lines = append(lines, "8BITMIME")
 	lines = append(lines, "ENHANCEDSTATUSCODES")
