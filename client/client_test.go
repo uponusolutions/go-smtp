@@ -471,6 +471,7 @@ func HelloCase(t *testing.T, i int) {
 		err = c.StartTLS(nil, "fake.host")
 		if err.Error() == "SMTP error 502: Not implemented" {
 			err = nil
+			_ = c.Quit()
 		}
 	case 2:
 		err = c.Verify("test@example.com", nil)

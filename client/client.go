@@ -65,9 +65,9 @@ type pipeliningState struct {
 type pipeliningType int
 
 const (
-	pipeliningTypeDisabled pipeliningType = iota
-	pipeliningTypeNormal
-	pipeliningTypeEnd
+	pipeliningTypeForbidden pipeliningType = iota
+	pipeliningTypeAnywhere
+	pipeliningTypeLast
 )
 
 // New returns a new smtp client.
@@ -326,7 +326,7 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, format string, a
 
 	var err error
 
-	if c.pipelining == nil || pType == pipeliningTypeEnd {
+	if c.pipelining == nil || pType == pipeliningTypeLast {
 		err = c.cfg.text.PrintfLineAndFlush(format, args...)
 	} else {
 		err = c.cfg.text.PrintfLine(format, args...)
@@ -336,9 +336,9 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, format string, a
 		return err
 	}
 
-	if c.pipelining != nil && pType > pipeliningTypeDisabled {
+	if c.pipelining != nil && pType > pipeliningTypeForbidden {
 		c.pipelining.pending++
-		if pType == pipeliningTypeEnd {
+		if pType == pipeliningTypeLast {
 			c.pipelining.ended = true
 		}
 		return nil
@@ -364,7 +364,21 @@ func (c *Client) readResponseValid(expectCode int) error {
 }
 
 // ClearResponses consumes x pending responses from pipelining
+// 0 means to clear all pending requests, -1 all except 1
 func (c *Client) ClearResponses(x int) error {
+	if c.pipelining == nil {
+		return ErrPipeliningNotEnabled
+	}
+
+	if x == 0 {
+		x = c.pipelining.pending
+	} else if x < 0 {
+		x = c.pipelining.pending + x
+		if x <= 0 {
+			return nil
+		}
+	}
+
 	for i := 0; i < x; i++ {
 		if err := c.readResponseValid(0); err != nil {
 			return err
@@ -377,7 +391,7 @@ func (c *Client) ClearResponses(x int) error {
 // server does not support ehlo.
 func (c *Client) helo() error {
 	c.ext = nil
-	return c.cmdValid(pipeliningTypeDisabled, 250, "HELO %s", c.cfg.localName)
+	return c.cmdValid(pipeliningTypeForbidden, 250, "HELO %s", c.cfg.localName)
 }
 
 // ehlo sends the EHLO (extended hello) greeting to the server. It
@@ -415,8 +429,7 @@ func (c *Client) StartTLS(config *tls.Config, serverName string) error {
 		return ErrPipeliningNoPendingRequired
 	}
 
-	if err := c.cmdValid(pipeliningTypeDisabled, 220, "STARTTLS"); err != nil {
-		_ = c.Quit()
+	if err := c.cmdValid(pipeliningTypeForbidden, 220, "STARTTLS"); err != nil {
 		return err
 	}
 
@@ -490,7 +503,7 @@ func (c *Client) Verify(addr string, opts *VrfyOptions) error {
 		}
 	}
 
-	return c.cmdValid(pipeliningTypeNormal, 250, "%s", sb.String())
+	return c.cmdValid(pipeliningTypeLast, 250, "%s", sb.String())
 }
 
 // VerifyResponse returns the result of previous send verify command if pipelining is enabled
@@ -559,7 +572,7 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 		}
 		if err != nil {
 			// abort the AUTH
-			_ = c.cmdValid(pipeliningTypeDisabled, 501, "*")
+			_ = c.cmdValid(pipeliningTypeForbidden, 501, "*")
 			break
 		}
 		if resp == nil {
@@ -656,7 +669,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		}
 		fmt.Fprintf(&sb, " MT-PRIORITY=%d", *opts.MTPriority)
 	}
-	return c.cmdValid(pipeliningTypeNormal, 250, "%s", sb.String())
+	return c.cmdValid(pipeliningTypeAnywhere, 250, "%s", sb.String())
 }
 
 // MailResponse returns the result of previous send mail command if pipelining is enabled
@@ -688,7 +701,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	if _, ok := c.ext["RRVS"]; ok && opts != nil && !opts.RequireRecipientValidSince.IsZero() {
 		fmt.Fprintf(&sb, " RRVS=%s", opts.RequireRecipientValidSince.Format(time.RFC3339))
 	}
-	return c.cmdValid(pipeliningTypeNormal, 25, "%s", sb.String())
+	return c.cmdValid(pipeliningTypeAnywhere, 25, "%s", sb.String())
 }
 
 // RcptResponse returns the result of previous send rcpt command if pipelining is enabled
@@ -752,7 +765,7 @@ func (c *Client) Content(size int) (*DataCloser, error) {
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Data() (*DataCloser, error) {
-	if err := c.cmdValid(pipeliningTypeEnd, 354, "DATA"); err != nil {
+	if err := c.cmdValid(pipeliningTypeLast, 354, "DATA"); err != nil {
 		return nil, err
 	}
 	if c.pipelining != nil {
@@ -847,7 +860,7 @@ func (c *Client) MaxMessageSize() (size int, ok bool) {
 // Reset sends the RSET command to the server, aborting the current mail
 // transaction.
 func (c *Client) Reset() error {
-	return c.cmdValid(pipeliningTypeEnd, 250, "RSET")
+	return c.cmdValid(pipeliningTypeAnywhere, 250, "RSET")
 }
 
 // ResetResponse returns the result of previous send rset command if pipelining is enabled
@@ -858,7 +871,7 @@ func (c *Client) ResetResponse() error {
 // Noop sends the NOOP command to the server. It does nothing but check
 // that the connection to the server is okay.
 func (c *Client) Noop() error {
-	return c.cmdValid(pipeliningTypeEnd, 250, "NOOP")
+	return c.cmdValid(pipeliningTypeLast, 250, "NOOP")
 }
 
 // NoopResponse returns the result of previous send noop command if pipelining is enabled
@@ -872,7 +885,7 @@ func (c *Client) Quit() error {
 	if c.conn == nil {
 		return nil
 	}
-	if err := c.cmdValid(pipeliningTypeEnd, 221, "QUIT"); err != nil {
+	if err := c.cmdValid(pipeliningTypeLast, 221, "QUIT"); err != nil {
 		_ = c.Close()
 		return err
 	}
