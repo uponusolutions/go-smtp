@@ -970,7 +970,7 @@ func TestClientDELIVERBY(t *testing.T) {
 	)
 	c := New()
 	c.setConn(fake)
-	c.ext = map[string]string{"DELIVERBY": ""}
+	c.connExt = map[string]string{"DELIVERBY": ""}
 	_ = c.Mail("root@nsa.gov", &MailOptions{
 		DeliverBy: &smtp.DeliverByOptions{
 			Seconds: 100,
@@ -1003,7 +1003,7 @@ func TestClientMTPRIORITY(t *testing.T) {
 
 	c := New()
 	c.setConn(fake)
-	c.ext = map[string]string{"MT-PRIORITY": ""}
+	c.connExt = map[string]string{"MT-PRIORITY": ""}
 	priority := 6
 	_ = c.Mail("root@nsa.gov", &MailOptions{
 		MTPriority: &priority,
