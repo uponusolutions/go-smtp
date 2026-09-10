@@ -7,8 +7,10 @@ import (
 	"embed"
 	"errors"
 	"io"
+	"net"
 	legacy "net/textproto"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,111 +21,56 @@ import (
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
-type dotReader struct {
-	r     *bufio.Reader
-	state int
-
-	limited bool
-	n       int64 // Maximum bytes remaining
-}
-
-// NewDotReader creates a new dot reader.
-func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader {
-	dr := &dotReader{
-		r: reader,
-	}
-
-	if maxMessageBytes > 0 {
-		dr.limited = true
-		dr.n = maxMessageBytes
-	}
-
-	return dr
-}
-
-// Read reads in some more bytes.
-func (r *dotReader) Read(b []byte) (n int, err error) {
-	if r.limited {
-		if r.n <= 0 {
-			return 0, smtp.ErrDataTooLarge
-		}
-		if int64(len(b)) > r.n {
-			b = b[0:r.n]
-		}
-	}
-
-	// Code below is taken from net/textproto with only one modification to
-	// not rewrite CRLF -> LF.
-
-	// Run data through a simple state machine to
-	// elide leading dots and detect End-of-Data (<CR><LF>.<CR><LF>) line.
-	const (
-		stateBeginLine = iota // beginning of line; initial state; must be zero
-		stateDot              // read . at beginning of line
-		stateDotCR            // read .\r at beginning of line
-		stateCR               // read \r (possibly at end of line)
-		stateData             // reading data in middle of line
-		stateEOF              // reached .\r\n end marker line
-	)
-	for n < len(b) && r.state != stateEOF {
-		var c byte
-		c, err = r.r.ReadByte()
-		if err != nil {
-			if err == io.EOF {
-				err = io.ErrUnexpectedEOF
-			}
-			break
-		}
-		switch r.state {
-		case stateBeginLine:
-			if c == '.' {
-				r.state = stateDot
-				continue
-			}
-			if c == '\r' {
-				r.state = stateCR
-				break
-			}
-			r.state = stateData
-		case stateDot:
-			if c == '\r' {
-				r.state = stateDotCR
-				continue
-			}
-			r.state = stateData
-		case stateDotCR:
-			if c == '\n' {
-				r.state = stateEOF
-				continue
-			}
-			r.state = stateData
-		case stateCR:
-			if c == '\n' {
-				r.state = stateBeginLine
-				break
-			}
-			r.state = stateData
-		case stateData:
-			if c == '\r' {
-				r.state = stateCR
-			}
-		default:
-		}
-		b[n] = c
-		n++
-	}
-	if err == nil && r.state == stateEOF {
-		err = io.EOF
-	}
-
-	if r.limited {
-		r.n -= int64(n)
-	}
-	return n, err
-}
-
 //go:embed testdata/reader/*
 var embedFSReader embed.FS
+
+func TestDotReaderCompare(t *testing.T) {
+	input := []string{
+		"dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n",
+		"anot.her\n",
+		"\r\n",
+		".\r\n",
+	}
+
+	for p, value := range input {
+		t.Run(strconv.Itoa(p), func(t *testing.T) {
+			readerOld := bufio.NewReader(strings.NewReader(value))
+			reader := bufio.NewReader(strings.NewReader(value))
+
+			dotReaderOld := NewDotReader(readerOld, 0)
+			bufOld := make([]byte, 1)
+
+			dotReader := textsmtp.NewDotReader(reader, 0)
+			buf := make([]byte, 1)
+
+			i := 0
+
+			for {
+				nOld, errOld := dotReaderOld.Read(bufOld)
+				n, err := dotReader.Read(buf)
+
+				require.Equal(t, bufOld, buf, i)
+				require.Equal(t, nOld, n, i)
+
+				if errOld != nil && err != io.EOF {
+					require.Equal(t, errOld, err, i)
+				}
+
+				i++
+
+				if errOld == io.EOF || errOld == io.ErrUnexpectedEOF {
+					break
+				}
+			}
+
+			bOld, errOld := io.ReadAll(readerOld)
+			b, err := io.ReadAll(reader)
+
+			require.Equal(t, errOld, err)
+			require.Equal(t, bOld, b)
+		})
+	}
+}
 
 func TestDotReader(t *testing.T) {
 	t.Run("CompareTest", func(t *testing.T) {
@@ -138,61 +85,6 @@ func TestDotReader(t *testing.T) {
 		})
 	})
 
-	t.Run("CompareTestByte", func(t *testing.T) {
-		input := "dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n"
-		readerOld := bufio.NewReader(strings.NewReader(input))
-		reader := bufio.NewReader(strings.NewReader(input))
-
-		dotReaderOld := NewDotReader(readerOld, 0)
-		bufOld := make([]byte, 1)
-
-		dotReader := textsmtp.NewDotReader(reader, 0)
-		buf := make([]byte, 1)
-
-		i := 0
-
-		for {
-			nOld, errOld := dotReaderOld.Read(bufOld)
-			n, err := dotReader.Read(buf)
-
-			require.Equal(t, bufOld, buf, i)
-			require.Equal(t, nOld, n, i)
-
-			if errOld != nil && err != io.EOF {
-				require.Equal(t, errOld, err, i)
-			}
-
-			i++
-
-			if errOld == io.EOF {
-				break
-			}
-		}
-
-		dotReaderOld = NewDotReader(readerOld, 0)
-		dotReader = textsmtp.NewDotReader(reader, 0)
-
-		i = 0
-
-		for {
-			nOld, errOld := dotReaderOld.Read(bufOld)
-			n, err := dotReader.Read(buf)
-
-			require.Equal(t, bufOld, buf, i)
-			require.Equal(t, nOld, n, i)
-
-			if errOld != nil && err != io.ErrUnexpectedEOF {
-				require.Equal(t, errOld, err, i)
-			}
-
-			i++
-
-			if errOld == io.ErrUnexpectedEOF {
-				break
-			}
-		}
-	})
-
 	t.Run("Decode", func(t *testing.T) {
 		buf := bufio.NewReader(strings.NewReader("dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n"))
 		r := textsmtp.NewDotReader(buf, 0)
@@ -204,6 +96,47 @@ func TestDotReader(t *testing.T) {
 		b, err = io.ReadAll(r)
 		require.Error(t, io.ErrUnexpectedEOF, err)
 		require.Equal(t, []byte("anot.her\n"), b)
+	})
+
+	// A live SMTP peer waits for the reply without closing the write side.
+	// Adapted from Jabberwocky238's testcase.
+	// https://github.com/Jabberwocky238/go-smtp/blob/b0673510e58009b47a2c9b6e6ca5fc189c3c5ba4/data_test.go
+	t.Run("EmptyLiveConnection", func(t *testing.T) {
+		server, client := net.Pipe()
+		defer func() {
+			_ = server.Close()
+			_ = client.Close()
+		}()
+		_ = server.SetReadDeadline(time.Now().Add(2 * time.Second))
+		done := make(chan error, 1)
+		go func() { _, err := io.WriteString(client, ".\r\n"); done <- err }()
+		buf := bufio.NewReader(server)
+		r := textsmtp.NewDotReader(buf, 0)
+		got, err := io.ReadAll(r)
+
+		require.NoError(t, err)
+		require.Len(t, got, 0, "empty DATA")
+
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// Adapted from Jabberwocky238's testcase.
+	// https://github.com/Jabberwocky238/go-smtp/blob/b0673510e58009b47a2c9b6e6ca5fc189c3c5ba4/data_test.go
+	t.Run("ZeroRead", func(t *testing.T) {
+		buf := bufio.NewReader(strings.NewReader("..first\r\n.\r\nNEXT\r\n"))
+		r := textsmtp.NewDotReader(buf, 0)
+		if n, err := r.Read(nil); n != 0 || err != nil {
+			t.Fatalf("zero read: %d, %v", n, err)
+		}
+		got, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.Equal(t, ".first\r\n", string(got))
+
+		got, err = io.ReadAll(buf)
+		require.NoError(t, err)
+		require.Equal(t, "NEXT\r\n", string(got))
 	})
 
 	t.Run("Limit", func(t *testing.T) {
