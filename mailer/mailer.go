@@ -182,7 +182,7 @@ func (c *Mailer) prepare(
 			failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
 			if err != nil {
 				// reset open mail transfer
-				if errRset := c.client.Reset(); errRset != nil {
+				if errRset := c.reset(); errRset != nil {
 					return nil, nil, errors.Join(err, errRset)
 				}
 				return nil, nil, err

@@ -44,15 +44,21 @@ type Client struct {
 	// It is created on first use and it's size is chunkingMaxSize.
 	chunkingBuffer []byte
 
-	ext map[string]string // supported extensions of the server after ehlo
-
 	// keep a reference to the connection so it can be used to create a TLS
 	// connection later
-	conn        net.Conn
-	connAddress string // Format address:port.
-	connName    string // server greet name
+	conn net.Conn
 
-	pipelining *pipeliningState
+	// connAddress is set on dial and is not reset on disconnect
+	// to be able to use ServerAddress() after disconnect
+	connAddress string // Format address:port.
+	// connName is set when the server greets the client and is not reset on disconnect
+	// to be able to use ServerAddress() after disconnect
+	connName string // server greet name
+	// connName is set when the server greets the client and is not reset on disconnect
+	// to be able to use Extension() after disconnect
+	connExt map[string]string // supported extensions of the server after ehlo
+	// connPipelining is set after ehlo and reset when connExt is set
+	connPipelining pipeliningState
 }
 
 type pipeliningState struct {
@@ -262,29 +268,28 @@ func (c *Client) Hello() error {
 		_ = c.Close()
 	}
 
-	// Enable or disable pipelining for this connection
-	if _, ok := c.ext["PIPELINING"]; c.cfg.pipelining && err == nil && ok {
-		c.pipelining = &pipeliningState{}
-	} else {
-		c.pipelining = nil
-	}
-
 	return err
 }
 
+func (c *Client) setExt(ext map[string]string) {
+	c.connExt = ext
+	c.connPipelining.ended = false
+	c.connPipelining.pending = 0
+}
+
 func (c *Client) consumeResponse() error {
-	if c.pipelining == nil {
+	if !c.PipeliningActive() {
 		return ErrPipeliningNotEnabled
 	}
 
-	if c.pipelining.pending == 0 {
+	if c.connPipelining.pending == 0 {
 		return ErrPipeliningNothingPending
 	}
 
-	c.pipelining.pending--
+	c.connPipelining.pending--
 
-	if c.pipelining.pending == 0 {
-		c.pipelining.ended = false
+	if c.connPipelining.pending == 0 {
+		c.connPipelining.ended = false
 	}
 
 	return nil
@@ -316,7 +321,7 @@ func (c *Client) cmd(expectCode int, format string, args ...any) (*smtp.Status, 
 // cmdValid is a convenience function that sends a command and returns an error if the expected code doesn't match
 // can handle pipelining
 func (c *Client) cmdValid(pType pipeliningType, expectCode int, format string, args ...any) error {
-	if c.pipelining != nil && c.pipelining.ended {
+	if c.PipeliningActive() && c.connPipelining.ended {
 		return ErrPipeliningGroupEnded
 	}
 
@@ -325,7 +330,7 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, format string, a
 
 	var err error
 
-	if c.pipelining == nil || pType == pipeliningTypeLast {
+	if !c.PipeliningActive() || pType == pipeliningTypeLast {
 		err = c.cfg.text.PrintfLineAndFlush(format, args...)
 	} else {
 		err = c.cfg.text.PrintfLine(format, args...)
@@ -335,10 +340,10 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, format string, a
 		return err
 	}
 
-	if c.pipelining != nil && pType > pipeliningTypeForbidden {
-		c.pipelining.pending++
+	if c.PipeliningActive() && pType > pipeliningTypeForbidden {
+		c.connPipelining.pending++
 		if pType == pipeliningTypeLast {
-			c.pipelining.ended = true
+			c.connPipelining.ended = true
 		}
 		return nil
 	}
@@ -365,14 +370,14 @@ func (c *Client) readResponseValid(expectCode int) error {
 // ClearResponses consumes x pending responses from pipelining
 // 0 means to clear all pending requests, -1 all except 1
 func (c *Client) ClearResponses(x int) error {
-	if c.pipelining == nil {
+	if !c.PipeliningActive() {
 		return ErrPipeliningNotEnabled
 	}
 
 	if x == 0 {
-		x = c.pipelining.pending
+		x = c.connPipelining.pending
 	} else if x < 0 {
-		x = c.pipelining.pending + x
+		x = c.connPipelining.pending + x
 		if x <= 0 {
 			return nil
 		}
@@ -389,7 +394,7 @@ func (c *Client) ClearResponses(x int) error {
 // helo sends the HELO greeting to the server. It should be used only when the
 // server does not support ehlo.
 func (c *Client) helo() error {
-	c.ext = nil
+	c.setExt(nil)
 	return c.cmdValid(pipeliningTypeForbidden, 250, "HELO %s", c.cfg.localName)
 }
 
@@ -412,7 +417,7 @@ func (c *Client) ehlo() error {
 			}
 		}
 	}
-	c.ext = ext
+	c.setExt(ext)
 	return err
 }
 
@@ -421,10 +426,10 @@ func (c *Client) ehlo() error {
 //
 // A nil config is equivalent to a zero tls.Config.
 //
-// If server returns an error, it will be of type *smtp.
-// if an error occurred the connection is closed
+// If the server rejects the command it returns the error and the connection is not closed.
+// If the server accepts the command but the tls handshake fails, the connection is closed.
 func (c *Client) StartTLS(config *tls.Config, serverName string) error {
-	if c.pipelining != nil && c.pipelining.pending > 0 {
+	if c.PipeliningActive() && c.connPipelining.pending > 0 {
 		return ErrPipeliningNoPendingRequired
 	}
 
@@ -474,7 +479,8 @@ func (c *Client) TLSConnectionState() (tls.ConnectionState, bool) {
 
 // PipeliningActive return if pipelining is active.
 func (c *Client) PipeliningActive() bool {
-	return c.pipelining != nil
+	_, ok := c.connExt["PIPELINING"]
+	return ok && c.cfg.pipelining && c.conn != nil
 }
 
 // Verify checks the validity of an email address on the server.
@@ -495,7 +501,7 @@ func (c *Client) Verify(addr string, opts *VrfyOptions) error {
 
 	// By default utf8 is preferred
 	if opts == nil || opts.UTF8 != UTF8Disabled {
-		if _, ok := c.ext["SMTPUTF8"]; ok {
+		if _, ok := c.connExt["SMTPUTF8"]; ok {
 			sb.WriteString(" SMTPUTF8")
 		} else if opts != nil && opts.UTF8 == UTF8Force {
 			return errors.New("smtp: server does not support SMTPUTF8")
@@ -515,7 +521,7 @@ func (c *Client) VerifyResponse() error {
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Auth(saslClient sasl.Client) error {
-	if c.pipelining != nil && c.pipelining.pending > 0 {
+	if c.PipeliningActive() && c.connPipelining.pending > 0 {
 		return ErrPipeliningNoPendingRequired
 	}
 
@@ -603,27 +609,27 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 	// A high enough power of 2 than 510+14+26+11+9+9+39+500
 	sb.Grow(2048)
 	fmt.Fprintf(&sb, "MAIL FROM:<%s>", from)
-	if _, ok := c.ext["8BITMIME"]; ok {
+	if _, ok := c.connExt["8BITMIME"]; ok {
 		sb.WriteString(" BODY=8BITMIME")
 	}
-	if _, ok := c.ext["SIZE"]; ok && opts != nil && opts.Size != 0 {
+	if _, ok := c.connExt["SIZE"]; ok && opts != nil && opts.Size != 0 {
 		fmt.Fprintf(&sb, " SIZE=%v", opts.Size)
 	}
 	if opts != nil && opts.RequireTLS {
-		if _, ok := c.ext["REQUIRETLS"]; !ok {
+		if _, ok := c.connExt["REQUIRETLS"]; !ok {
 			return errors.New("smtp: server does not support REQUIRETLS")
 		}
 		sb.WriteString(" REQUIRETLS")
 	}
 	// By default utf8 is preferred
 	if opts == nil || opts.UTF8 != UTF8Disabled {
-		if _, ok := c.ext["SMTPUTF8"]; ok {
+		if _, ok := c.connExt["SMTPUTF8"]; ok {
 			sb.WriteString(" SMTPUTF8")
 		} else if opts != nil && opts.UTF8 == UTF8Force {
 			return errors.New("smtp: server does not support SMTPUTF8")
 		}
 	}
-	if _, ok := c.ext["DSN"]; ok && opts != nil {
+	if _, ok := c.connExt["DSN"]; ok && opts != nil {
 		switch opts.Return {
 		case smtp.DSNReturnFull, smtp.DSNReturnHeaders:
 			fmt.Fprintf(&sb, " RET=%s", string(opts.Return))
@@ -640,19 +646,19 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		}
 	}
 	if opts != nil && opts.Auth != nil {
-		if _, ok := c.ext["AUTH"]; ok {
+		if _, ok := c.connExt["AUTH"]; ok {
 			fmt.Fprintf(&sb, " AUTH=%s", encodeXtext(*opts.Auth))
 		}
 		// We can safely discard parameter if server does not support AUTH.
 	}
 
 	if opts != nil && opts.XOORG != nil {
-		if _, ok := c.ext["XOORG"]; ok {
+		if _, ok := c.connExt["XOORG"]; ok {
 			fmt.Fprintf(&sb, " XOORG=%s", encodeXtext(*opts.XOORG))
 		}
 		// We can safely discard parameter if server does not support AUTH.
 	}
-	if _, ok := c.ext["DELIVERBY"]; ok && opts != nil && opts.DeliverBy != nil {
+	if _, ok := c.connExt["DELIVERBY"]; ok && opts != nil && opts.DeliverBy != nil {
 		if opts.DeliverBy.Mode == smtp.DeliverByReturn && opts.DeliverBy.Seconds < 1 {
 			return errors.New("smtp: DELIVERBY mode must be greater than zero with return mode")
 		}
@@ -662,7 +668,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		}
 		sb.WriteString(arg)
 	}
-	if _, ok := c.ext["MT-PRIORITY"]; ok && opts != nil && opts.MTPriority != nil {
+	if _, ok := c.connExt["MT-PRIORITY"]; ok && opts != nil && opts.MTPriority != nil {
 		if *opts.MTPriority < -9 || *opts.MTPriority > 9 {
 			return errors.New("smtp: MT-PRIORITY must be between -9 and 9")
 		}
@@ -692,12 +698,12 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	// A high enough power of 2 than 510+29+501
 	sb.Grow(2048)
 	fmt.Fprintf(&sb, "RCPT TO:<%s>", to)
-	if _, ok := c.ext["DSN"]; ok && opts != nil {
-		if err := rcptDSN(&sb, opts, c.ext); err != nil {
+	if _, ok := c.connExt["DSN"]; ok && opts != nil {
+		if err := rcptDSN(&sb, opts, c.connExt); err != nil {
 			return err
 		}
 	}
-	if _, ok := c.ext["RRVS"]; ok && opts != nil && !opts.RequireRecipientValidSince.IsZero() {
+	if _, ok := c.connExt["RRVS"]; ok && opts != nil && !opts.RequireRecipientValidSince.IsZero() {
 		fmt.Fprintf(&sb, " RRVS=%s", opts.RequireRecipientValidSince.Format(time.RFC3339))
 	}
 	return c.cmdValid(pipeliningTypeAnywhere, 25, "%s", sb.String())
@@ -751,7 +757,7 @@ func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string)
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Content(size int) (*DataCloser, error) {
-	if _, ok := c.ext["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
+	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
 		return c.Bdat(size)
 	}
 	return c.Data()
@@ -767,7 +773,7 @@ func (c *Client) Data() (*DataCloser, error) {
 	if err := c.cmdValid(pipeliningTypeLast, 354, "DATA"); err != nil {
 		return nil, err
 	}
-	if c.pipelining != nil {
+	if c.PipeliningActive() {
 		return nil, nil
 	}
 	return &DataCloser{c: c, writer: textsmtp.NewDotWriter(c.cfg.text.W)}, nil
@@ -791,7 +797,7 @@ func (c *Client) Bdat(size int) (*DataCloser, error) {
 	if c.cfg.chunkingMaxSize < 0 {
 		return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
 	}
-	if _, ok := c.ext["CHUNKING"]; !ok {
+	if _, ok := c.connExt["CHUNKING"]; !ok {
 		return nil, errors.New("smtp: server doesn't support chunking")
 	}
 
@@ -822,13 +828,13 @@ func (c *Client) Bdat(size int) (*DataCloser, error) {
 // server specifies for the extension.
 func (c *Client) Extension(ext string) (bool, string) {
 	ext = strings.ToUpper(ext)
-	param, ok := c.ext[ext]
+	param, ok := c.connExt[ext]
 	return ok, param
 }
 
 // SupportsAuth checks whether an authentication mechanism is supported.
 func (c *Client) SupportsAuth(mech string) bool {
-	mechs, ok := c.ext["AUTH"]
+	mechs, ok := c.connExt["AUTH"]
 	if !ok {
 		return false
 	}
@@ -845,7 +851,7 @@ func (c *Client) SupportsAuth(mech string) bool {
 //
 // If the server doesn't convey this information, ok = false is returned.
 func (c *Client) MaxMessageSize() (size int, ok bool) {
-	v := c.ext["SIZE"]
+	v := c.connExt["SIZE"]
 	if v == "" {
 		return 0, false
 	}
@@ -880,6 +886,8 @@ func (c *Client) NoopResponse() error {
 
 // Quit sends the QUIT command and closes the connection to the server.
 // If Quit fails the connection will still be closed.
+// If pipelining is active and the command is send successful,
+// the connection is only closed after QuitResponse is called.
 func (c *Client) Quit() error {
 	if c.conn == nil {
 		return nil
@@ -889,7 +897,7 @@ func (c *Client) Quit() error {
 		return err
 	}
 
-	if c.pipelining != nil {
+	if c.PipeliningActive() {
 		return nil
 	}
 

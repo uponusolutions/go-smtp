@@ -58,6 +58,13 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+func TestClient_DisconnectTwicePipeline(t *testing.T) {
+	c := New(WithServerAddresses(addr), WithBasic(client.WithPipelining(true)))
+	require.NoError(t, c.Connect(t.Context()))
+	require.NoError(t, c.Terminate())
+	require.NoError(t, c.Disconnect())
+}
+
 func TestClient_ChunkingErrors(t *testing.T) {
 	c := New(WithServerAddresses(addr))
 	require.NotNil(t, c)
@@ -250,7 +257,7 @@ func TestClient_SendMailAutoconnectAbortOnRcptReject(t *testing.T) {
 	require.NotNil(t, c)
 
 	defer func() {
-		require.NoError(t, c.client.Quit())
+		require.NoError(t, c.Disconnect())
 	}()
 
 	data := []byte("Hello World!")
@@ -279,7 +286,7 @@ func TestClient_SendMailAutoconnectAbortOnRcptRejectPipelining(t *testing.T) {
 	require.NotNil(t, c)
 
 	defer func() {
-		require.NoError(t, c.client.Quit())
+		require.NoError(t, c.Disconnect())
 	}()
 
 	data := []byte("Hello World!")
@@ -308,7 +315,7 @@ func TestClient_SendMailAutoconnectAbortOnRcptRejectAll(t *testing.T) {
 	require.NotNil(t, c)
 
 	defer func() {
-		require.NoError(t, c.client.Quit())
+		require.NoError(t, c.Disconnect())
 	}()
 
 	data := []byte("Hello World!")
@@ -337,7 +344,7 @@ func TestClient_SendMailAutoconnectAbortOnRcptRejectAllPipelining(t *testing.T) 
 	require.NotNil(t, c)
 
 	defer func() {
-		require.NoError(t, c.client.Quit())
+		require.NoError(t, c.Disconnect())
 	}()
 
 	data := []byte("Hello World!")

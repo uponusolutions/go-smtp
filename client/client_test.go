@@ -829,7 +829,7 @@ func TestClientXtext(t *testing.T) {
 	c := New()
 	c.setConn(fake)
 
-	c.ext = map[string]string{"AUTH": "PLAIN", "DSN": ""}
+	c.connExt = map[string]string{"AUTH": "PLAIN", "DSN": ""}
 	email := "e=mc2@example.com"
 	require.Error(t, c.Mail(email, &MailOptions{Auth: &email}))
 	require.NoError(t, c.Rcpt(email, &smtp.RcptOptions{
@@ -871,7 +871,7 @@ func TestClientDSN(t *testing.T) {
 	c := New()
 	c.setConn(fake)
 
-	c.ext = map[string]string{"DSN": ""}
+	c.connExt = map[string]string{"DSN": ""}
 	require.Error(t, c.Mail(dsnEmailRFC822, &MailOptions{
 		Return:     smtp.DSNReturnHeaders,
 		EnvelopeID: dsnEnvelopeID,
@@ -886,7 +886,7 @@ func TestClientDSN(t *testing.T) {
 		OriginalRecipient:     dsnEmailUTF8,
 		Notify:                []smtp.DSNNotify{smtp.DSNNotifyFailure, smtp.DSNNotifyDelayed},
 	}))
-	c.ext["SMTPUTF8"] = ""
+	c.connExt["SMTPUTF8"] = ""
 	require.NoError(t, c.Rcpt(dsnEmailUTF8, &smtp.RcptOptions{
 		OriginalRecipientType: smtp.DSNAddressTypeUTF8,
 		OriginalRecipient:     dsnEmailUTF8,
@@ -898,7 +898,7 @@ func TestClientDSN(t *testing.T) {
 }
 
 func (c *Client) Test() map[string]string {
-	return c.ext
+	return c.connExt
 }
 
 // A SASL initial response too large to inline within the 512-octet command-line
