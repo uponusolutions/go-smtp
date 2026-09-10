@@ -257,6 +257,15 @@ func s1(b *testing.B, t testcase) {
 		}
 	})
 
+	b.Run(t.name+"WithChunkingWithPipelining", func(b *testing.B) {
+		if os.Getenv("SETBYTES") == "" {
+			b.SetBytes(int64(len(t.eml)))
+		}
+		for b.Loop() {
+			_ = sendMail(addr1, t.eml, false, true)
+		}
+	})
+
 	b.Run(t.name+"WithChunkingSimpleReader", func(b *testing.B) {
 		if os.Getenv("SETBYTES") == "" {
 			b.SetBytes(int64(len(t.eml)))

@@ -194,13 +194,13 @@ func (c *Mailer) prepare(
 	// sync before calling data if abortOnRcptReject is true
 	if c.client.PipeliningActive() && c.cfg.abortOnRcptReject {
 		var err error
-		if _, failures, err = c.handleResponses(pipelining, rcpts, failures); err != nil {
+		if _, failures, err = c.handleResponses(pipelining, rcpts, failures, size); err != nil {
 			return nil, failures, err
 		}
 	}
 
 	// DATA
-	w, err := c.client.Data() // (size)
+	w, err := c.client.Content(size)
 	if err != nil {
 		return nil, failures, err
 	}
@@ -208,13 +208,13 @@ func (c *Mailer) prepare(
 
 	// pipelining is active
 	if w == nil {
-		return c.handleResponses(pipelining, rcpts, failures)
+		return c.handleResponses(pipelining, rcpts, failures, size)
 	}
 
 	return w, failures, nil
 }
 
-func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, failures []resolve.Failure) (*client.DataCloser, []resolve.Failure, error) {
+func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, failures []resolve.Failure, size int) (*client.DataCloser, []resolve.Failure, error) {
 	if pipelining.mail {
 		pipelining.mail = false
 		if err := c.client.MailResponse(); err != nil {
@@ -248,7 +248,7 @@ func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, 
 
 	if pipelining.data {
 		pipelining.data = false
-		w, err := c.client.DataResponse()
+		w, err := c.client.ContentResponse(size)
 		if err != nil {
 			if errReset := c.reset(); errReset != nil {
 				return nil, failures, errors.Join(err, errReset)

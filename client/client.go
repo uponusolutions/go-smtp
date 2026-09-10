@@ -758,9 +758,20 @@ func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string)
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Content(size int) (*DataCloser, error) {
 	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
+		if c.PipeliningActive() {
+			return nil, nil
+		}
 		return c.Bdat(size)
 	}
 	return c.Data()
+}
+
+// ContentResponse returns the result of previous send data command if pipelining is enabled
+func (c *Client) ContentResponse(size int) (*DataCloser, error) {
+	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
+		return c.Bdat(size)
+	}
+	return c.DataResponse()
 }
 
 // Data issues a DATA command to the server and returns a writer that
@@ -794,6 +805,10 @@ func (c *Client) DataResponse() (*DataCloser, error) {
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Bdat(size int) (*DataCloser, error) {
+	if c.PipeliningActive() && c.connPipelining.pending > 0 {
+		return nil, ErrPipeliningNoPendingRequired
+	}
+
 	if c.cfg.chunkingMaxSize < 0 {
 		return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
 	}
