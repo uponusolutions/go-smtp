@@ -951,3 +951,65 @@ func (a largeInitialRespAuth) Start() (proto string, toServer []byte, err error)
 func (largeInitialRespAuth) Next(_ []byte) (toServer []byte, err error) {
 	return nil, nil
 }
+
+var deliverByServer = `220 hello world
+250 ok
+`
+
+var deliverByClient = `MAIL FROM:<root@nsa.gov> BY=100;RT
+`
+
+func TestClientDELIVERBY(t *testing.T) {
+	server := strings.Join(strings.Split(deliverByServer, "\n"), "\r\n")
+	client := strings.Join(strings.Split(deliverByClient, "\n"), "\r\n")
+
+	var wrote bytes.Buffer
+	fake := tester.NewFakeConnStream(
+		strings.NewReader(server),
+		&wrote,
+	)
+	c := New()
+	c.setConn(fake)
+	c.ext = map[string]string{"DELIVERBY": ""}
+	_ = c.Mail("root@nsa.gov", &MailOptions{
+		DeliverBy: &smtp.DeliverByOptions{
+			Seconds: 100,
+			Mode:    smtp.DeliverByReturn,
+			Trace:   true,
+		},
+	})
+	_ = c.Close()
+	if actualcmds := wrote.String(); client != actualcmds {
+		t.Errorf("wrote %q; want %q", actualcmds, client)
+	}
+}
+
+var mtPriorityServer = `220 hello world
+250 ok
+`
+
+var mtPriorityClient = `MAIL FROM:<root@nsa.gov> MT-PRIORITY=6
+`
+
+func TestClientMTPRIORITY(t *testing.T) {
+	server := strings.Join(strings.Split(mtPriorityServer, "\n"), "\r\n")
+	client := strings.Join(strings.Split(mtPriorityClient, "\n"), "\r\n")
+	var wrote bytes.Buffer
+
+	fake := tester.NewFakeConnStream(
+		strings.NewReader(server),
+		&wrote,
+	)
+
+	c := New()
+	c.setConn(fake)
+	c.ext = map[string]string{"MT-PRIORITY": ""}
+	priority := 6
+	_ = c.Mail("root@nsa.gov", &MailOptions{
+		MTPriority: &priority,
+	})
+	_ = c.Close()
+	if actualcmds := wrote.String(); client != actualcmds {
+		t.Errorf("wrote %q; want %q", actualcmds, client)
+	}
+}
