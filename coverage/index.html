@@ -75,7 +75,7 @@
 				
 				<option value="file9">github.com/uponusolutions/go-smtp/internal/textsmtp/bdatwriterbuffered.go (87.8%)</option>
 				
-				<option value="file10">github.com/uponusolutions/go-smtp/internal/textsmtp/dotreader.go (100.0%)</option>
+				<option value="file10">github.com/uponusolutions/go-smtp/internal/textsmtp/dotreader.go (97.7%)</option>
 				
 				<option value="file11">github.com/uponusolutions/go-smtp/internal/textsmtp/dotwriter.go (79.1%)</option>
 				
@@ -1847,7 +1847,7 @@ func NewBdatReader(arg string, maxMessageBytes int64, input io.Reader, nextComma
         }, nil</span>
 }
 
-func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="52">{
+func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="53">{
         if d.size == 0 </span><span class="cov8" title="25">{
                 if d.last </span><span class="cov5" title="7">{
                         return 0, io.EOF
@@ -1864,7 +1864,7 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="52">
                 }
 
                 <span class="cov6" title="12">switch cmd </span>{
-                case "BDAT":<span class="cov6" title="9">
+                case "BDAT":<span class="cov5" title="9">
                         d.size, d.last, err = bdatArg(arg)
                         if err != nil </span><span class="cov1" title="1">{
                                 return 0, err
@@ -1882,15 +1882,15 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="52">
                 }
         }
 
-        <span class="cov9" title="34">if d.maxMessageBytes != 0 &amp;&amp; d.bytesReceived+d.size &gt; d.maxMessageBytes </span><span class="cov3" title="3">{
+        <span class="cov9" title="35">if d.maxMessageBytes != 0 &amp;&amp; d.bytesReceived+d.size &gt; d.maxMessageBytes </span><span class="cov3" title="3">{
                 return 0, smtp.ErrDataTooLarge
         }</span>
 
-        <span class="cov8" title="31">if d.chunk == nil </span><span class="cov8" title="22">{
+        <span class="cov8" title="32">if d.chunk == nil </span><span class="cov8" title="22">{
                 d.chunk = io.LimitReader(d.input, int64(d.size))
         }</span>
 
-        <span class="cov8" title="31">n, err := d.chunk.Read(b)
+        <span class="cov8" title="32">n, err := d.chunk.Read(b)
         d.bytesReceived += int64(n)
         d.size -= int64(n)
 
@@ -1899,7 +1899,7 @@ func (d *bdatReader) Read(b []byte) (int, error) <span class="cov10" title="52">
                 err = smtp.ErrConnection
         }</span>
 
-        <span class="cov8" title="31">return n, err</span>
+        <span class="cov8" title="32">return n, err</span>
 }
 </pre>
 		
@@ -2219,7 +2219,7 @@ type dotReader struct {
 }
 
 // NewDotReader creates a new dot reader.
-func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span class="cov6" title="8131">{
+func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span class="cov6" title="8135">{
         dr := &amp;dotReader{
                 r: reader,
         }
@@ -2229,54 +2229,26 @@ func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader <span c
                 dr.n = maxMessageBytes
         }</span>
 
-        <span class="cov6" title="8131">return dr</span>
-}
-
-func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="1169825">{
-        if err == nil </span><span class="cov9" title="1165770">{
-                l := len(c)
-
-                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="10647">{
-                        // Ends with \r\n, write everything before.
-                        return copy(b, c[:l-2])
-                }</span>
-
-                <span class="cov9" title="1155123">if l &gt; 0 &amp;&amp; c[l-1] == '\r' </span><span class="cov6" title="2943">{
-                        // Ends with \r, write everything before.
-                        return copy(b, c[:l-1])
-                }</span>
-        }
-
-        <span class="cov9" title="1156235">return copy(b, c)</span>
+        <span class="cov6" title="8135">return dr</span>
 }
 
 const (
-        stateBeginLine = iota // Beginning of line; initial state; must be zero.
-        stateCR               // Wrote \r.
-        stateEOF              // Reached .\r\n end marker line.
+        stateBegin = iota // Initial state, beginning of first line.
+        stateLine         // Somewhere inside a line.
+        stateCR           // Wrote \r.
+        stateEOF          // Reached .\r\n end marker line.
 )
-
-func (r *dotReader) peekMin5(blen int) ([]byte, error) <span class="cov9" title="1174337">{
-        // IMPORTANT: We cannot wait on read,
-        // because no EOL returns. So we call peek with 5 to fill the buffer probably with more
-        // to get as much data as possible in the second peek.
-        if r.r.Buffered() &lt; 5 </span><span class="cov9" title="1032230">{
-                _, _ = r.r.Peek(5)
-        }</span>
-        // min 5, max buffer size, default len(b)
-        <span class="cov9" title="1174337">return r.r.Peek(max(min(blen, r.r.Buffered()), 5))</span>
-}
 
 // Read reads in some more bytes.
 // Run data through a simple state machine to
 // elide leading dots and detect End-of-Data
 // (&lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;) line.
-func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1174364">{
+func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1174366">{
         if r.state == stateEOF </span><span class="cov3" title="24">{
                 return 0, io.EOF
         }</span>
 
-        <span class="cov9" title="1174340">if r.limited </span><span class="cov2" title="16">{
+        <span class="cov9" title="1174342">if r.limited </span><span class="cov2" title="16">{
                 if r.n &lt;= 0 </span><span class="cov1" title="3">{
                         return 0, smtp.ErrDataTooLarge
                 }</span>
@@ -2286,94 +2258,154 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="117436
                 }</span>
         }
 
-        <span class="cov9" title="1174337">var n int       // Data written to b.
+        <span class="cov9" title="1174339">var n int       // Data written to b.
         var skipped int // How many.
 
-        c, err := r.peekMin5(len(b))
+        c, err := r.peek(len(b))
 
         // To reach this state it is necessary that 5 bytes are still in the buffer ready to be consumed.
         // So there shouldn't be a case where err happens and there aren't 5 bytes in c at this point.
-        if r.state == stateCR </span><span class="cov1" title="4">{
+        switch r.state </span>{
+        case stateCR:<span class="cov1" title="4">
                 // write \n
                 b[0] = '\n'
                 n++
                 skipped += 2
-                r.state = stateBeginLine
                 if c[3] == '\r' &amp;&amp; c[4] == '\n' </span><span class="cov1" title="2">{
                         r.state = stateEOF
                         skipped += 2 // skip .\n\r
-                }</span> else<span class="cov1" title="2"> {
-                        b = b[1:]
-                        c = c[3:]
+                        return r.finalize(n, skipped, err)
                 }</span>
-        }
+                <span class="cov1" title="2">r.state = stateLine
+                b = b[1:]
+                c = c[3:]</span>
+        case stateBegin:<span class="cov6" title="8135">
+                // nothing to do
+                if len(c) == 0 </span><span class="cov0" title="0">{
+                        return r.finalize(n, skipped, err)
+                }</span>
 
-        <span class="cov9" title="1174337">if r.state != stateEOF </span><span class="cov9" title="1174335">{
-                for </span><span class="cov10" title="1239096">{
-                        i := bytes.Index(c, smtp.Crlfdot)
+                <span class="cov6" title="8135">if c[0] == '.' </span><span class="cov1" title="3">{
+                        // need to check .\r\n
+                        if len(c) &lt; 3 </span><span class="cov0" title="0">{
+                                return r.finalize(n, skipped, err)
+                        }</span>
 
-                        // No full \r\n. found.
-                        if i == -1 </span><span class="cov9" title="1169825">{
-                                n += noCrlfDotFound(err, b, c)
-                                break</span>
-                        }
-
-                        <span class="cov8" title="69271">if len(c)-1 &lt; i+4 </span><span class="cov4" title="431">{
-                                // i is \r, \n.\r\n needs to be accessible
-                                if err != nil </span><span class="cov1" title="2">{
-                                        // No more data, just read to the end.
-                                        n += copy(b, c[:i+2])
-                                        skipped++
-                                }</span> else<span class="cov4" title="429"> if i &gt; 0 </span><span class="cov4" title="429">{
-                                        // Not enough bytes to check for \r\n.\r\n,
-                                        // write everything before
-                                        n += copy(b, c[:i])
-                                }</span>
-
-                                <span class="cov4" title="431">break</span>
-                        }
-
-                        <span class="cov8" title="68840">p := copy(b, c[:i+2])
-                        n += p
-
-                        // b was to small
-                        if p &lt; i+2 </span><span class="cov2" title="5">{
-                                // we only wrote \r
-                                if i+2-p == 1 </span><span class="cov2" title="5">{
-                                        r.state = stateCR // Next time we want to write '\n'.
-                                        skipped--         // Prevent \r from being discarded
-                                }</span>
-                                <span class="cov2" title="5">break</span>
-                        }
-
-                        // The end \r\n.\n\r
-                        <span class="cov8" title="68835">if c[i+3] == '\r' &amp;&amp; c[i+4] == '\n' </span><span class="cov6" title="4074">{
+                        // already finish, empty data
+                        <span class="cov1" title="3">if c[1] == '\r' &amp;&amp; c[2] == '\n' </span><span class="cov1" title="2">{
+                                skipped += 3
                                 r.state = stateEOF
-                                skipped += 3 // skip .\r\n
-                                break</span>
-                        }
+                                return r.finalize(n, skipped, err)
+                        }</span>
 
-                        <span class="cov8" title="64761">skipped++ // . isn't written
-                        b = b[i+2:]
-                        c = c[i+3:]</span>
+                        <span class="cov1" title="1">skipped++
+                        c = c[1:]</span>
                 }
+                <span class="cov6" title="8133">r.state = stateLine</span>
+        default:<span class="cov9" title="1166200"></span>
         }
 
+        <span class="cov9" title="1174335">for </span><span class="cov10" title="1239096">{
+                i := bytes.Index(c, smtp.Crlfdot)
+
+                // No full \r\n. found.
+                if i == -1 </span><span class="cov9" title="1169826">{
+                        n += noCrlfDotFound(err, b, c)
+                        break</span>
+                }
+
+                <span class="cov8" title="69270">if len(c)-1 &lt; i+4 </span><span class="cov4" title="429">{
+                        // i is \r, \n.\r\n needs to be accessible
+                        if err != nil </span><span class="cov1" title="2">{
+                                // No more data, just read to the end.
+                                n += copy(b, c[:i+2])
+                                skipped++
+                        }</span> else<span class="cov4" title="427"> if i &gt; 0 </span><span class="cov4" title="427">{
+                                // Not enough bytes to check for \r\n.\r\n,
+                                // write everything before
+                                n += copy(b, c[:i])
+                        }</span>
+                        <span class="cov4" title="429">break</span>
+                }
+
+                <span class="cov8" title="68841">p := copy(b, c[:i+2])
+                n += p
+
+                // b was to small
+                if p &lt; i+2 </span><span class="cov2" title="5">{
+                        // we only wrote \r
+                        if i+2-p == 1 </span><span class="cov2" title="5">{
+                                r.state = stateCR // Next time we want to write '\n'.
+                                skipped--         // Prevent \r from being discarded
+                        }</span>
+                        <span class="cov2" title="5">break</span>
+                }
+
+                // The end \r\n.\n\r
+                <span class="cov8" title="68836">if c[i+3] == '\r' &amp;&amp; c[i+4] == '\n' </span><span class="cov6" title="4075">{
+                        r.state = stateEOF
+                        skipped += 3 // skip .\r\n
+                        break</span>
+                }
+
+                <span class="cov8" title="64761">skipped++ // . isn't written
+                b = b[i+2:]
+                c = c[i+3:]</span>
+        }
+
+        <span class="cov9" title="1174335">return r.finalize(n, skipped, err)</span>
+}
+
+func (r *dotReader) finalize(n int, skipped int, err error) (int, error) <span class="cov9" title="1174339">{
         // n + skipped is always smaller then what was peeked,
         // so it is guaranteed to work
-        <span class="cov9" title="1174337">_, _ = r.r.Discard(n + skipped)
+        _, _ = r.r.Discard(n + skipped)
 
-        if err == io.EOF &amp;&amp; r.state != stateEOF </span><span class="cov6" title="4055">{
+        if err == io.EOF &amp;&amp; r.state != stateEOF </span><span class="cov6" title="4058">{
                 err = io.ErrUnexpectedEOF
-        }</span> else<span class="cov9" title="1170282"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov6" title="4076">{
+        }</span> else<span class="cov9" title="1170281"> if err == nil &amp;&amp; r.state == stateEOF </span><span class="cov6" title="4079">{
                 err = io.EOF
         }</span>
 
-        <span class="cov9" title="1174337">if r.limited </span><span class="cov2" title="13">{
+        <span class="cov9" title="1174339">if r.limited </span><span class="cov2" title="13">{
                 r.n -= int64(n)
         }</span>
 
-        <span class="cov9" title="1174337">return n, err</span>
+        <span class="cov9" title="1174339">return n, err</span>
+}
+
+func noCrlfDotFound(err error, b []byte, c []byte) int <span class="cov9" title="1169826">{
+        if err == nil </span><span class="cov9" title="1165768">{
+                l := len(c)
+
+                if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' </span><span class="cov6" title="10642">{
+                        // Ends with \r\n, write everything before.
+                        return copy(b, c[:l-2])
+                }</span>
+
+                <span class="cov9" title="1155126">if l &gt; 0 &amp;&amp; c[l-1] == '\r' </span><span class="cov6" title="2943">{
+                        // Ends with \r, write everything before.
+                        return copy(b, c[:l-1])
+                }</span>
+        }
+
+        <span class="cov9" title="1156241">return copy(b, c)</span>
+}
+
+func (r *dotReader) peek(blen int) ([]byte, error) <span class="cov9" title="1174339">{
+        minimumPeek := 5
+        if r.state == stateBegin </span><span class="cov6" title="8135">{
+                minimumPeek = 3
+        }</span>
+
+        // IMPORTANT: We cannot wait on read,
+        // because no EOL returns. So we call peek with minimumPeek to fill the buffer probably with more
+        // to get as much data as possible in the second peek.
+        <span class="cov9" title="1174339">if r.r.Buffered() &lt; minimumPeek </span><span class="cov9" title="1032232">{
+                _, _ = r.r.Peek(minimumPeek)
+        }</span>
+        // min 5, max buffer size, default len(b)
+        <span class="cov9" title="1174339">return r.r.Peek(max(min(blen, r.r.Buffered()), minimumPeek))</span>
 }
 </pre>
 		
@@ -2752,7 +2784,7 @@ func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov10" title="6
         <span class="cov9" title="627">var line []byte
         for </span><span class="cov9" title="627">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov6" title="56">{
+                if err != nil </span><span class="cov6" title="57">{
                         return nil, err
                 }</span>
 
@@ -3873,7 +3905,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="70">{
 
         for </span><span class="cov8" title="352">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov6" title="58">{
+                if err != nil </span><span class="cov6" title="59">{
                         return err
                 }</span>
 
@@ -3901,7 +3933,7 @@ func (c *Conn) run() (err error) <span class="cov6" title="70">{
 // The command is always returned upper case.
 func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov8" title="358">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov6" title="56">{
+        if err != nil </span><span class="cov6" title="57">{
                 return "", "", err
         }</span>
         <span class="cov8" title="297">return parse.Cmd(line)</span>
@@ -4048,26 +4080,26 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov6" title="65">{
+func (c *Conn) Close(err error) <span class="cov6" title="66">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov5" title="39">{
+        if closeErr != nil </span><span class="cov5" title="40">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov5" title="39"> {
+                }</span> else<span class="cov5" title="40"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
 
-        <span class="cov6" title="65">if err != nil </span><span class="cov6" title="59">{
+        <span class="cov6" title="66">if err != nil </span><span class="cov6" title="60">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
-        <span class="cov6" title="65">if c.session != nil </span><span class="cov6" title="65">{
+        <span class="cov6" title="66">if c.session != nil </span><span class="cov6" title="66">{
                 c.session.Close(c.ctx, err)
                 c.session = nil
         }</span>
@@ -4235,8 +4267,8 @@ func (c *Conn) handleGreetResponse() *smtp.Status <span class="cov6" title="68">
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov6" title="64">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="54">{
+func (c *Conn) handleError(err error) <span class="cov6" title="65">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov6" title="55">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -4269,13 +4301,13 @@ func (c *Conn) handleError(err error) <span class="cov6" title="64">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="949">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="951">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="949">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="949">{
+        <span class="cov10" title="951">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="951">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -4824,7 +4856,7 @@ func (c *Conn) writeStatus(status *smtp.Status) <span class="cov8" title="424">{
         // PIPELINE support
         // If there is something buffered in c.text.R then we can assume another command is following.
         // This means the client is doing pipelining and we don't need to respond just now.
-        if c.text.R.Buffered() == 0 </span><span class="cov8" title="417">{
+        if c.text.R.Buffered() == 0 </span><span class="cov8" title="415">{
                 _ = c.text.W.Flush()
         }</span>
 }
@@ -4846,7 +4878,7 @@ func (c *Conn) readLine() (string, error) <span class="cov8" title="390">{
         if err == nil </span><span class="cov8" title="329">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov8" title="385">return line, err</span>
+        <span class="cov8" title="386">return line, err</span>
 }
 
 func (c *Conn) reset() error <span class="cov5" title="43">{
@@ -5151,7 +5183,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
 
         var err error
 
-        defer func() </span><span class="cov8" title="65">{
+        defer func() </span><span class="cov8" title="66">{
                 if err := recover(); err != nil </span><span class="cov1" title="1">{
                         c.writeStatus(smtp.NewStatusS(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error"))
                         stack := debug.Stack()
@@ -5164,7 +5196,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) <span class="cov
                         c.Close(errors.New("recovered from panic inside handleConn"))
                 }</span>
 
-                <span class="cov8" title="65">s.locker.Lock()
+                <span class="cov8" title="66">s.locker.Lock()
                 delete(s.conns, c)
                 s.locker.Unlock()
 
@@ -5285,7 +5317,7 @@ func (s *Server) Close() error <span class="cov8" title="47">{
                 }</span>
         }
 
-        <span class="cov8" title="47">for conn := range s.conns </span><span class="cov7" title="40">{
+        <span class="cov8" title="47">for conn := range s.conns </span><span class="cov7" title="42">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
