@@ -88,8 +88,10 @@ func (r *dotReader) Read(b []byte) (int, error) {
 
 	c, err := r.peekMin5(len(b))
 
-	// write \n
+	// To reach this state it is necessary that 5 bytes are still in the buffer ready to be consumed.
+	// So there shouldn't be a case where err happens and there aren't 5 bytes in c at this point.
 	if r.state == stateCR {
+		// write \n
 		b[0] = '\n'
 		n++
 		skipped += 2
