@@ -183,7 +183,7 @@ func (c *Mailer) prepare(
 			if err != nil {
 				// reset open mail transfer
 				if errRset := c.reset(); errRset != nil {
-					return nil, nil, errors.Join(err, errRset)
+					return nil, failures, errors.Join(err, errRset)
 				}
 				return nil, nil, err
 			}
@@ -195,14 +195,14 @@ func (c *Mailer) prepare(
 	if c.client.PipeliningActive() && c.cfg.abortOnRcptReject {
 		var err error
 		if _, failures, err = c.handleResponses(pipelining, rcpts, failures); err != nil {
-			return nil, nil, err
+			return nil, failures, err
 		}
 	}
 
 	// DATA
 	w, err := c.client.Data() // (size)
 	if err != nil {
-		return nil, nil, err
+		return nil, failures, err
 	}
 	pipelining.data = true
 
@@ -236,12 +236,12 @@ func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, 
 			if err != nil {
 				// pipelining.data is never true here, because abortOnRcptReject forces sync before calling data
 				if errResponse := c.client.ClearResponses(0); errResponse != nil {
-					return nil, nil, errors.Join(err, errResponse)
+					return nil, failures, errors.Join(err, errResponse)
 				}
 				if errReset := c.reset(); errReset != nil {
 					return nil, failures, errors.Join(err, errReset)
 				}
-				return nil, nil, err
+				return nil, failures, err
 			}
 		}
 	}
@@ -372,7 +372,7 @@ func (c *Mailer) SendAdvanced(
 		err = errors.Join(err, c.client.Close())
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, failures, err
 	}
 
 	return status, failures, err
@@ -471,13 +471,6 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 
 	for _, server := range mx.Servers {
 		status, failures, err := send(ctx, server, from, config, in())
-		if err != nil {
-			res.Failures = append(res.Failures, resolve.Failure{
-				Rcpts: server.Rcpts,
-				Error: err,
-			})
-			continue
-		}
 
 		if len(failures) > 0 {
 			rcpts := []string{}
@@ -493,6 +486,18 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 			}
 			server.Rcpts = rcpts
 			res.Failures = append(res.Failures, failures...)
+		}
+
+		// Only blame the transaction error on recipients that do not
+		// As there should be recipients left
+		if err != nil {
+			if len(server.Rcpts) > 0 {
+				res.Failures = append(res.Failures, resolve.Failure{
+					Rcpts: server.Rcpts,
+					Error: err,
+				})
+			}
+			continue
 		}
 
 		// No request was made if all rcpts were rejected.
