@@ -253,8 +253,7 @@ func (c *Client) Hello() error {
 
 	err := c.ehlo()
 
-	var smtp *smtp.Status
-	if err != nil && errors.As(err, &smtp) && (smtp.Code == 500 || smtp.Code == 502) {
+	if status, ok := err.(*smtp.Status); err != nil && (ok && (status.Code == 500 || status.Code == 502)) {
 		// The server doesn't support EHLO, fallback to HELO
 		err = c.helo()
 	}

@@ -90,7 +90,7 @@ func (c *Mailer) connectAddress(ctx context.Context, addr string) error {
 	if c.cfg.security == SecurityStartTLS || c.cfg.security == SecurityPreferStartTLS {
 		if ok, _ := c.client.Extension("STARTTLS"); !ok {
 			if c.cfg.security == SecurityStartTLS {
-				_ = c.client.Quit()
+				_ = c.Disconnect()
 				return errors.New("smtp: server doesn't support STARTTLS")
 			}
 		} else {
@@ -117,7 +117,7 @@ func (c *Mailer) auth() error {
 	// Authenticate if authentication is possible and sasl client available.
 	if ok, _ := c.client.Extension("AUTH"); ok && c.cfg.saslClient != nil {
 		if err := c.client.Auth(c.cfg.saslClient); err != nil {
-			_ = c.client.Quit()
+			_ = c.Disconnect()
 			return err
 		}
 	}
@@ -183,7 +183,7 @@ func (c *Mailer) prepare(
 			if err != nil {
 				// reset open mail transfer
 				if errRset := c.client.Reset(); errRset != nil {
-					return nil, nil, errors.Join(errRset, errRset)
+					return nil, nil, errors.Join(err, errRset)
 				}
 				return nil, nil, err
 			}
@@ -259,11 +259,10 @@ func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, 
 		// no rcpt was accepted - RFC 2920
 		//  the client cannot assume that the DATA command will be rejected just because none of the RCPT TO commands worked.
 		if len(failures) == len(rcpts) {
-			err = errors.New("no recipients were accepted")
-			if errClose := w.Close(); errClose != nil {
-				err = errors.Join(err, errClose)
+			if err := w.Close(); err != nil {
+				return nil, failures, err
 			}
-			return nil, failures, err
+			return nil, failures, nil
 		}
 		return w, failures, nil
 	}
@@ -330,6 +329,8 @@ func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Rea
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
 // parameter but not including it in the in headers.
+//
+// The status and err can both be empty if all recipients were rejected by the server
 func (c *Mailer) SendAdvanced(
 	ctx context.Context,
 	from string,
@@ -350,6 +351,10 @@ func (c *Mailer) SendAdvanced(
 			err = errors.Join(err, c.client.Close())
 		}
 		return nil, failures, err
+	}
+
+	if w == nil {
+		return nil, failures, nil
 	}
 
 	_, err = io.Copy(w.Writer(), in)
@@ -389,17 +394,15 @@ func (c *Mailer) Verify(addr string, opts *client.VrfyOptions) error {
 }
 
 // Disconnect ends current connection gracefully, if any exists.
-func (c *Mailer) Disconnect() error {
-	err := c.client.Quit()
+func (c *Mailer) Disconnect() (err error) {
+	err = c.client.Quit()
+	if !c.client.PipeliningActive() {
+		return err
+	}
 	if err != nil {
 		return err
 	}
-
-	if c.client.PipeliningActive() {
-		err = c.client.QuitResponse()
-	}
-
-	return err
+	return c.client.QuitResponse()
 }
 
 // Terminate ends current connection forcefully.
@@ -436,7 +439,7 @@ type Response struct {
 
 // Send just sends a mail.
 // in is called multiple times if there are recipients from different servers.
-// The option abort on recipient rejection is not supported.
+// The option abort on recipient rejection is permanently not supported.
 func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader, opts ...Option) (res Report, err error) {
 	r := resolve.New(nil)
 
@@ -492,10 +495,13 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 			res.Failures = append(res.Failures, failures...)
 		}
 
-		res.Responses = append(res.Responses, Response{
-			Status: status,
-			Rcpts:  server.Rcpts,
-		})
+		// No request was made if all rcpts were rejected.
+		if len(server.Rcpts) > 0 {
+			res.Responses = append(res.Responses, Response{
+				Status: status,
+				Rcpts:  server.Rcpts,
+			})
+		}
 	}
 	return res, nil
 }
