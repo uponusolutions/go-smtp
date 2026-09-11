@@ -62,10 +62,12 @@ type Client struct {
 }
 
 type pipeliningState struct {
-	// how many replies are expected
+	// How many responses are pending?
+	// Is counted up when a request is sent without retrieving the response.
 	pending int
-	// group has ended, pending requests needs to be retrieved
-	ended bool
+	// Marks if the group has concluded through a command which must be the last command in a group.
+	// If it is set, the pending responses needs to be consumed before sending commands again.
+	concluded bool
 }
 
 type pipeliningType int
@@ -273,7 +275,7 @@ func (c *Client) Hello() error {
 
 func (c *Client) setExt(ext map[string]string) {
 	c.connExt = ext
-	c.connPipelining.ended = false
+	c.connPipelining.concluded = false
 	c.connPipelining.pending = 0
 }
 
@@ -286,10 +288,12 @@ func (c *Client) consumeResponse() error {
 		return ErrPipeliningNothingPending
 	}
 
+	// first consume concludes group
+	c.connPipelining.concluded = true
 	c.connPipelining.pending--
 
 	if c.connPipelining.pending == 0 {
-		c.connPipelining.ended = false
+		c.connPipelining.concluded = false
 	}
 
 	return nil
@@ -297,11 +301,21 @@ func (c *Client) consumeResponse() error {
 
 // cmd is a convenience function that sends a command and returns the response
 // does not support or handle anything related to pipelining
-func (c *Client) cmd(expectCode int, format string, args ...any) (*smtp.Status, error) {
+func (c *Client) cmd(expectCode int, message string) (*smtp.Status, error) {
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	err := c.cfg.text.PrintfLineAndFlush(format, args...)
+	_, err := c.cfg.text.W.WriteString(message)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = c.cfg.text.W.Write(smtp.Crnl)
+	if err != nil {
+		return nil, err
+	}
+
+	err = c.cfg.text.W.Flush()
 	if err != nil {
 		return nil, err
 	}
@@ -320,30 +334,48 @@ func (c *Client) cmd(expectCode int, format string, args ...any) (*smtp.Status, 
 
 // cmdValid is a convenience function that sends a command and returns an error if the expected code doesn't match
 // can handle pipelining
-func (c *Client) cmdValid(pType pipeliningType, expectCode int, format string, args ...any) error {
-	if c.PipeliningActive() && c.connPipelining.ended {
-		return ErrPipeliningGroupEnded
-	}
-
+func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) error {
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	var err error
-
-	if !c.PipeliningActive() || pType == pipeliningTypeLast {
-		err = c.cfg.text.PrintfLineAndFlush(format, args...)
-	} else {
-		err = c.cfg.text.PrintfLine(format, args...)
+	if c.PipeliningActive() {
+		// group is concluded, please consume all responses
+		if c.connPipelining.concluded {
+			return ErrPipeliningGroupConcluded
+		}
+		// need to flush to prevent congestion, group concluded forcefully
+		// if the buffer can not hold the first request, just try it
+		if len(message)+2 > c.cfg.text.W.Available() && c.connPipelining.pending > 0 {
+			err := c.cfg.text.W.Flush()
+			if err != nil {
+				return err
+			}
+			c.connPipelining.concluded = true
+			return ErrPipeliningCongestion
+		}
 	}
 
+	_, err := c.cfg.text.W.WriteString(message)
 	if err != nil {
 		return err
+	}
+
+	_, err = c.cfg.text.W.Write(smtp.Crnl)
+	if err != nil {
+		return err
+	}
+
+	if !c.PipeliningActive() || pType == pipeliningTypeLast {
+		err = c.cfg.text.W.Flush()
+		if err != nil {
+			return err
+		}
 	}
 
 	if c.PipeliningActive() && pType > pipeliningTypeForbidden {
 		c.connPipelining.pending++
 		if pType == pipeliningTypeLast {
-			c.connPipelining.ended = true
+			c.connPipelining.concluded = true
 		}
 		return nil
 	}
@@ -351,18 +383,31 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, format string, a
 	return c.cfg.text.ReadResponseValid(expectCode)
 }
 
+// Conclude concludes the current pipelining group.
+// Do not call if pipelining is not active.
+func (c *Client) Conclude() error {
+	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
+	defer timeout()
+
+	if !c.PipeliningActive() {
+		return ErrPipeliningNotEnabled
+	}
+	c.connPipelining.concluded = true
+	return c.cfg.text.W.Flush()
+}
+
 func (c *Client) readResponseValid(expectCode int) error {
 	if err := c.consumeResponse(); err != nil {
 		return err
 	}
 
+	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
+	defer timeout()
+
 	// Make sure everything is flushed, probably already done if group has ended.
 	if err := c.cfg.text.W.Flush(); err != nil {
 		return err
 	}
-
-	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
-	defer timeout()
 
 	return c.cfg.text.ReadResponseValid(expectCode)
 }
@@ -395,13 +440,13 @@ func (c *Client) ClearResponses(x int) error {
 // server does not support ehlo.
 func (c *Client) helo() error {
 	c.setExt(nil)
-	return c.cmdValid(pipeliningTypeForbidden, 250, "HELO %s", c.cfg.localName)
+	return c.cmdValid(pipeliningTypeForbidden, 250, "HELO "+c.cfg.localName)
 }
 
 // ehlo sends the EHLO (extended hello) greeting to the server. It
 // should be the preferred greeting for servers that support it.
 func (c *Client) ehlo() error {
-	status, err := c.cmd(250, "EHLO %s", c.cfg.localName)
+	status, err := c.cmd(250, "EHLO "+c.cfg.localName)
 	if err != nil {
 		return err
 	}
@@ -508,7 +553,7 @@ func (c *Client) Verify(addr string, opts *VrfyOptions) error {
 		}
 	}
 
-	return c.cmdValid(pipeliningTypeLast, 250, "%s", sb.String())
+	return c.cmdValid(pipeliningTypeLast, 250, sb.String())
 }
 
 // VerifyResponse returns the result of previous send verify command if pipelining is enabled
@@ -549,12 +594,12 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 		// The initial response (if any) does not fit in the 512-octet command line (RFC 5321
 		// section 4.5.3.1.4), so send it as the reply to the first challenge instead
 		// (RFC 4954 section 4). https://github.com/emersion/go-smtp/issues/301
-		status, err = c.cmd(0, "AUTH %s", mech)
+		status, err = c.cmd(0, "AUTH "+mech)
 		if err == nil && status.Code == 334 && len(resp64) > 0 {
-			status, err = c.cmd(0, "%s", resp64)
+			status, err = c.cmd(0, string(resp64))
 		}
 	} else {
-		status, err = c.cmd(0, "AUTH %s %s", mech, resp64)
+		status, err = c.cmd(0, "AUTH "+mech+" "+string(resp64))
 	}
 
 	for err == nil {
@@ -585,7 +630,7 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 		}
 		resp64 = make([]byte, encoding.EncodedLen(len(resp)))
 		encoding.Encode(resp64, resp)
-		status, err = c.cmd(0, "%s", string(resp64))
+		status, err = c.cmd(0, string(resp64))
 	}
 	return err
 }
@@ -674,7 +719,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 		}
 		fmt.Fprintf(&sb, " MT-PRIORITY=%d", *opts.MTPriority)
 	}
-	return c.cmdValid(pipeliningTypeAnywhere, 250, "%s", sb.String())
+	return c.cmdValid(pipeliningTypeAnywhere, 250, sb.String())
 }
 
 // MailResponse returns the result of previous send mail command if pipelining is enabled
@@ -706,7 +751,7 @@ func (c *Client) Rcpt(to string, opts *smtp.RcptOptions) error {
 	if _, ok := c.connExt["RRVS"]; ok && opts != nil && !opts.RequireRecipientValidSince.IsZero() {
 		fmt.Fprintf(&sb, " RRVS=%s", opts.RequireRecipientValidSince.Format(time.RFC3339))
 	}
-	return c.cmdValid(pipeliningTypeAnywhere, 25, "%s", sb.String())
+	return c.cmdValid(pipeliningTypeAnywhere, 25, sb.String())
 }
 
 // RcptResponse returns the result of previous send rcpt command if pipelining is enabled

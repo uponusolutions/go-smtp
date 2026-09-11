@@ -164,6 +164,7 @@ func (c *Mailer) prepare(
 	pipelining := &pipeliningPending{}
 
 	// MAIL FROM:
+	// No congestion possible on the first call
 	if err := c.client.Mail(from, mailOptions); err != nil {
 		return nil, nil, err
 	}
@@ -179,13 +180,21 @@ func (c *Mailer) prepare(
 		}
 
 		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
-			failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
-			if err != nil {
-				// reset open mail transfer
-				if errRset := c.reset(); errRset != nil {
-					return nil, failures, errors.Join(err, errRset)
+			if err == client.ErrPipeliningCongestion {
+				if _, failures, err = c.handleResponses(pipelining, rcpts, failures, size); err != nil {
+					return nil, failures, err
 				}
-				return nil, nil, err
+				err = c.client.Rcpt(addr, rcptsOption)
+			}
+			if err != nil {
+				failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
+				if err != nil {
+					// reset open mail transfer
+					if errRset := c.reset(); errRset != nil {
+						return nil, failures, errors.Join(err, errRset)
+					}
+					return nil, nil, err
+				}
 			}
 		}
 		pipelining.rcpts++
@@ -201,6 +210,12 @@ func (c *Mailer) prepare(
 
 	// DATA
 	w, err := c.client.Content(size)
+	if err == client.ErrPipeliningCongestion {
+		if _, failures, err = c.handleResponses(pipelining, rcpts, failures, size); err != nil {
+			return nil, failures, err
+		}
+		w, err = c.client.Content(size)
+	}
 	if err != nil {
 		return nil, failures, err
 	}
@@ -283,8 +298,8 @@ func (c *Mailer) reset() (err error) {
 }
 
 func rcptError(addr string, abortOnRcptReject bool, failures []resolve.Failure, err error) ([]resolve.Failure, error) {
-	// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
-	if smtpErr, ok := err.(*smtp.Status); !ok || abortOnRcptReject || smtpErr.Code != 550 {
+	// continue sending if code is not 421 and abort on rcpt reject is disabled
+	if smtpErr, ok := err.(*smtp.Status); !ok || abortOnRcptReject || smtpErr.Code == 421 {
 		return nil, err
 	}
 

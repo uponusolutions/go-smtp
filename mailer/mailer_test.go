@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -32,44 +33,56 @@ var backend = testserver.Backend{
 	},
 }
 
-var s = testserver.Standard(
-	server.WithBackend(&backend),
-)
+var s = []*server.Server{
+	testserver.Standard(
+		server.WithBackend(&backend),
+		server.WithMaxRecipients(1000),
+	),
+	testserver.Standard(
+		server.WithBackend(&backend),
+		server.WithWriterSize(1),
+		server.WithReaderSize(1),
+		server.WithMaxRecipients(1000),
+	),
+}
 
-var addr string
+var addr = []string{
+	"",
+	"",
+}
 
 func TestMain(m *testing.M) {
-	listen, err := s.Listen()
-	if err != nil {
-		slog.Error("error listen server", slog.Any("error", err))
+	for i, sc := range s {
+		listen, err := sc.Listen()
+		if err != nil {
+			slog.Error("error listen server", slog.Any("error", err))
+		}
+		addr[i] = listen.Addr().String()
+		go func() {
+			if err := sc.Serve(context.Background(), listen); err != nil {
+				log.Printf("smtp server response %s", err)
+			}
+		}()
+		// nolint:revive
+		defer func() {
+			if err := sc.Close(); err != nil {
+				slog.Error("error closing server", "err", err)
+			}
+		}()
 	}
-
-	addr = listen.Addr().String()
-
-	go func() {
-		if err := s.Serve(context.Background(), listen); err != nil {
-			log.Printf("smtp server response %s", err)
-		}
-	}()
-
-	defer func() {
-		if err := s.Close(); err != nil {
-			slog.Error("error closing server", "err", err)
-		}
-	}()
 
 	m.Run()
 }
 
 func TestClient_DisconnectTwicePipeline(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithBasic(client.WithPipelining(true)))
+	c := New(WithServerAddresses(addr[0]), WithBasic(client.WithPipelining(true)))
 	require.NoError(t, c.Connect(t.Context()))
 	require.NoError(t, c.Terminate())
 	require.NoError(t, c.Disconnect())
 }
 
 func TestClient_ChunkingErrors(t *testing.T) {
-	c := New(WithServerAddresses(addr))
+	c := New(WithServerAddresses(addr[0]))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -86,7 +99,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 
 	assert.NoError(t, c.Disconnect())
 
-	c = New(WithServerAddresses(addr), WithBasic(client.WithChunkingMaxSize(-1)))
+	c = New(WithServerAddresses(addr[0]), WithBasic(client.WithChunkingMaxSize(-1)))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -99,7 +112,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 }
 
 func TestClient_SendMailAutoconnect(t *testing.T) {
-	c := New(WithServerAddresses(addr))
+	c := New(WithServerAddresses(addr[0]))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -119,14 +132,53 @@ func TestClient_SendMailAutoconnect(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
 func TestClient_SendMail(t *testing.T) {
-	c := New(WithServerAddresses(addr))
+	for i, sa := range addr {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			basic := WithBasic()
+			if i == 1 {
+				basic = WithBasic(client.WithReaderSize(1), client.WithWriterSize(1), client.WithPipelining(true))
+			}
+
+			c := New(WithServerAddresses(sa), basic)
+			require.NotNil(t, c)
+
+			require.NoError(t, c.Connect(context.Background()))
+			defer func() {
+				assert.NoError(t, c.Terminate())
+
+				// Calling again must be ok.
+				assert.NoError(t, c.Disconnect())
+			}()
+
+			data := []byte("Hello World!")
+			from := "alice@internal.com"
+			recipients := []string{"Bob@external.com", "mal@external.com"}
+
+			in := bytes.NewBuffer(data)
+
+			_, _, err := c.Send(context.Background(), from, recipients, in)
+			require.NoError(t, err)
+
+			// Lookup email.
+			m, found := testserver.GetBackend(s[0]).Load(from, recipients)
+			assert.True(t, found)
+
+			t.Logf("Found %t, mail %+v\n", found, m)
+		})
+	}
+}
+
+func TestClient_SendMailTooManyRcptsAbortPipelining(t *testing.T) {
+	c := New(WithServerAddresses(addr[0]),
+		WithAbortOnRcptReject(true),
+		WithBasic(client.WithPipelining(true)))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -139,18 +191,21 @@ func TestClient_SendMail(t *testing.T) {
 
 	data := []byte("Hello World!")
 	from := "alice@internal.com"
-	recipients := []string{"Bob@external.com", "mal@external.com"}
+	recipients := makeEmails(1001)
 
 	in := bytes.NewBuffer(data)
 
-	_, _, err := c.Send(context.Background(), from, recipients, in)
+	status, failures, err := c.Send(context.Background(), from, recipients, in)
+	require.Equal(t,
+		smtp.NewStatusS(452, smtp.EnhancedCode{4, 5, 3}, "Maximum limit of 1000 recipients reached"),
+		err,
+	)
+	require.Nil(t, status)
+	require.Equal(t, 0, len(failures))
+
+	_, failures, err = c.Send(context.Background(), from, recipients[0:1000], in)
 	require.NoError(t, err)
-
-	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
-	assert.True(t, found)
-
-	t.Logf("Found %t, mail %+v\n", found, m)
+	require.Equal(t, 0, len(failures))
 }
 
 func TestClient_SendMailDirect(t *testing.T) {
@@ -163,12 +218,12 @@ func TestClient_SendMailDirect(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr),
+		WithServerAddresses(addr[0]),
 	)
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -184,16 +239,81 @@ func TestClient_SendMailDirectPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr),
+		WithServerAddresses(addr[0]),
 		WithBasic(client.WithPipelining(true)),
 	)
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
+}
+
+func makeEmails(x int) []string {
+	emails := make([]string, x)
+	for i := range emails {
+		emails[i] = fmt.Sprintf("%d@external.com", i)
+	}
+	return emails
+}
+
+func TestClient_SendMailDirectManyRcptsPipelining(t *testing.T) {
+	data := []byte("Hello World!")
+	from := "alice@internal.com"
+	recipients := makeEmails(1000)
+
+	_, err := Send(
+		context.Background(),
+		from,
+		recipients,
+		func() io.Reader { return bytes.NewReader(data) },
+		WithServerAddresses(addr[0]),
+		WithBasic(client.WithPipelining(true)),
+	)
+	require.NoError(t, err)
+
+	// Lookup email.
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
+	require.True(t, found)
+	require.Equal(t, recipients, m.Recipients)
+}
+
+func TestClient_SendMailDirectTooManyRcptsPipelining(t *testing.T) {
+	for i, sa := range addr {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			data := []byte("Hello World!")
+			from := "alice@internal.com"
+			recipients := makeEmails(1001)
+
+			basic := WithBasic(client.WithPipelining(true))
+			if i == 1 {
+				basic = WithBasic(client.WithReaderSize(1), client.WithWriterSize(1), client.WithPipelining(true))
+			}
+
+			res, err := Send(
+				context.Background(),
+				from,
+				recipients,
+				func() io.Reader { return bytes.NewReader(data) },
+				WithServerAddresses(sa),
+				basic,
+			)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(res.Responses))
+			require.Equal(t, 1000, len(res.Responses[0].Rcpts))
+			require.Equal(t, 1, len(res.Failures))
+			require.Equal(t,
+				smtp.NewStatusS(452, smtp.EnhancedCode{4, 5, 3}, "Maximum limit of 1000 recipients reached"),
+				res.Failures[0].Error,
+			)
+			require.Equal(t,
+				[]string{recipients[1000]},
+				res.Failures[0].Rcpts,
+			)
+		})
+	}
 }
 
 func TestClient_SendMailDirectFailPipelining(t *testing.T) {
@@ -206,13 +326,13 @@ func TestClient_SendMailDirectFailPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr),
+		WithServerAddresses(addr[0]),
 		WithBasic(client.WithPipelining(true)),
 	)
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, []string{"Bob@external.com", "mal@external.com"})
+	m, found := testserver.GetBackend(s[0]).Load(from, []string{"Bob@external.com", "mal@external.com"})
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -228,7 +348,7 @@ func TestClient_SendMailDirectAbortOnRcptRejectPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr),
+		WithServerAddresses(addr[0]),
 		WithAbortOnRcptReject(true),
 		WithBasic(client.WithPipelining(true)),
 	)
@@ -245,7 +365,7 @@ func TestClient_SendMailDirectAllRejectedPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr),
+		WithServerAddresses(addr[0]),
 		WithBasic(client.WithPipelining(true)),
 	)
 	require.NoError(t, err)
@@ -268,7 +388,7 @@ var pipeliningCases = []struct {
 func sendReport(t *testing.T, rcpts []string, pipelining bool) Report {
 	t.Helper()
 
-	opts := []Option{WithServerAddresses(addr)}
+	opts := []Option{WithServerAddresses(addr[0])}
 	if pipelining {
 		opts = append(opts, WithBasic(client.WithPipelining(true)))
 	}
@@ -347,7 +467,7 @@ func TestClient_SendMailPartiallyRejectedKeepsPerRcptFailures(t *testing.T) {
 }
 
 func TestClient_SendMailAutoconnectAbortOnRcptReject(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithAbortOnRcptReject(true))
+	c := New(WithServerAddresses(addr[0]), WithAbortOnRcptReject(true))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -369,14 +489,14 @@ func TestClient_SendMailAutoconnectAbortOnRcptReject(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
 func TestClient_SendMailAutoconnectAbortOnRcptRejectPipelining(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithAbortOnRcptReject(true), WithBasic(client.WithPipelining(true)))
+	c := New(WithServerAddresses(addr[0]), WithAbortOnRcptReject(true), WithBasic(client.WithPipelining(true)))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -398,14 +518,14 @@ func TestClient_SendMailAutoconnectAbortOnRcptRejectPipelining(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
 func TestClient_SendMailAutoconnectAbortOnRcptRejectAll(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithAbortOnRcptReject(true))
+	c := New(WithServerAddresses(addr[0]), WithAbortOnRcptReject(true))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -427,14 +547,14 @@ func TestClient_SendMailAutoconnectAbortOnRcptRejectAll(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
 func TestClient_SendMailAutoconnectAbortOnRcptRejectAllPipelining(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithAbortOnRcptReject(true), WithBasic(client.WithPipelining(true)))
+	c := New(WithServerAddresses(addr[0]), WithAbortOnRcptReject(true), WithBasic(client.WithPipelining(true)))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -456,7 +576,7 @@ func TestClient_SendMailAutoconnectAbortOnRcptRejectAllPipelining(t *testing.T) 
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
@@ -472,7 +592,7 @@ func TestClient_SendMailDirectFail(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr),
+		WithServerAddresses(addr[0]),
 	)
 	require.Equal(t, 1, len(rec.Failures))
 	require.Equal(t, []string{"notfound@external.com"}, rec.Failures[0].Rcpts)
@@ -481,38 +601,38 @@ func TestClient_SendMailDirectFail(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, []string{"Bob@external.com"})
+	m, found := testserver.GetBackend(s[0]).Load(from, []string{"Bob@external.com"})
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)
 }
 
 func TestClient_SendMail_MultipleAddresses(t *testing.T) {
-	c := New(WithServerAddresses(addr, "0.0.0.0")) // second is invalid
+	c := New(WithServerAddresses(addr[0], "0.0.0.0")) // second is invalid
 	require.NotNil(t, c)
 
 	require.Equal(t, "", c.ServerAddress())
 	require.NoError(t, c.Connect(context.Background()))
-	require.Equal(t, addr, c.ServerAddress())
+	require.Equal(t, addr[0], c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
 	require.NoError(t, c.Terminate())
-	require.Equal(t, addr, c.ServerAddress())
+	require.Equal(t, addr[0], c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
 
-	c = New(WithServerAddresses("0.0.0.0", addr)) // second is invalid
+	c = New(WithServerAddresses("0.0.0.0", addr[0])) // second is invalid
 	require.NotNil(t, c)
 
 	require.Equal(t, "", c.ServerAddress())
 	require.NoError(t, c.Connect(context.Background()))
-	require.Equal(t, addr, c.ServerAddress())
+	require.Equal(t, addr[0], c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
 	require.NoError(t, c.Terminate())
-	require.Equal(t, addr, c.ServerAddress())
+	require.Equal(t, addr[0], c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
 }
 
 func TestClient_SendMailUTF8Force(t *testing.T) {
-	c := New(WithServerAddresses(addr))
+	c := New(WithServerAddresses(addr[0]))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -541,7 +661,7 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 }
 
 func TestClient_VerifyUTF8Force(t *testing.T) {
-	c := New(WithServerAddresses(addr))
+	c := New(WithServerAddresses(addr[0]))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -557,7 +677,7 @@ func TestClient_VerifyUTF8Force(t *testing.T) {
 }
 
 func TestClient_InvalidLocalName(t *testing.T) {
-	c := New(WithServerAddresses(addr), WithBasic(
+	c := New(WithServerAddresses(addr[0]), WithBasic(
 		client.WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n")),
 	)
 	require.NotNil(t, c)
@@ -565,13 +685,13 @@ func TestClient_InvalidLocalName(t *testing.T) {
 }
 
 func TestClient_Client(t *testing.T) {
-	c := New(WithServerAddresses(addr))
+	c := New(WithServerAddresses(addr[0]))
 	require.NotNil(t, c)
 	require.NotNil(t, c.Client())
 }
 
 func TestClient_Send(t *testing.T) {
-	c := New(WithServerAddresses(addr))
+	c := New(WithServerAddresses(addr[0]))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -590,7 +710,7 @@ func TestClient_Send(t *testing.T) {
 	require.NoError(t, err)
 
 	// Lookup email.
-	m, found := testserver.GetBackend(s).Load(from, recipients)
+	m, found := testserver.GetBackend(s[0]).Load(from, recipients)
 	assert.True(t, found)
 
 	t.Logf("Found %t, mail %+v\n", found, m)

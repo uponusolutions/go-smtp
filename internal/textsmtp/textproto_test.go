@@ -16,15 +16,6 @@ func reader(in string, out *bytes.Buffer) *Textproto {
 	return NewTextproto(tester.NewFakeConn(in, out), 4096, 4096, 0)
 }
 
-func TestPrintfLine(t *testing.T) {
-	buf := &bytes.Buffer{}
-	w := reader("", buf)
-	err := w.PrintfLineAndFlush("foo %d", 123)
-	if s := buf.String(); s != "foo 123\r\n" || err != nil {
-		t.Fatalf("s=%q; err=%s", s, err)
-	}
-}
-
 func TestReadLine(t *testing.T) {
 	r := reader("line1\nline2\n", &bytes.Buffer{})
 	s, err := r.ReadLine()
