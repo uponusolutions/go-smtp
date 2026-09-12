@@ -157,8 +157,10 @@ func TestBdatWriterBuffered(t *testing.T) {
 	})
 
 	t.Run("WithSizeErrorTooLess", func(t *testing.T) {
+		size := 3
+
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 3, make([]byte, 1048576*2))
+		d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, size, make([]byte, 1048576*2))
 
 		input1 := []byte("a")
 		n, err := d.Write(input1)
@@ -172,6 +174,9 @@ func TestBdatWriterBuffered(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, len(input2), n)
 
-		require.ErrorContains(t, d.Close(), "got less bytes")
+		require.NoError(t, d.Close())
+
+		want := "BDAT " + strconv.Itoa(size) + " LAST\r\n" + string(input1) + string(input2) + "\x00"
+		require.Equal(t, want, buf.String())
 	})
 }

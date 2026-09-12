@@ -801,7 +801,7 @@ func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string)
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Content(size int) (*DataCloser, error) {
+func (c *Client) Content(size int) (*ContentCloser, error) {
 	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
 		if c.PipeliningActive() {
 			return nil, nil
@@ -812,7 +812,7 @@ func (c *Client) Content(size int) (*DataCloser, error) {
 }
 
 // ContentResponse returns the result of previous send data command if pipelining is enabled
-func (c *Client) ContentResponse(size int) (*DataCloser, error) {
+func (c *Client) ContentResponse(size int) (*ContentCloser, error) {
 	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
 		return c.Bdat(size)
 	}
@@ -825,22 +825,22 @@ func (c *Client) ContentResponse(size int) (*DataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Data() (*DataCloser, error) {
+func (c *Client) Data() (*ContentCloser, error) {
 	if err := c.cmdValid(pipeliningTypeLast, 354, "DATA"); err != nil {
 		return nil, err
 	}
 	if c.PipeliningActive() {
 		return nil, nil
 	}
-	return &DataCloser{c: c, writer: textsmtp.NewDotWriter(c.cfg.text.W)}, nil
+	return &ContentCloser{c: c, writer: textsmtp.NewDotWriter(c.cfg.text.W)}, nil
 }
 
 // DataResponse returns the result of previous send data command if pipelining is enabled
-func (c *Client) DataResponse() (*DataCloser, error) {
+func (c *Client) DataResponse() (*ContentCloser, error) {
 	if err := c.readResponseValid(354); err != nil {
 		return nil, err
 	}
-	return &DataCloser{c: c, writer: textsmtp.NewDotWriter(c.cfg.text.W)}, nil
+	return &ContentCloser{c: c, writer: textsmtp.NewDotWriter(c.cfg.text.W)}, nil
 }
 
 // Bdat issues a BDAT command to the server and returns a writer that
@@ -849,7 +849,7 @@ func (c *Client) DataResponse() (*DataCloser, error) {
 // Data must be preceded by one or more calls to Rcpt.
 //
 // If server returns an error, it will be of type *smtp.
-func (c *Client) Bdat(size int) (*DataCloser, error) {
+func (c *Client) Bdat(size int) (*ContentCloser, error) {
 	if c.PipeliningActive() && c.connPipelining.pending > 0 {
 		return nil, ErrPipeliningNoPendingRequired
 	}
@@ -872,12 +872,12 @@ func (c *Client) Bdat(size int) (*DataCloser, error) {
 			c.chunkingBuffer = make([]byte, bufferSize)
 		}
 
-		return &DataCloser{c: c, writer: textsmtp.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
+		return &ContentCloser{c: c, writer: textsmtp.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
 			return c.cfg.text.ReadResponseValid(250)
 		}, size, c.chunkingBuffer[:bufferSize])}, nil
 	}
 
-	return &DataCloser{c: c, writer: textsmtp.NewBdatWriter(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
+	return &ContentCloser{c: c, writer: textsmtp.NewBdatWriter(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
 		return c.cfg.text.ReadResponseValid(250)
 	}, size)}, nil
 }

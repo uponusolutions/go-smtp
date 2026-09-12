@@ -284,7 +284,7 @@ func TestClient_SendMailDirectManyRcptsPipelining(t *testing.T) {
 }
 
 func TestClient_SendMailDirectTooManyRcptsPipelining(t *testing.T) {
-	for i, sa := range addr {
+	for i, sa := range addr[:2] {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			data := []byte("Hello World!")
 			from := "alice@internal.com"

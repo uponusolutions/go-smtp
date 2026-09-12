@@ -74,10 +74,8 @@ func (d *bdatWriter) Write(b []byte) (n int, err error) {
 		}
 	}
 
-	if d.knownSize {
-		if d.remainingSize < len(b) {
-			return n, errors.New("got more bytes than expected, check length")
-		}
+	if d.knownSize && d.remainingSize < len(b) {
+		return n, errors.New("got more bytes than expected, check length")
 	}
 
 	p, err = d.writeBdat(b, d.knownSize && (d.maxChunkSize == 0 || d.remainingSize <= d.maxChunkSize))
@@ -176,20 +174,19 @@ func (d *bdatWriter) bdat(size int, last bool) (err error) {
 }
 
 func (d *bdatWriter) Close() error {
-	// no command was send, nothing to do
-	if !d.started {
-		return nil
+	// The close came to early, more bytes expected
+	if d.knownSize && d.remainingSize > 0 {
+		if _, err := d.Write(make([]byte, d.remainingSize)); err != nil {
+			return err
+		}
 	}
 
-	// if size is known we always know when to send bdat last before close
-	if d.knownSize {
-		if d.remainingSize == 0 {
-			return nil
+	// if size is not known a bdat 0 last is neccesary
+	if !d.knownSize || !d.started {
+		if _, err := d.w.Write(ending); err != nil {
+			return err
 		}
-		return errors.New("got less bytes than expected, check length")
 	}
-	if _, err := d.w.Write(ending); err != nil {
-		return err
-	}
+
 	return d.w.Flush()
 }

@@ -143,7 +143,7 @@ func (c *Mailer) prepare(
 	rcpts []string,
 	rcptsOptions []*smtp.RcptOptions,
 	size int,
-) (*client.DataCloser, []resolve.Failure, error) {
+) (*client.ContentCloser, []resolve.Failure, error) {
 	if !c.client.Connected() {
 		err := c.Connect(ctx)
 		if err != nil {
@@ -229,7 +229,7 @@ func (c *Mailer) prepare(
 	return w, failures, nil
 }
 
-func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, failures []resolve.Failure, size int) (*client.DataCloser, []resolve.Failure, error) {
+func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, failures []resolve.Failure, size int) (*client.ContentCloser, []resolve.Failure, error) {
 	if pipelining.mail {
 		pipelining.mail = false
 		if err := c.client.MailResponse(); err != nil {
@@ -272,7 +272,7 @@ func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, 
 		}
 
 		// no rcpt was accepted - RFC 2920
-		//  the client cannot assume that the DATA command will be rejected just because none of the RCPT TO commands worked.
+		// the client cannot assume that the DATA command will be rejected just because none of the RCPT TO commands worked.
 		if len(failures) == len(rcpts) {
 			if err := w.Close(); err != nil {
 				return nil, failures, err
@@ -363,7 +363,10 @@ func (c *Mailer) SendAdvanced(
 	if err != nil {
 		// if err isn't smtp.StatusBase we are in an unknown state, close connection
 		if _, ok := err.(*smtp.Status); !ok {
-			err = errors.Join(err, c.client.Close())
+			if errClose := c.client.Close(); errClose != nil {
+				err = errors.Join(err, errClose)
+			}
+			return nil, failures, err
 		}
 		return nil, failures, err
 	}
