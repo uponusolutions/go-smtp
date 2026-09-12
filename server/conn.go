@@ -150,6 +150,9 @@ func (c *Conn) handleStateEnforceAuthentication(cmd string, arg string) error {
 		return c.handleAuth(arg)
 	case "STARTTLS":
 		return c.handleStartTLS()
+	// RFC 5321, always consume bdat data if capabilities were sent
+	case "BDAT":
+		return c.handleBdatDiscard(arg)
 	default:
 		return smtp.NewStatusS(530, smtp.EnhancedCode{5, 7, 0}, "Authentication required")
 	}
@@ -176,6 +179,9 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 		return smtp.ErrAuthUnsupported
 	case "STARTTLS":
 		return c.handleStartTLS()
+	// RFC 5321, always consume bdat data if capabilities were sent
+	case "BDAT":
+		return c.handleBdatDiscard(arg)
 	default:
 		return c.commandUnknown(cmd)
 	}
@@ -195,7 +201,7 @@ func (c *Conn) handleStateMail(cmd string, arg string) error {
 		return c.handleRSET()
 	case "BDAT":
 		if !c.server.enableCHUNKING {
-			return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "CHUNKING is not implemented")
+			return c.handleBdatDiscard(arg)
 		}
 		return c.handleBdat(arg)
 	case "DATA":
@@ -221,6 +227,9 @@ func (c *Conn) handleStateEnforceSecureConnection(cmd string, arg string) error 
 		return c.handleStartTLS()
 	case "QUIT":
 		return smtp.Quit
+	// RFC 5321, always consume bdat data if capabilities were sent
+	case "BDAT":
+		return c.handleBdatDiscard(arg)
 	default:
 		return smtp.NewStatusS(530, smtp.EnhancedCode{5, 7, 0}, "Must issue a STARTTLS command first")
 	}
@@ -926,15 +935,37 @@ func (c *Conn) handleData(arg string) error {
 	return c.accepted(uuid)
 }
 
+func (c *Conn) handleBdatDiscard(arg string) error {
+	size, _, err := textsmtp.BdatArg(arg)
+	if err != nil {
+		return err
+	}
+	if _, err = c.text.R.Discard(int(size)); err != nil {
+		return err
+	}
+	if !c.server.enableCHUNKING {
+		return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "CHUNKING is not implemented")
+	}
+	return smtp.ErrBadSequence
+}
+
 func (c *Conn) handleBdat(arg string) error {
+	size, last, err := textsmtp.BdatArg(arg)
+	if err != nil {
+		return err
+	}
+
 	// at least a single recipient needs to be set
 	if c.recipients == 0 {
+		if _, err = c.text.R.Discard(int(size)); err != nil {
+			return err
+		}
 		return smtp.ErrNoRecipients
 	}
 
 	closed := false
 
-	data, err := textsmtp.NewBdatReader(arg, c.server.maxMessageBytes, c.text.R, func() (string, string, error) {
+	data := textsmtp.NewBdatReader(size, last, c.server.maxMessageBytes, c.text.R, func() (string, string, error) {
 		// if bdat is closed (error occurred)
 		if closed {
 			return "", "", io.EOF
@@ -942,9 +973,6 @@ func (c *Conn) handleBdat(arg string) error {
 		c.writeStatus(smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, "Continue"))
 		return c.nextCommand()
 	})
-	if err != nil {
-		return err
-	}
 
 	queueid, err := c.session.Data(c.ctx, func() io.Reader {
 		return data

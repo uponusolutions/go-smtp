@@ -18,7 +18,9 @@ type bdatReader struct {
 	nextCommand     func() (string, string, error)
 }
 
-func bdatArg(arg string) (int64, bool, error) {
+// BdatArg parses the arguments of a bdat command.
+// Return smtp errors if something isn't parseable.
+func BdatArg(arg string) (int64, bool, error) {
 	args := strings.Fields(arg)
 	if len(args) == 0 {
 		return 0, true, smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Missing chunk size argument")
@@ -45,12 +47,7 @@ func bdatArg(arg string) (int64, bool, error) {
 }
 
 // NewBdatReader creates a new bdat reader.
-func NewBdatReader(arg string, maxMessageBytes int64, input io.Reader, nextCommand func() (string, string, error)) (io.Reader, error) {
-	size, last, err := bdatArg(arg)
-	if err != nil {
-		return nil, err
-	}
-
+func NewBdatReader(size int64, last bool, maxMessageBytes int64, input io.Reader, nextCommand func() (string, string, error)) io.Reader {
 	return &bdatReader{
 		maxMessageBytes: maxMessageBytes,
 		size:            size,
@@ -58,7 +55,7 @@ func NewBdatReader(arg string, maxMessageBytes int64, input io.Reader, nextComma
 		bytesReceived:   0,
 		input:           input,
 		nextCommand:     nextCommand,
-	}, nil
+	}
 }
 
 func (d *bdatReader) Read(b []byte) (int, error) {
@@ -79,7 +76,7 @@ func (d *bdatReader) Read(b []byte) (int, error) {
 
 		switch cmd {
 		case "BDAT":
-			d.size, d.last, err = bdatArg(arg)
+			d.size, d.last, err = BdatArg(arg)
 			if err != nil {
 				return 0, err
 			}
