@@ -44,14 +44,17 @@ var s = []*server.Server{
 		server.WithReaderSize(1),
 		server.WithMaxRecipients(1000),
 	),
+	testserver.Standard(
+		server.WithBackend(&backend),
+		server.WithEnableCHUNKING(true),
+	),
 }
 
-var addr = []string{
-	"",
-	"",
-}
+var addr []string
 
 func TestMain(m *testing.M) {
+	addr = make([]string, len(s))
+
 	for i, sc := range s {
 		listen, err := sc.Listen()
 		if err != nil {
@@ -658,6 +661,44 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 		in,
 	)
 	require.ErrorContains(t, err, "server does not support SMTPUTF8")
+}
+
+func TestClient_AllRejectedKeepsConnection(t *testing.T) {
+	c := New(WithServerAddresses(addr[0]), WithBasic(client.WithPipelining(true)))
+
+	require.NoError(t, c.Connect(t.Context()))
+	t.Cleanup(func() { _ = c.Terminate() })
+
+	_, failures, err := c.Send(t.Context(), "alice@internal.com",
+		[]string{"notfound1@external.com"}, bytes.NewBufferString("Hello World!"))
+
+	require.Equal(
+		t,
+		smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command."),
+		err,
+		"internal BDAT sizing error leaked to the caller",
+	)
+	require.Len(t, failures, 1)
+	assert.True(t, c.Connected(), "connection must survive an all rejected transaction")
+}
+
+func TestClient_AllRejectedChunkingKeepsConnection(t *testing.T) {
+	c := New(WithServerAddresses(addr[2]), WithBasic(client.WithPipelining(true)))
+
+	require.NoError(t, c.Connect(t.Context()))
+	t.Cleanup(func() { _ = c.Terminate() })
+
+	_, failures, err := c.Send(t.Context(), "alice@internal.com",
+		[]string{"notfound1@external.com"}, bytes.NewBufferString("Hello World!"))
+
+	require.Equal(
+		t,
+		smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command."),
+		err,
+		"internal BDAT sizing error leaked to the caller",
+	)
+	require.Len(t, failures, 1)
+	assert.True(t, c.Connected(), "connection must survive an all rejected transaction")
 }
 
 func TestClient_VerifyUTF8Force(t *testing.T) {
