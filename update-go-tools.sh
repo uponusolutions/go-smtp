@@ -15,6 +15,7 @@ echo "module github.com/uponusolutions/go-smtp" > go.mod
 # install tool
 go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 go get -tool mvdan.cc/gofumpt
+go get -tool golang.org/x/perf/cmd/benchstat
 
 # replace go.tool.mod and go.tool.sum
 cd ..

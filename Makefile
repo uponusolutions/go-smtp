@@ -13,8 +13,11 @@ lint:
 	go tool -modfile=go.tool.mod golangci-lint run
 
 bench:
-	go test ./... -bench . -benchtime=10s -run ^$$
- # go test ./... -bench '^Benchmark$/^SmallWithChunking$' -benchtime=10s -run ^$
+	go test ./... -bench . -count=10 -run ^$$ > .bench/$$(date +%Y%m%dT%H%M%S).txt
+    # go test ./... -bench '^Benchmark$/^SmallWithChunking$' -benchtime=10s -run ^$
+
+stats:
+	go tool -modfile=go.tool.mod benchstat .bench/*.txt
 
 pprof:
 	go test . -bench ^Benchmark/^SmallWithChunking$$ -benchtime=10s -run ^$$ -cpuprofile cpu.pprof -memprofile mem.pprof

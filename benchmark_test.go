@@ -130,40 +130,20 @@ func testServer(bei *backend, opts ...server.Option) (be *backend, s *server.Ser
 	return be, s, l.Addr().String(), nil
 }
 
-func sendMailCon(c *mailer.Mailer, data []byte, simplereader bool) error {
+func newMailer(addr string, opts []client.Option) *mailer.Mailer {
+	return mailer.New(
+		mailer.WithServerAddresses(addr),
+		mailer.WithSecurity(mailer.SecurityPlain),
+		mailer.WithBasic(opts...),
+	)
+}
+
+func sendMailCon(c *mailer.Mailer, in io.Reader) error {
 	from := "alice@internal.com"
 	recipients := []string{"bob@external.com", "tim@external.com"}
 
-	var in io.Reader
-
-	if simplereader {
-		in = tester.NewBuffer(data)
-	} else {
-		in = bytes.NewBuffer(data)
-	}
-
 	_, _, err := c.Send(context.Background(), from, recipients, in)
 	return err
-}
-
-func sendMail(addr string, data []byte, simplereader bool, pipelining bool) error {
-	c := mailer.New(
-		mailer.WithServerAddresses(addr),
-		mailer.WithSecurity(mailer.SecurityPlain),
-		mailer.WithBasic(client.WithPipelining(pipelining)),
-	)
-
-	err := c.Connect(context.Background())
-	if err != nil {
-		return nil
-	}
-
-	err = sendMailCon(c, data, simplereader)
-	if err != nil {
-		return nil
-	}
-
-	return c.Disconnect()
 }
 
 type testcase struct {
@@ -171,49 +151,132 @@ type testcase struct {
 	name string
 }
 
-/* Testing
-func BenchmarkTest(b *testing.B) {
-	l := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelError,
-	}))
-	slog.SetDefault(l)
+// serverConfig is one server configuration to benchmark against.
+type serverConfig struct {
+	name string
+	opts []server.Option
+}
 
-	largeEml, err := embedFSTestadata.ReadFile("testdata/large.eml")
+var serverConfigs = []serverConfig{
+	{
+		name: "",
+		opts: []server.Option{server.WithEnableCHUNKING(false)},
+	},
+	{
+		name: "Chunking",
+		opts: []server.Option{server.WithEnableCHUNKING(true)},
+	},
+}
+
+// clientConfig is one client configuration, applied to every mailer.
+type clientConfig struct {
+	name string
+	opts []client.Option
+}
+
+var clientConfigs = []clientConfig{
+	{
+		name: "",
+	},
+	{
+		name: "Pipelining",
+		opts: []client.Option{client.WithPipelining(true)},
+	},
+}
+
+// readerConfig is one way of handing the message body to the mailer.
+type readerConfig struct {
+	name string
+	new  func(data []byte) io.Reader
+}
+
+var readerConfigs = []readerConfig{
+	{
+		name: "",
+		new:  func(data []byte) io.Reader { return tester.NewBuffer(data) },
+	},
+	{
+		name: "Bytes",
+		new:  func(data []byte) io.Reader { return bytes.NewBuffer(data) },
+	},
+}
+
+// connectionConfig is one connection lifecycle, driving the benchmark loop and
+// calling send once per iteration.
+type connectionConfig struct {
+	name string
+	run  func(b *testing.B, addr string, opts []client.Option, send func(c *mailer.Mailer) error)
+}
+
+var connectionConfigs = []connectionConfig{
+	{
+		name: "",
+		run: func(b *testing.B, addr string, opts []client.Option, send func(c *mailer.Mailer) error) {
+			for b.Loop() {
+				c := newMailer(addr, opts)
+
+				if err := c.Connect(context.Background()); err != nil {
+					continue
+				}
+
+				if err := send(c); err != nil {
+					continue
+				}
+
+				_ = c.Disconnect()
+			}
+		},
+	},
+	{
+		name: "Reuse",
+		run: func(b *testing.B, addr string, opts []client.Option, send func(c *mailer.Mailer) error) {
+			c := newMailer(addr, opts)
+			require.NotNil(b, c)
+			require.NoError(b, c.Connect(context.Background()))
+
+			for b.Loop() {
+				_ = send(c)
+			}
+
+			require.NoError(b, c.Disconnect())
+		},
+	},
+}
+
+func setBytes(b *testing.B, eml []byte) {
+	b.Helper()
+
+	if os.Getenv("SETBYTES") == "" {
+		b.SetBytes(int64(len(eml)))
+	}
+}
+
+// benchmarkServer runs every client, connection and reader config against one
+// server config.
+func benchmarkServer(b *testing.B, t testcase, sc serverConfig) {
+	b.Helper()
+
+	_, s, addr, err := testServer(nil, sc.opts...)
 	require.NoError(b, err)
 
-	for _, t := range []testcase{
-		{
-			eml:  largeEml,
-			name: "Large",
-		},
-	} {
-		_, s1, addr1, err := testServer(nil, server.WithEnableCHUNKING(true))
-		require.NoError(b, err)
+	defer func() {
+		require.NoError(b, s.Close())
+	}()
 
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
+	for _, cc := range clientConfigs {
+		for _, conn := range connectionConfigs {
+			for _, rc := range readerConfigs {
+				b.Run(t.name+sc.name+cc.name+conn.name+rc.name, func(b *testing.B) {
+					setBytes(b, t.eml)
+
+					conn.run(b, addr, cc.opts, func(c *mailer.Mailer) error {
+						return sendMailCon(c, rc.new(t.eml))
+					})
+				})
+			}
 		}
-		c := client.New(
-			client.WithServerAddresses(addr1),
-			client.WithSecurity(client.SecurityPlain),
-			client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-		)
-		require.NotNil(b, c)
-		require.NoError(b, c.Connect(context.Background()))
-
-		for b.Loop() {
-			_ = sendMailCon(c, t.eml, false)
-		}
-
-		err = c.Quit()
-		require.NoError(b, err)
-
-		require.NoError(b, s1.Close())
 	}
-
-	// require.EqualValues(b, be1.messages, be2.messages)
 }
-*/
 
 func Benchmark(b *testing.B) {
 	l := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -228,176 +291,11 @@ func Benchmark(b *testing.B) {
 	require.NoError(b, err)
 
 	for _, t := range []testcase{
-		{
-			eml:  smallEml,
-			name: "Small",
-		},
-		{
-			eml:  largeEml,
-			name: "Large",
-		},
+		{eml: smallEml, name: "Small"},
+		{eml: largeEml, name: "Large"},
 	} {
-		s1(b, t)
-		s2(b, t)
+		for _, sc := range serverConfigs {
+			benchmarkServer(b, t, sc)
+		}
 	}
-
-	// require.EqualValues(b, be1.messages, be2.messages)
-}
-
-func s1(b *testing.B, t testcase) {
-	_, s1, addr1, err := testServer(nil, server.WithEnableCHUNKING(true))
-	require.NoError(b, err)
-
-	b.Run(t.name+"WithChunking", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		for b.Loop() {
-			_ = sendMail(addr1, t.eml, false, false)
-		}
-	})
-
-	b.Run(t.name+"WithChunkingWithPipelining", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		for b.Loop() {
-			_ = sendMail(addr1, t.eml, false, true)
-		}
-	})
-
-	b.Run(t.name+"WithChunkingSimpleReader", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		for b.Loop() {
-			_ = sendMail(addr1, t.eml, true, false)
-		}
-	})
-
-	b.Run(t.name+"WithChunkingSameConnection", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		c := mailer.New(
-			mailer.WithServerAddresses(addr1),
-			mailer.WithSecurity(mailer.SecurityPlain),
-			//mailer.WithBasic(
-			//	mailer.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			//),
-		)
-		require.NotNil(b, c)
-		require.NoError(b, c.Connect(context.Background()))
-
-		for b.Loop() {
-			_ = sendMailCon(c, t.eml, false)
-		}
-
-		err = c.Disconnect()
-		require.NoError(b, err)
-	})
-
-	b.Run(t.name+"WithChunkingSameConnectionSimpleReader", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		c := mailer.New(
-			mailer.WithServerAddresses(addr1),
-			mailer.WithSecurity(mailer.SecurityPlain),
-			//mailer.WithBasic(
-			//	client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			//),
-		)
-		require.NotNil(b, c)
-		require.NoError(b, c.Connect(context.Background()))
-
-		for b.Loop() {
-			_ = sendMailCon(c, t.eml, true)
-		}
-
-		err = c.Disconnect()
-		require.NoError(b, err)
-	})
-
-	require.NoError(b, s1.Close())
-}
-
-func s2(b *testing.B, t testcase) {
-	_, s2, addr2, err := testServer(nil, server.WithEnableCHUNKING(false))
-	require.NoError(b, err)
-
-	b.Run(t.name+"WithoutChunking", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		for b.Loop() {
-			_ = sendMail(addr2, t.eml, false, false)
-		}
-	})
-
-	b.Run(t.name+"WithoutChunkingWithPipelining", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		for b.Loop() {
-			_ = sendMail(addr2, t.eml, false, true)
-		}
-	})
-
-	b.Run(t.name+"WithoutChunkingSimpleReader", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		for b.Loop() {
-			_ = sendMail(addr2, t.eml, true, false)
-		}
-	})
-
-	b.Run(t.name+"WithoutChunkingSameConnection", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		c := mailer.New(
-			mailer.WithServerAddresses(addr2),
-			mailer.WithSecurity(mailer.SecurityPlain),
-		//	mailer.WithBasic(
-		//		client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-		//	),
-		)
-		require.NotNil(b, c)
-
-		require.NoError(b, c.Connect(context.Background()))
-
-		for b.Loop() {
-			_ = sendMailCon(c, t.eml, false)
-		}
-
-		err = c.Disconnect()
-		require.NoError(b, err)
-	})
-
-	b.Run(t.name+"WithoutChunkingSameConnectionSimpleReader", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(int64(len(t.eml)))
-		}
-		c := mailer.New(
-			mailer.WithServerAddresses(addr2),
-			mailer.WithSecurity(mailer.SecurityPlain),
-			//mailer.WithBasic(
-			//	client.WithMailOptions(client.MailOptions{Size: int64(len(t.eml))}),
-			//),
-		)
-		require.NotNil(b, c)
-
-		require.NoError(b, c.Connect(context.Background()))
-
-		for b.Loop() {
-			_ = sendMailCon(c, t.eml, true)
-		}
-
-		err = c.Disconnect()
-		require.NoError(b, err)
-	})
-
-	require.NoError(b, s2.Close())
 }
