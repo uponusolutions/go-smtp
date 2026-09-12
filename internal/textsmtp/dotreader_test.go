@@ -2,14 +2,10 @@ package textsmtp_test
 
 import (
 	"bufio"
-	"bytes"
-	"crypto/rand"
 	"embed"
 	"errors"
 	"io"
 	"net"
-	legacy "net/textproto"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,40 +30,40 @@ func TestDotReaderCompare(t *testing.T) {
 
 	for p, value := range input {
 		t.Run(strconv.Itoa(p), func(t *testing.T) {
-			readerOld := bufio.NewReader(strings.NewReader(value))
-			reader := bufio.NewReader(strings.NewReader(value))
+			readerUpstream := bufio.NewReader(strings.NewReader(value))
+			readerFork := bufio.NewReader(strings.NewReader(value))
 
-			dotReaderOld := NewDotReader(readerOld, 0)
-			bufOld := make([]byte, 1)
+			dotReaderUpstream := newDotReaderUpstream(readerUpstream, 0)
+			bufUpstream := make([]byte, 1)
 
-			dotReader := textsmtp.NewDotReader(reader, 0)
-			buf := make([]byte, 1)
+			dotReaderFork := textsmtp.NewDotReader(readerFork, 0)
+			bufFork := make([]byte, 1)
 
 			i := 0
 
 			for {
-				nOld, errOld := dotReaderOld.Read(bufOld)
-				n, err := dotReader.Read(buf)
+				nUpsream, errUpstream := dotReaderUpstream.Read(bufUpstream)
+				nFork, errFork := dotReaderFork.Read(bufFork)
 
-				require.Equal(t, bufOld, buf, i)
-				require.Equal(t, nOld, n, i)
+				require.Equal(t, bufUpstream, bufFork, i)
+				require.Equal(t, nUpsream, nFork, i)
 
-				if errOld != nil && err != io.EOF {
-					require.Equal(t, errOld, err, i)
+				if errUpstream != nil && errFork != io.EOF {
+					require.Equal(t, errUpstream, errFork, i)
 				}
 
 				i++
 
-				if errOld == io.EOF || errOld == io.ErrUnexpectedEOF {
+				if errUpstream == io.EOF || errUpstream == io.ErrUnexpectedEOF {
 					break
 				}
 			}
 
-			bOld, errOld := io.ReadAll(readerOld)
-			b, err := io.ReadAll(reader)
+			bUpstream, errUpstream := io.ReadAll(readerUpstream)
+			bFork, errFork := io.ReadAll(readerFork)
 
-			require.Equal(t, errOld, err)
-			require.Equal(t, bOld, b)
+			require.Equal(t, errUpstream, errFork)
+			require.Equal(t, bUpstream, bFork)
 		})
 	}
 }
@@ -75,10 +71,8 @@ func TestDotReaderCompare(t *testing.T) {
 func TestDotReader(t *testing.T) {
 	t.Run("CompareTest", func(t *testing.T) {
 		tester.ReaderCompareTest(t, &embedFSReader, "testdata/reader", func(b io.Reader) ([]byte, error) {
-			reader := legacy.NewReader(bufio.NewReader(b)).DotReader()
-			buf, err := io.ReadAll(reader)
-			buf = bytes.ReplaceAll(buf, []byte("\n"), []byte("\r\n"))
-			return buf, err
+			reader := newDotReaderUpstream(bufio.NewReader(b), 0)
+			return io.ReadAll(reader)
 		}, func(b io.Reader) ([]byte, error) {
 			reader := textsmtp.NewDotReader(bufio.NewReader(b), 0) // textsmtp.NewDotReader(bufio.NewReader(b), 999999)
 			return io.ReadAll(reader)
@@ -153,56 +147,6 @@ func TestDotReader(t *testing.T) {
 		b, err = io.ReadAll(r)
 		require.Error(t, smtp.ErrDataTooLarge, err)
 		require.Equal(t, []byte("dotlines\r\nfoo\r\n.bar\n...baz\nquux\r\n\r"), b)
-	})
-}
-
-func BenchmarkDotReader(b *testing.B) {
-	const size = 4 * 1024 * 1024
-	var buf bytes.Buffer
-	w := legacy.NewWriter(bufio.NewWriter(&buf)).DotWriter()
-	_, _ = io.Copy(w, io.LimitReader(rand.Reader, size))
-	data := buf.Bytes()
-
-	b.Run("Legacy", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(size)
-		}
-		for b.Loop() {
-			r := legacy.NewReader(bufio.NewReader(bytes.NewReader(data))).DotReader()
-			_, _ = io.Copy(io.Discard, r)
-		}
-	})
-
-	b.Run("Optimized", func(b *testing.B) {
-		b.ResetTimer()
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(size)
-		}
-		for b.Loop() {
-			r := textsmtp.NewDotReader(bufio.NewReader(bytes.NewReader(data)), 0)
-			_, _ = io.Copy(io.Discard, r)
-		}
-	})
-
-	b.Run("LegacySimpleReader", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(size)
-		}
-		for b.Loop() {
-			r := legacy.NewReader(bufio.NewReader(tester.NewBuffer(data))).DotReader()
-			_, _ = io.Copy(io.Discard, r)
-		}
-	})
-
-	b.Run("OptimizedSimpleReader", func(b *testing.B) {
-		b.ResetTimer()
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(size)
-		}
-		for b.Loop() {
-			r := textsmtp.NewDotReader(bufio.NewReader(tester.NewBuffer(data)), 0)
-			_, _ = io.Copy(io.Discard, r)
-		}
 	})
 }
 

@@ -7,7 +7,11 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-type dotReader struct {
+// Copied and integrated over from
+// https://github.com/emersion/go-smtp/blob/8d5af0d9db3ace5e4fdc0e8b427f5b157b0c6c44/data.go
+// to serve as the upstream comparison.
+
+type dotReaderUpstream struct {
 	r     *bufio.Reader
 	state int
 
@@ -15,22 +19,20 @@ type dotReader struct {
 	n       int64 // Maximum bytes remaining
 }
 
-// NewDotReader creates a new dot reader.
-func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader {
-	dr := &dotReader{
-		r: reader,
+func newDotReaderUpstream(r *bufio.Reader, maxMessageBytes int) *dotReaderUpstream {
+	dr := &dotReaderUpstream{
+		r: r,
 	}
 
 	if maxMessageBytes > 0 {
 		dr.limited = true
-		dr.n = maxMessageBytes
+		dr.n = int64(maxMessageBytes)
 	}
 
 	return dr
 }
 
-// Read reads in some more bytes.
-func (r *dotReader) Read(b []byte) (n int, err error) {
+func (r *dotReaderUpstream) Read(b []byte) (n int, err error) {
 	if r.limited {
 		if r.n <= 0 {
 			return 0, smtp.ErrDataTooLarge

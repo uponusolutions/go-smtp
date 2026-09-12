@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,7 @@ import (
 )
 
 //go:embed testdata/*
-var embedFSTestadata embed.FS
+var embedTestdata embed.FS
 
 type message struct {
 	From     string
@@ -90,12 +91,12 @@ func (s *session) Data(_ context.Context, r func() io.Reader) (string, error) {
 	}
 	s.msg.Data = b
 
-	// s.backend.messages = append(s.backend.messages, s.msg)
-
 	return "", nil
 }
 
-func testServer(bei *backend, opts ...server.Option) (be *backend, s *server.Server, port string, err error) {
+// testServer starts a server on a random loopback port and returns the address
+// it is listening on.
+func testServer(bei *backend, opts ...server.Option) (be *backend, s *server.Server, addr string, err error) {
 	if bei == nil {
 		be = new(backend)
 	} else {
@@ -141,7 +142,6 @@ func newMailer(addr string, opts []client.Option) *mailer.Mailer {
 func sendMailCon(c *mailer.Mailer, in io.Reader) error {
 	from := "alice@internal.com"
 	recipients := []string{"bob@external.com", "tim@external.com"}
-
 	_, _, err := c.Send(context.Background(), from, recipients, in)
 	return err
 }
@@ -159,7 +159,7 @@ type serverConfig struct {
 
 var serverConfigs = []serverConfig{
 	{
-		name: "",
+		name: "NoChunking",
 		opts: []server.Option{server.WithEnableCHUNKING(false)},
 	},
 	{
@@ -176,7 +176,7 @@ type clientConfig struct {
 
 var clientConfigs = []clientConfig{
 	{
-		name: "",
+		name: "NoPipelining",
 	},
 	{
 		name: "Pipelining",
@@ -192,17 +192,21 @@ type readerConfig struct {
 
 var readerConfigs = []readerConfig{
 	{
-		name: "",
+		name: "MinimalReader",
 		new:  func(data []byte) io.Reader { return tester.NewBuffer(data) },
 	},
 	{
-		name: "Bytes",
+		name: "BufferReader",
 		new:  func(data []byte) io.Reader { return bytes.NewBuffer(data) },
 	},
 }
 
 // connectionConfig is one connection lifecycle, driving the benchmark loop and
 // calling send once per iteration.
+//
+// Every error inside the loop aborts the benchmark. A failing connection would
+// otherwise race through the iterations and report an excellent — and
+// meaningless — result.
 type connectionConfig struct {
 	name string
 	run  func(b *testing.B, addr string, opts []client.Option, send func(c *mailer.Mailer) error)
@@ -210,32 +214,36 @@ type connectionConfig struct {
 
 var connectionConfigs = []connectionConfig{
 	{
-		name: "",
+		name: "CloseConn",
 		run: func(b *testing.B, addr string, opts []client.Option, send func(c *mailer.Mailer) error) {
 			for b.Loop() {
 				c := newMailer(addr, opts)
 
 				if err := c.Connect(context.Background()); err != nil {
-					continue
+					b.Fatalf("connect: %v", err)
 				}
 
 				if err := send(c); err != nil {
-					continue
+					b.Fatalf("send: %v", err)
 				}
 
-				_ = c.Disconnect()
+				if err := c.Disconnect(); err != nil {
+					b.Fatalf("disconnect: %v", err)
+				}
 			}
 		},
 	},
 	{
-		name: "Reuse",
+		name: "ReuseConn",
 		run: func(b *testing.B, addr string, opts []client.Option, send func(c *mailer.Mailer) error) {
 			c := newMailer(addr, opts)
 			require.NotNil(b, c)
 			require.NoError(b, c.Connect(context.Background()))
 
 			for b.Loop() {
-				_ = send(c)
+				if err := send(c); err != nil {
+					b.Fatalf("send: %v", err)
+				}
 			}
 
 			require.NoError(b, c.Disconnect())
@@ -243,17 +251,48 @@ var connectionConfigs = []connectionConfig{
 	},
 }
 
+// setBytes reports the message size so the benchmark prints throughput in MB/s.
+// Set NOSETBYTES=1 to suppress it, e.g. when comparing ns/op or allocations
+// across different message sizes, where a MB/s column is only noise.
 func setBytes(b *testing.B, eml []byte) {
 	b.Helper()
 
-	if os.Getenv("SETBYTES") == "" {
-		b.SetBytes(int64(len(eml)))
+	if os.Getenv("NOSETBYTES") != "" {
+		return
 	}
+
+	b.SetBytes(int64(len(eml)))
+}
+
+// withoutGC disables the garbage collector for the duration of b only, and
+// frees whatever the previous sub-benchmark left behind, so that heap pressure
+// does not bleed from one matrix cell into the next.
+//
+// This keeps allocation counts stable but measures a world without GC pauses.
+// Set WITHGC=1 to run under normal GC behaviour, which is closer to what
+// production latency looks like.
+func withoutGC(b *testing.B) {
+	b.Helper()
+
+	if os.Getenv("WITHGC") != "" {
+		debug.FreeOSMemory()
+		return
+	}
+
+	old := debug.SetGCPercent(-1)
+	debug.FreeOSMemory()
+
+	b.Cleanup(func() {
+		debug.SetGCPercent(old)
+		debug.FreeOSMemory()
+	})
 }
 
 // benchmarkServer runs every client, connection and reader config against one
-// server config.
-func benchmarkServer(b *testing.B, t testcase, sc serverConfig) {
+// server config. The configs are nested as sub-benchmarks so the resulting
+// names are paths, e.g. Large/Chunking/Pipelining/Reuse/BytesBuffer, which can
+// be filtered with -bench 'Large/Chunking/.*/Reuse'.
+func benchmarkServer(b *testing.B, tc testcase, sc serverConfig) {
 	b.Helper()
 
 	_, s, addr, err := testServer(nil, sc.opts...)
@@ -264,38 +303,47 @@ func benchmarkServer(b *testing.B, t testcase, sc serverConfig) {
 	}()
 
 	for _, cc := range clientConfigs {
-		for _, conn := range connectionConfigs {
-			for _, rc := range readerConfigs {
-				b.Run(t.name+sc.name+cc.name+conn.name+rc.name, func(b *testing.B) {
-					setBytes(b, t.eml)
+		b.Run(cc.name, func(b *testing.B) {
+			for _, conn := range connectionConfigs {
+				b.Run(conn.name, func(b *testing.B) {
+					for _, rc := range readerConfigs {
+						b.Run(rc.name, func(b *testing.B) {
+							withoutGC(b)
+							setBytes(b, tc.eml)
 
-					conn.run(b, addr, cc.opts, func(c *mailer.Mailer) error {
-						return sendMailCon(c, rc.new(t.eml))
-					})
+							conn.run(b, addr, cc.opts, func(c *mailer.Mailer) error {
+								return sendMailCon(c, rc.new(tc.eml))
+							})
+						})
+					}
 				})
 			}
-		}
+		})
 	}
 }
 
-func Benchmark(b *testing.B) {
+func BenchmarkMailer(b *testing.B) {
 	l := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelError,
 	}))
 	slog.SetDefault(l)
 
-	smallEml, err := embedFSTestadata.ReadFile("testdata/small.eml")
+	smallEml, err := embedTestdata.ReadFile("testdata/small.eml")
 	require.NoError(b, err)
 
-	largeEml, err := embedFSTestadata.ReadFile("testdata/large.eml")
+	largeEml, err := embedTestdata.ReadFile("testdata/large.eml")
 	require.NoError(b, err)
 
-	for _, t := range []testcase{
+	for _, tc := range []testcase{
 		{eml: smallEml, name: "Small"},
 		{eml: largeEml, name: "Large"},
 	} {
-		for _, sc := range serverConfigs {
-			benchmarkServer(b, t, sc)
-		}
+		b.Run(tc.name, func(b *testing.B) {
+			for _, sc := range serverConfigs {
+				b.Run(sc.name, func(b *testing.B) {
+					benchmarkServer(b, tc, sc)
+				})
+			}
+		})
 	}
 }
