@@ -13,7 +13,7 @@ lint:
 	go tool -modfile=go.tool.mod golangci-lint run
 
 bench:
-	go test ./... -bench . -count=10 -run ^$$ > .bench/$$(date +%Y%m%dT%H%M%S).txt
+	go test ./... -bench . -count=10 -run ^$$ | tee .bench/$$(date +%Y%m%dT%H%M%S).txt
     # go test ./... -bench '^Benchmark$/^SmallWithChunking$' -benchtime=10s -run ^$
 
 stats:
