@@ -7,11 +7,9 @@ package textsmtp_test
 import (
 	"bufio"
 	"bytes"
-	"crypto/rand"
 	"embed"
 	"io"
-	legacy "net/textproto"
-	"os"
+	upstream "net/textproto"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,7 +23,7 @@ var embedFSWriter embed.FS
 func TestDotWriter(t *testing.T) {
 	t.Run("CompareTest", func(t *testing.T) {
 		tester.WriterCompareTest(t, &embedFSWriter, "testdata/writer", func(b io.Writer) io.WriteCloser {
-			return legacy.NewWriter(bufio.NewWriter(b)).DotWriter()
+			return upstream.NewWriter(bufio.NewWriter(b)).DotWriter()
 		}, func(b io.Writer) io.WriteCloser {
 			return textsmtp.NewDotWriter(bufio.NewWriter(b))
 		})
@@ -163,53 +161,4 @@ func TestDotWriterCloseNoWrite(t *testing.T) {
 	if s := buf.String(); s != want {
 		t.Fatalf("wrote %q; want %q", s, want)
 	}
-}
-
-func BenchmarkDotWriter(b *testing.B) {
-	const size = 256 * 1024 * 1024
-	data, _ := io.ReadAll(io.LimitReader(rand.Reader, size))
-
-	b.Run("Legacy", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(size)
-		}
-		for b.Loop() {
-			r := bytes.NewReader(data)
-			w := legacy.NewWriter(bufio.NewWriter(io.Discard)).DotWriter()
-			_, _ = io.Copy(w, r)
-		}
-	})
-
-	b.Run("Optimized", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(size)
-		}
-		for b.Loop() {
-			r := bytes.NewReader(data)
-			w := textsmtp.NewDotWriter(bufio.NewWriter(io.Discard))
-			_, _ = io.Copy(w, r)
-		}
-	})
-
-	b.Run("LegacySimpleReader", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(size)
-		}
-		for b.Loop() {
-			r := tester.NewBuffer(data)
-			w := legacy.NewWriter(bufio.NewWriter(io.Discard)).DotWriter()
-			_, _ = io.Copy(w, r)
-		}
-	})
-
-	b.Run("OptimizedSimpleReader", func(b *testing.B) {
-		if os.Getenv("SETBYTES") == "" {
-			b.SetBytes(size)
-		}
-		for b.Loop() {
-			r := tester.NewBuffer(data)
-			w := textsmtp.NewDotWriter(bufio.NewWriter(io.Discard))
-			_, _ = io.Copy(w, r)
-		}
-	})
 }

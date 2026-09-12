@@ -48,25 +48,6 @@ func NewTextproto(
 // ErrTooLongLine occurs if the smtp line is too long.
 var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
 
-// PrintfLine writes the formatted output followed by \r\n.
-func (t *Textproto) PrintfLine(format string, args ...any) error {
-	if _, err := fmt.Fprintf(t.W, format, args...); err != nil {
-		return err
-	}
-
-	_, err := t.W.Write(smtp.Crnl)
-	return err
-}
-
-// PrintfLineAndFlush writes the formatted output followed by \r\n anf flushes.
-func (t *Textproto) PrintfLineAndFlush(format string, args ...any) error {
-	err := t.PrintfLine(format, args...)
-	if err == nil {
-		err = t.W.Flush()
-	}
-	return err
-}
-
 // ReadResponse reads a multi-line response of the form:
 //
 //	code-message line 1

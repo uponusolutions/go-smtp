@@ -38,7 +38,7 @@ func DefaultConfig() Config {
 		chunkingMaxSize: defaultChunkingMaxSize,
 
 		// chunking buffer enabled by default
-		chunkingBufferEnabled: true,
+		chunkingBuffer: true,
 	}
 }
 
@@ -106,7 +106,10 @@ type Config struct {
 	// the buffer is automatically used.
 	// If you guarantee that you reader has large enough chunks,
 	// you can disable the chunking buffer here.
-	chunkingBufferEnabled bool
+	chunkingBuffer bool
+
+	// Enable pipelining if the server supports it.
+	pipelining bool
 }
 
 // Option defines a client option.
@@ -171,7 +174,14 @@ func WithChunkingMaxSize(chunkingMaxSize int) Option {
 // It is enabled by default.
 func WithChunkingBuffer(enabled bool) Option {
 	return func(c *Config) {
-		c.chunkingBufferEnabled = enabled
+		c.chunkingBuffer = enabled
+	}
+}
+
+// WithPipelining sets if pipelining is used when the server supports it.
+func WithPipelining(enabled bool) Option {
+	return func(c *Config) {
+		c.pipelining = enabled
 	}
 }
 

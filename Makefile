@@ -12,9 +12,23 @@ lint:
 	echo "Linting go"
 	go tool -modfile=go.tool.mod golangci-lint run
 
+benchlog:
+	GOMAXPROCS=1 go test ./... -bench . -benchmem -count=10 -run ^$$ | tee .bench/$$(date +%Y%m%dT%H%M%S).txt
+
+BENCH	?= .
+TIME	?= 1s
+
 bench:
-	go test ./... -bench . -benchtime=10s -run ^$$
- # go test ./... -bench '^Benchmark$/^SmallWithChunking$' -benchtime=10s -run ^$
+	GOMAXPROCS=1 go test ./... -bench '$(BENCH)' -vet=off -benchmem -benchtime=$(TIME) -run ^$$
+
+bench-mailer:
+	GOMAXPROCS=1 go test . -bench '$(BENCH)' -benchmem -benchtime=$(TIME) -run ^$$
+
+bench-dot:
+	GOMAXPROCS=1 go test ./internal/textsmtp -bench '$(BENCH)' -benchmem -benchtime=$(TIME) -run ^$$
+
+stats:
+	go tool -modfile=go.tool.mod benchstat .bench/*.txt
 
 pprof:
 	go test . -bench ^Benchmark/^SmallWithChunking$$ -benchtime=10s -run ^$$ -cpuprofile cpu.pprof -memprofile mem.pprof

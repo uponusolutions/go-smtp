@@ -19,7 +19,7 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: Run benchmark
-        run: export SETBYTES=NO && go test ./... -bench . -benchtime=10s -run ^$ | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt  && sed -i 's/BenchmarkDotReader\//BenchmarkDotReader/g' output.txt  && sed -i 's/BenchmarkDotWriter\//BenchmarkDotWriter/g' output.txt
+        run: export NOSETBYTES=TRUE && go test ./... -bench . -benchtime=10s -run ^$ | tee output.txt && sed -i 's/Benchmark\//Benchmark/g' output.txt  && sed -i 's/BenchmarkDotReader\//BenchmarkDotReader/g' output.txt  && sed -i 's/BenchmarkDotWriter\//BenchmarkDotWriter/g' output.txt
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:

@@ -7,29 +7,29 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-// DataCloser implement an io.WriteCloser with the additional
-// CloseWithResponse function.
-type DataCloser struct {
+// ContentCloser function.
+type ContentCloser struct {
 	writer io.WriteCloser
 	c      *Client
 	closed bool
 }
 
 // Writer returns inner io.Writer which possible implement more methods (e.g. ReadFrom)
-func (d *DataCloser) Writer() io.Writer {
+func (d *ContentCloser) Writer() io.Writer {
 	return d.writer
 }
 
 // Write writes do underlying writer.
-func (d *DataCloser) Write(p []byte) (n int, err error) {
+func (d *ContentCloser) Write(p []byte) (n int, err error) {
 	return d.writer.Write(p)
 }
 
 // CloseWithResponse closes the data closer and returns code, msg.
-func (d *DataCloser) CloseWithResponse() (*smtp.Status, error) {
+func (d *ContentCloser) CloseWithResponse() (*smtp.Status, error) {
 	if d.closed {
 		return nil, errors.New("smtp: data writer closed twice")
 	}
+	d.closed = true
 
 	if err := d.writer.Close(); err != nil {
 		return nil, err
@@ -45,12 +45,11 @@ func (d *DataCloser) CloseWithResponse() (*smtp.Status, error) {
 		status = nil
 	}
 
-	d.closed = true
 	return status, err
 }
 
 // Close closes the data closer.
-func (d *DataCloser) Close() error {
+func (d *ContentCloser) Close() error {
 	_, err := d.CloseWithResponse()
 	return err
 }

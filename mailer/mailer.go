@@ -90,7 +90,7 @@ func (c *Mailer) connectAddress(ctx context.Context, addr string) error {
 	if c.cfg.security == SecurityStartTLS || c.cfg.security == SecurityPreferStartTLS {
 		if ok, _ := c.client.Extension("STARTTLS"); !ok {
 			if c.cfg.security == SecurityStartTLS {
-				_ = c.client.Quit()
+				_ = c.Disconnect()
 				return errors.New("smtp: server doesn't support STARTTLS")
 			}
 		} else {
@@ -117,7 +117,7 @@ func (c *Mailer) auth() error {
 	// Authenticate if authentication is possible and sasl client available.
 	if ok, _ := c.client.Extension("AUTH"); ok && c.cfg.saslClient != nil {
 		if err := c.client.Auth(c.cfg.saslClient); err != nil {
-			_ = c.client.Quit()
+			_ = c.Disconnect()
 			return err
 		}
 	}
@@ -129,14 +129,21 @@ type Len interface {
 	Len() int
 }
 
+type pipeliningPending struct {
+	mail        bool
+	rcpts       int
+	rcptsOffset int
+	data        bool
+}
+
 func (c *Mailer) prepare(
 	ctx context.Context,
 	from string,
 	mailOptions *client.MailOptions,
-	rcpt []string,
+	rcpts []string,
 	rcptsOptions []*smtp.RcptOptions,
 	size int,
-) (*client.DataCloser, []resolve.Failure, error) {
+) (*client.ContentCloser, []resolve.Failure, error) {
 	if !c.client.Connected() {
 		err := c.Connect(ctx)
 		if err != nil {
@@ -144,7 +151,7 @@ func (c *Mailer) prepare(
 		}
 	}
 
-	if len(rcpt) < 1 {
+	if len(rcpts) < 1 {
 		return nil, nil, errors.New("no recipients")
 	}
 
@@ -154,41 +161,154 @@ func (c *Mailer) prepare(
 		}
 	}
 
+	pipelining := &pipeliningPending{}
+
 	// MAIL FROM:
+	// No congestion possible on the first call
 	if err := c.client.Mail(from, mailOptions); err != nil {
 		return nil, nil, err
 	}
+	pipelining.mail = true
 
 	failures := []resolve.Failure{}
 
 	// RCPT TO:
-	for i, addr := range rcpt {
+	for i, addr := range rcpts {
 		var rcptsOption *smtp.RcptOptions
 		if len(rcptsOptions) > i {
 			rcptsOption = rcptsOptions[i]
 		}
 
 		if err := c.client.Rcpt(addr, rcptsOption); err != nil {
-			smtpErr := &smtp.Status{}
-
-			// continue sending if code is 550 Requested action not taken and abort on rcpt reject is disabled
-			if c.cfg.abortOnRcptReject || !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
-				return nil, nil, err
+			if err == client.ErrPipeliningCongestion {
+				if _, failures, err = c.handleResponses(pipelining, rcpts, failures, size); err != nil {
+					return nil, failures, err
+				}
+				err = c.client.Rcpt(addr, rcptsOption)
 			}
+			if err != nil {
+				failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
+				if err != nil {
+					// reset open mail transfer
+					if errRset := c.reset(); errRset != nil {
+						return nil, failures, errors.Join(err, errRset)
+					}
+					return nil, nil, err
+				}
+			}
+		}
+		pipelining.rcpts++
+	}
 
-			failures = append(failures, resolve.Failure{
-				Rcpts: []string{addr},
-				Error: err,
-			})
+	// sync before calling data if abortOnRcptReject is true
+	if c.client.PipeliningActive() && c.cfg.abortOnRcptReject {
+		var err error
+		if _, failures, err = c.handleResponses(pipelining, rcpts, failures, size); err != nil {
+			return nil, failures, err
 		}
 	}
 
 	// DATA
 	w, err := c.client.Content(size)
-	if err != nil {
-		return nil, nil, err
+	if err == client.ErrPipeliningCongestion {
+		if _, failures, err = c.handleResponses(pipelining, rcpts, failures, size); err != nil {
+			return nil, failures, err
+		}
+		w, err = c.client.Content(size)
 	}
+	if err != nil {
+		return nil, failures, err
+	}
+	pipelining.data = true
+
+	// pipelining is active
+	if w == nil {
+		return c.handleResponses(pipelining, rcpts, failures, size)
+	}
+
 	return w, failures, nil
+}
+
+func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, failures []resolve.Failure, size int) (*client.ContentCloser, []resolve.Failure, error) {
+	if pipelining.mail {
+		pipelining.mail = false
+		if err := c.client.MailResponse(); err != nil {
+			// clear all pending responses, data couldn't be accepted
+			if responseErr := c.client.ClearResponses(0); responseErr != nil {
+				return nil, nil, errors.Join(err, responseErr)
+			}
+			return nil, nil, err
+		}
+	}
+
+	pendingRcpts := rcpts[pipelining.rcptsOffset : pipelining.rcptsOffset+pipelining.rcpts]
+	pipelining.rcptsOffset += pipelining.rcpts
+	pipelining.rcpts = 0
+
+	for _, addr := range pendingRcpts {
+		if err := c.client.RcptResponse(); err != nil {
+			failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
+			if err != nil {
+				// pipelining.data is never true here, because abortOnRcptReject forces sync before calling data
+				if errResponse := c.client.ClearResponses(0); errResponse != nil {
+					return nil, failures, errors.Join(err, errResponse)
+				}
+				if errReset := c.reset(); errReset != nil {
+					return nil, failures, errors.Join(err, errReset)
+				}
+				return nil, failures, err
+			}
+		}
+	}
+
+	if pipelining.data {
+		pipelining.data = false
+		w, err := c.client.ContentResponse(size)
+		if err != nil {
+			if errReset := c.reset(); errReset != nil {
+				return nil, failures, errors.Join(err, errReset)
+			}
+			return nil, failures, err
+		}
+
+		// no rcpt was accepted - RFC 2920
+		// the client cannot assume that the DATA command will be rejected just because none of the RCPT TO commands worked.
+		if len(failures) == len(rcpts) {
+			if err := w.Close(); err != nil {
+				return nil, failures, err
+			}
+			return nil, failures, nil
+		}
+		return w, failures, nil
+	}
+
+	return nil, failures, nil
+}
+
+// reset resets open mail transfer and is pipelining aware
+func (c *Mailer) reset() (err error) {
+	err = c.client.Reset()
+	if !c.client.PipeliningActive() {
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	return c.client.ResetResponse()
+}
+
+func rcptError(addr string, abortOnRcptReject bool, failures []resolve.Failure, err error) ([]resolve.Failure, error) {
+	// continue sending if code is not 421 and abort on rcpt reject is disabled
+	if smtpErr, ok := err.(*smtp.Status); !ok || abortOnRcptReject || smtpErr.Code == 421 {
+		return nil, err
+	}
+
+	failures = append(failures, resolve.Failure{
+		Rcpts: []string{addr},
+		Error: err,
+	})
+
+	return failures, nil
 }
 
 // Send send an email from
@@ -224,6 +344,8 @@ func (c *Mailer) Send(ctx context.Context, from string, rcpt []string, in io.Rea
 // fields such as "From", "To", "Subject", and "Cc".  Sending "Bcc"
 // messages is accomplished by including an email address in the to
 // parameter but not including it in the in headers.
+//
+// The status and err can both be empty if all recipients were rejected by the server
 func (c *Mailer) SendAdvanced(
 	ctx context.Context,
 	from string,
@@ -239,7 +361,18 @@ func (c *Mailer) SendAdvanced(
 
 	w, failures, err := c.prepare(ctx, from, mailOptions, rcpts, rcptsOptions, size)
 	if err != nil {
+		// if err isn't smtp.StatusBase we are in an unknown state, close connection
+		if _, ok := err.(*smtp.Status); !ok {
+			if errClose := c.client.Close(); errClose != nil {
+				err = errors.Join(err, errClose)
+			}
+			return nil, failures, err
+		}
 		return nil, failures, err
+	}
+
+	if w == nil {
+		return nil, failures, nil
 	}
 
 	_, err = io.Copy(w.Writer(), in)
@@ -257,7 +390,7 @@ func (c *Mailer) SendAdvanced(
 		err = errors.Join(err, c.client.Close())
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, failures, err
 	}
 
 	return status, failures, err
@@ -267,15 +400,27 @@ func (c *Mailer) SendAdvanced(
 // If Verify returns nil, the address is valid. A non-nil return
 // does not necessarily indicate an invalid address. Many servers
 // will not verify addresses for security reasons.
-//
-// If server returns an error, it will be of type *smtp.
 func (c *Mailer) Verify(addr string, opts *client.VrfyOptions) error {
-	return c.client.Verify(addr, opts)
+	err := c.client.Verify(addr, opts)
+	if !c.client.PipeliningActive() {
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	return c.client.VerifyResponse()
 }
 
 // Disconnect ends current connection gracefully, if any exists.
-func (c *Mailer) Disconnect() error {
-	return c.client.Quit()
+func (c *Mailer) Disconnect() (err error) {
+	err = c.client.Quit()
+	if !c.client.PipeliningActive() {
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	return c.client.QuitResponse()
 }
 
 // Terminate ends current connection forcefully.
@@ -312,10 +457,15 @@ type Response struct {
 
 // Send just sends a mail.
 // in is called multiple times if there are recipients from different servers.
+// The option abort on recipient rejection is permanently not supported.
 func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader, opts ...Option) (res Report, err error) {
 	r := resolve.New(nil)
 
 	config := NewConfig(opts...)
+
+	if config.extra.abortOnRcptReject {
+		return Report{}, errors.New("abort on recipient rejection is not supported")
+	}
 
 	var mx resolve.Result
 
@@ -339,13 +489,6 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 
 	for _, server := range mx.Servers {
 		status, failures, err := send(ctx, server, from, config, in())
-		if err != nil {
-			res.Failures = append(res.Failures, resolve.Failure{
-				Rcpts: server.Rcpts,
-				Error: err,
-			})
-			continue
-		}
 
 		if len(failures) > 0 {
 			rcpts := []string{}
@@ -363,10 +506,25 @@ func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader,
 			res.Failures = append(res.Failures, failures...)
 		}
 
-		res.Responses = append(res.Responses, Response{
-			Status: status,
-			Rcpts:  server.Rcpts,
-		})
+		// Only blame the transaction error on recipients that do not
+		// As there should be recipients left
+		if err != nil {
+			if len(server.Rcpts) > 0 {
+				res.Failures = append(res.Failures, resolve.Failure{
+					Rcpts: server.Rcpts,
+					Error: err,
+				})
+			}
+			continue
+		}
+
+		// No request was made if all rcpts were rejected.
+		if len(server.Rcpts) > 0 {
+			res.Responses = append(res.Responses, Response{
+				Status: status,
+				Rcpts:  server.Rcpts,
+			})
+		}
 	}
 	return res, nil
 }

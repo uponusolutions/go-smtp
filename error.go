@@ -251,4 +251,10 @@ var (
 		EnhancedCode: EnhancedCode{5, 5, 1},
 		Lines:        []string{"Missing RCPT TO command."},
 	}
+	// ErrBadSequence is returned if a command is invalid at this point.
+	ErrBadSequence = &Status{
+		Code:         503,
+		EnhancedCode: EnhancedCode{5, 5, 1},
+		Lines:        []string{"Bad sequence of commands"},
+	}
 )
