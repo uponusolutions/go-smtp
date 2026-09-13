@@ -414,7 +414,7 @@ func (c *Conn) handleGreetResponse() *smtp.Status {
 	}
 	if c.server.enableDELIVERBY {
 		// maximum of nine digits
-		if c.server.minimumDeliverInSeconds > 0 && c.server.minimumDeliverInSeconds < 99999999999 {
+		if c.server.minimumDeliverInSeconds > 0 && c.server.minimumDeliverInSeconds < 999999999 {
 			lines = append(lines, "DELIVERBY "+strconv.Itoa(c.server.minimumDeliverInSeconds))
 		} else {
 			lines = append(lines, "DELIVERBY")
