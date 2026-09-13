@@ -24,7 +24,9 @@ func parseDeliverByArgument(arg string) *smtp.DeliverByOptions {
 	}
 	modeValue := smtp.DeliverByMode(modeStr)
 	secondsValue, err := strconv.Atoi(secondsStr)
-	if err != nil || (modeValue == smtp.DeliverByReturn && secondsValue < 1) {
+	if err != nil ||
+		(modeValue == smtp.DeliverByReturn && (secondsValue < 1 || secondsValue > 999999999)) ||
+		(modeValue == smtp.DeliverByNotify && (secondsValue < -999999999 || secondsValue > 999999999)) {
 		return nil
 	}
 	return &smtp.DeliverByOptions{
