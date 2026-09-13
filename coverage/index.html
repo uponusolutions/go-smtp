@@ -4500,10 +4500,10 @@ func (c *Conn) Close(err error) <span class="cov4" title="89">{
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov3" title="41">{
+        if closeErr != nil </span><span class="cov3" title="42">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov3" title="41"> {
+                }</span> else<span class="cov3" title="42"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
@@ -5288,7 +5288,7 @@ func (c *Conn) writeStatus(status *smtp.Status) <span class="cov9" title="154590
         // PIPELINE support
         // If there is something buffered in c.text.R then we can assume another command is following.
         // This means the client is doing pipelining and we don't need to respond just now.
-        if c.text.R.Buffered() == 0 </span><span class="cov6" title="2680">{
+        if c.text.R.Buffered() == 0 </span><span class="cov6" title="2683">{
                 _ = c.text.W.Flush()
         }</span>
 }
@@ -6610,12 +6610,12 @@ func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) <s
 }</span>
 
 // Close implements the Close interface.
-func (s *Session) Close(_ context.Context, _ error) <span class="cov3" title="31">{
+func (s *Session) Close(_ context.Context, _ error) <span class="cov3" title="32">{
         s.mail = &amp;tester.Mail{}
 }</span>
 
 // Logger implements the Logger interface.
-func (Session) Logger(_ context.Context) *slog.Logger <span class="cov10" title="308457">{
+func (Session) Logger(_ context.Context) *slog.Logger <span class="cov10" title="308459">{
         return nil
 }</span>
 
