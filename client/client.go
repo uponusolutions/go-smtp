@@ -343,8 +343,21 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) 
 		if c.connPipelining.concluded {
 			return ErrPipeliningGroupConcluded
 		}
-		// need to flush to prevent congestion, group concluded forcefully
-		// if the buffer can not hold the first request, just try it
+		// RFC 2920
+		// Client SMTP implementations MAY elect to operate in a nonblocking
+		// fashion, processing server responses immediately upon receipt, even
+		// if there is still data pending transmission from the client's
+		// previous TCP send operation. If nonblocking operation is not
+		// supported, however, client SMTP implementations MUST also check the
+		// TCP window size and make sure that each group of commands fits
+		// entirely within the window. The window size is usually, but not
+		// always, 4K octets.  Failure to perform this check can lead to
+		// deadlock conditions.
+
+		// Need to flush to prevent congestion and concluse group forcefully.
+		// If the buffer can not hold the first request, ignore congestion.
+		// Typically the 4k buffio is enough to make it fast, it don't expect any buffers from tcp.
+		// Outcomment to see TestClient_SendMailDirectManyRcptsPipelining failing.
 		if len(message)+2 > c.cfg.text.W.Available() && c.connPipelining.pending > 0 {
 			err := c.cfg.text.W.Flush()
 			if err != nil {

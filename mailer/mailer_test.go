@@ -47,6 +47,7 @@ var s = []*server.Server{
 	testserver.Standard(
 		server.WithBackend(&backend),
 		server.WithEnableCHUNKING(true),
+		server.WithMaxRecipients(0),
 	),
 }
 
@@ -262,17 +263,20 @@ func makeEmails(x int) []string {
 	return emails
 }
 
+// This tries to test if the pipelining limits writing to prevent congestion if all buffers are filled up.
 func TestClient_SendMailDirectManyRcptsPipelining(t *testing.T) {
 	data := []byte("Hello World!")
 	from := "alice@internal.com"
-	recipients := makeEmails(1000)
+
+	// enough recipients to fill up the tcp buffer
+	recipients := makeEmails(150000)
 
 	_, err := Send(
 		context.Background(),
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr[0]),
+		WithServerAddresses(addr[2]),
 		WithBasic(client.WithPipelining(true)),
 	)
 	require.NoError(t, err)
