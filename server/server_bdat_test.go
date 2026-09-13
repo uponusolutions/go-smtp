@@ -29,13 +29,13 @@ func TestServerBdatDiscard(t *testing.T) {
 
 	// MAIL FROM as chunk content
 	_, _ = io.WriteString(c, "BDAT 9 LAST\r\nMAIL FROM")
-	scanner.Scan()
+	scan(t, c, scanner)
 	if reply := scanner.Text(); !strings.HasPrefix(reply, "5") {
 		t.Fatal("Invalid BDAT response:", reply)
 	}
 
 	_, _ = io.WriteString(c, "NOOP\r\n")
-	scanner.Scan()
+	scan(t, c, scanner)
 	if reply := scanner.Text(); !strings.HasPrefix(reply, "250 2.0.0") {
 		// If BDAT chunk isn't discarded, MAIL FROM is executed as command
 		// 501 5.5.2 Was expecting MAIL arg syntax of FROM:<address>
@@ -56,20 +56,20 @@ func TestServerBdatNoRecipientsDiscard(t *testing.T) {
 	}
 
 	_, _ = io.WriteString(c, "MAIL FROM:<alice@wonderland.book>\r\n")
-	scanner.Scan()
+	scan(t, c, scanner)
 	if reply := scanner.Text(); !strings.HasPrefix(reply, "250 2.0.0") {
 		t.Fatalf("Invalid MAIL FROM response: %v", reply)
 	}
 
 	// RCPT TO as chunk content
 	_, _ = io.WriteString(c, "BDAT 7 LAST\r\nRCPT TO")
-	scanner.Scan()
+	scan(t, c, scanner)
 	if reply := scanner.Text(); !strings.HasPrefix(reply, "5") {
 		t.Fatal("Invalid BDAT response:", reply)
 	}
 
 	_, _ = io.WriteString(c, "NOOP\r\n")
-	scanner.Scan()
+	scan(t, c, scanner)
 	if reply := scanner.Text(); !strings.HasPrefix(reply, "250 2.0.0") {
 		// If BDAT chunk isn't discarded, MAIL FROM is executed as command
 		// 501 5.5.2 Was expecting MAIL arg syntax of FROM:<address>
