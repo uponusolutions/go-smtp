@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/uponusolutions/go-smtp/client/client.go (76.0%)</option>
+				<option value="file0">github.com/uponusolutions/go-smtp/client/client.go (75.9%)</option>
 				
 				<option value="file1">github.com/uponusolutions/go-smtp/client/config.go (47.8%)</option>
 				
@@ -844,8 +844,13 @@ func (c *Client) Mail(from string, opts *MailOptions) error <span class="cov4" t
                 // We can safely discard parameter if server does not support AUTH.
         }
         <span class="cov4" title="41">if _, ok := c.connExt["DELIVERBY"]; ok &amp;&amp; opts != nil &amp;&amp; opts.DeliverBy != nil </span><span class="cov1" title="1">{
-                if opts.DeliverBy.Mode == smtp.DeliverByReturn &amp;&amp; opts.DeliverBy.Seconds &lt; 1 </span><span class="cov0" title="0">{
-                        return errors.New("smtp: DELIVERBY mode must be greater than zero with return mode")
+                if opts.DeliverBy.Mode == smtp.DeliverByReturn &amp;&amp;
+                        (opts.DeliverBy.Seconds &lt; 1 || opts.DeliverBy.Seconds &gt; 999999999) </span><span class="cov0" title="0">{
+                        return errors.New("smtp: DELIVERBY mode must be between 1 and 999999999 with return mode")
+                }</span>
+                <span class="cov1" title="1">if opts.DeliverBy.Mode == smtp.DeliverByNotify &amp;&amp;
+                        (opts.DeliverBy.Seconds &lt; -999999999 || opts.DeliverBy.Seconds &gt; 999999999) </span><span class="cov0" title="0">{
+                        return errors.New("smtp: DELIVERBY mode must be between -999999999 and 999999999 with notify mode")
                 }</span>
                 <span class="cov1" title="1">arg := fmt.Sprintf(" BY=%d;%s", int(opts.DeliverBy.Seconds), opts.DeliverBy.Mode)
                 if opts.DeliverBy.Trace </span><span class="cov1" title="1">{
@@ -2998,21 +3003,21 @@ func IsCodeUnexpected(code int, expectCode int) bool <span class="cov8" title="5
 
 // ReadLine reads a single line from r,
 // eliding the final \n or \r\n from the returned string.
-func (t *Textproto) ReadLine() (string, error) <span class="cov9" title="11021">{
+func (t *Textproto) ReadLine() (string, error) <span class="cov9" title="11020">{
         line, err := t.readLineSlice()
         return string(line), err
 }</span>
 
-func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="11021">{
+func (t *Textproto) readLineSlice() ([]byte, error) <span class="cov9" title="11020">{
         // If the line limit was exceeded once, the connection shouldn't be used anymore.
         if t.lineLengthExceeded </span><span class="cov1" title="1">{
                 return nil, ErrTooLongLine
         }</span>
 
-        <span class="cov9" title="11020">var line []byte
-        for </span><span class="cov9" title="15064">{
+        <span class="cov9" title="11019">var line []byte
+        for </span><span class="cov9" title="15063">{
                 l, more, err := t.R.ReadLine()
-                if err != nil </span><span class="cov4" title="64">{
+                if err != nil </span><span class="cov4" title="63">{
                         return nil, err
                 }</span>
 
@@ -4289,9 +4294,9 @@ func (c *Conn) run() (err error) <span class="cov5" title="90">{
         )
         c.greet()
 
-        for </span><span class="cov9" title="5483">{
+        for </span><span class="cov9" title="5482">{
                 cmd, arg, err = c.nextCommand()
-                if err != nil </span><span class="cov5" title="66">{
+                if err != nil </span><span class="cov5" title="65">{
                         return err
                 }</span>
 
@@ -4317,9 +4322,9 @@ func (c *Conn) run() (err error) <span class="cov5" title="90">{
 
 // nextCommand reads the next line and parses it.
 // The command is always returned upper case.
-func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov9" title="5489">{
+func (c *Conn) nextCommand() (cmd string, arg string, err error) <span class="cov9" title="5488">{
         line, err := c.readLine()
-        if err != nil </span><span class="cov5" title="64">{
+        if err != nil </span><span class="cov4" title="63">{
                 return "", "", err
         }</span>
         <span class="cov9" title="5422">return parse.Cmd(line)</span>
@@ -4475,7 +4480,7 @@ func (c *Conn) Server() *Server <span class="cov0" title="0">{
 }</span>
 
 // Close closes the connection.
-func (c *Conn) Close(err error) <span class="cov5" title="87">{
+func (c *Conn) Close(err error) <span class="cov5" title="86">{
         c.logger().DebugContext(c.ctx, "connection is closing")
 
         // flush any pending data from writer before closing connection
@@ -4490,7 +4495,7 @@ func (c *Conn) Close(err error) <span class="cov5" title="87">{
                 }</span>
         }
 
-        <span class="cov5" title="87">if err != nil </span><span class="cov5" title="67">{
+        <span class="cov5" title="86">if err != nil </span><span class="cov5" title="66">{
                 c.logger().ErrorContext(c.ctx, "close error", slog.Any("err", err))
         }</span>
 
@@ -4662,8 +4667,8 @@ func (c *Conn) handleGreetResponse() *smtp.Status <span class="cov5" title="88">
 }
 
 // handleError handles error and closes the connection afterwards.
-func (c *Conn) handleError(err error) <span class="cov5" title="86">{
-        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov4" title="62">{
+func (c *Conn) handleError(err error) <span class="cov5" title="85">{
+        if err == io.EOF || errors.Is(err, net.ErrClosed) </span><span class="cov4" title="61">{
                 c.Close(fmt.Errorf("connection closed unexpectedly: %w", err))
                 return
         }</span>
@@ -4696,13 +4701,13 @@ func (c *Conn) handleError(err error) <span class="cov5" title="86">{
         c.Close(fmt.Errorf("unknown error: %w", err))</span>
 }
 
-func (c *Conn) logger() *slog.Logger <span class="cov10" title="11282">{
+func (c *Conn) logger() *slog.Logger <span class="cov10" title="11280">{
         // Fallback if the connection couldn't be created or is already closed.
         if c.session == nil </span><span class="cov0" title="0">{
                 return slog.Default()
         }</span>
-        <span class="cov10" title="11282">logger := c.session.Logger(c.ctx)
-        if logger == nil </span><span class="cov10" title="11282">{
+        <span class="cov10" title="11280">logger := c.session.Logger(c.ctx)
+        if logger == nil </span><span class="cov10" title="11280">{
                 return slog.Default()
         }</span>
         <span class="cov0" title="0">return logger</span>
@@ -5284,15 +5289,15 @@ func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, e
 }
 
 // Reads a line of input
-func (c *Conn) readLine() (string, error) <span class="cov9" title="5521">{
+func (c *Conn) readLine() (string, error) <span class="cov9" title="5520">{
         if c.server.readTimeout != 0 </span><span class="cov9" title="5179">{
                 _ = c.conn.SetReadDeadline(time.Now().Add(c.server.readTimeout))
         }</span>
-        <span class="cov9" title="5521">line, err := c.text.ReadLine()
+        <span class="cov9" title="5520">line, err := c.text.ReadLine()
         if err == nil </span><span class="cov9" title="5454">{
                 c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
         }</span>
-        <span class="cov9" title="5518">return line, err</span>
+        <span class="cov9" title="5517">return line, err</span>
 }
 
 func (c *Conn) reset() error <span class="cov5" title="65">{
@@ -5341,7 +5346,9 @@ func parseDeliverByArgument(arg string) *smtp.DeliverByOptions <span class="cov6
         }</span>
         <span class="cov5" title="7">modeValue := smtp.DeliverByMode(modeStr)
         secondsValue, err := strconv.Atoi(secondsStr)
-        if err != nil || (modeValue == smtp.DeliverByReturn &amp;&amp; secondsValue &lt; 1) </span><span class="cov2" title="2">{
+        if err != nil ||
+                (modeValue == smtp.DeliverByReturn &amp;&amp; (secondsValue &lt; 1 || secondsValue &gt; 999999999)) ||
+                (modeValue == smtp.DeliverByNotify &amp;&amp; (secondsValue &lt; -999999999 || secondsValue &gt; 999999999)) </span><span class="cov2" title="2">{
                 return nil
         }</span>
         <span class="cov4" title="5">return &amp;smtp.DeliverByOptions{
@@ -5731,7 +5738,7 @@ func (s *Server) Close() error <span class="cov7" title="47">{
                 }</span>
         }
 
-        <span class="cov7" title="47">for conn := range s.conns </span><span class="cov7" title="40">{
+        <span class="cov7" title="47">for conn := range s.conns </span><span class="cov7" title="39">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
@@ -6590,7 +6597,7 @@ func (s *Session) Reset(ctx context.Context, _ bool) (context.Context, error) <s
 }</span>
 
 // Close implements the Close interface.
-func (s *Session) Close(_ context.Context, _ error) <span class="cov4" title="31">{
+func (s *Session) Close(_ context.Context, _ error) <span class="cov4" title="32">{
         s.mail = &amp;tester.Mail{}
 }</span>
 
