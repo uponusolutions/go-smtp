@@ -2509,12 +2509,12 @@ const (
 // elide leading dots and detect End-of-Data
 // (&lt;CR&gt;&lt;LF&gt;.&lt;CR&gt;&lt;LF&gt;) line.
 // nolint:revive
-func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1188785">{
+func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="1188789">{
         if r.state == stateEOF </span><span class="cov6" title="4190">{
                 return 0, io.EOF
         }</span>
 
-        <span class="cov9" title="1184595">if r.limited </span><span class="cov3" title="56">{
+        <span class="cov9" title="1184599">if r.limited </span><span class="cov3" title="56">{
                 if r.n &lt;= 0 </span><span class="cov2" title="8">{
                         return 0, smtp.ErrDataTooLarge
                 }</span>
@@ -2524,7 +2524,7 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="118878
                 }</span>
         }
 
-        <span class="cov9" title="1184587">var n int       // Data written to b.
+        <span class="cov9" title="1184591">var n int       // Data written to b.
         var skipped int // How many.
 
         c, err := r.peek(len(b))
@@ -2568,31 +2568,31 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="118878
                         c = c[1:]</span>
                 }
                 <span class="cov6" title="8280">r.state = stateLine</span>
-        default:<span class="cov9" title="1176291"></span>
+        default:<span class="cov9" title="1176295"></span>
         }
 
-        <span class="cov9" title="1184573">for </span><span class="cov10" title="1249344">{
+        <span class="cov9" title="1184577">for </span><span class="cov10" title="1249358">{
                 i := bytes.Index(c, smtp.Crlfdot)
 
                 // No full \r\n. found.
-                if i == -1 </span><span class="cov9" title="1179924">{
+                if i == -1 </span><span class="cov9" title="1179928">{
                         l := len(c)
 
-                        if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' &amp;&amp; err == nil </span><span class="cov6" title="10668">{
+                        if l &gt; 1 &amp;&amp; c[l-2] == '\r' &amp;&amp; c[l-1] == '\n' &amp;&amp; err == nil </span><span class="cov6" title="10666">{
                                 // Ends with \r\n, write everything before.
                                 n += copy(b, c[:l-2])
-                        }</span> else<span class="cov9" title="1169256"> if l &gt; 0 &amp;&amp; c[l-1] == '\r' &amp;&amp; err == nil </span><span class="cov6" title="2955">{
+                        }</span> else<span class="cov9" title="1169262"> if l &gt; 0 &amp;&amp; c[l-1] == '\r' &amp;&amp; err == nil </span><span class="cov6" title="2957">{
                                 // Ends with \r, write everything before.
                                 n += copy(b, c[:l-1])
-                        }</span> else<span class="cov9" title="1166301"> {
+                        }</span> else<span class="cov9" title="1166305"> {
                                 n += copy(b, c)
                         }</span>
 
-                        <span class="cov9" title="1179924">break</span>
+                        <span class="cov9" title="1179928">break</span>
                 }
 
                 // i is \r, \n.\r\n needs to be accessible
-                <span class="cov8" title="69420">if len(c)-1 &lt; i+4 </span><span class="cov4" title="487">{
+                <span class="cov8" title="69430">if len(c)-1 &lt; i+4 </span><span class="cov4" title="487">{
                         if err != nil </span><span class="cov2" title="22">{
                                 n += copy(b, c[:i+2])
                                 if len(b) &gt;= len(c[:i+2]) </span><span class="cov2" title="22">{
@@ -2610,7 +2610,7 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="118878
                         <span class="cov4" title="487">break</span>
                 }
 
-                <span class="cov8" title="68933">p := copy(b, c[:i+2])
+                <span class="cov8" title="68943">p := copy(b, c[:i+2])
                 n += p
 
                 // b was to small
@@ -2624,21 +2624,21 @@ func (r *dotReader) Read(b []byte) (int, error) <span class="cov9" title="118878
                 }
 
                 // The end \r\n.\n\r
-                <span class="cov8" title="68928">if c[i+3] == '\r' &amp;&amp; c[i+4] == '\n' </span><span class="cov6" title="4157">{
+                <span class="cov8" title="68938">if c[i+3] == '\r' &amp;&amp; c[i+4] == '\n' </span><span class="cov6" title="4157">{
                         r.state = stateEOF
                         skipped += 3 // skip .\r\n
                         break</span>
                 }
 
-                <span class="cov8" title="64771">skipped++ // . isn't written
+                <span class="cov8" title="64781">skipped++ // . isn't written
                 b = b[i+2:]
                 c = c[i+3:]</span>
         }
 
-        <span class="cov9" title="1184573">return r.finalize(n, skipped, err)</span>
+        <span class="cov9" title="1184577">return r.finalize(n, skipped, err)</span>
 }
 
-func (r *dotReader) finalize(n int, skipped int, err error) (int, error) <span class="cov9" title="1184587">{
+func (r *dotReader) finalize(n int, skipped int, err error) (int, error) <span class="cov9" title="1184591">{
         // n + skipped is always smaller then what was peeked,
         // so it is guaranteed to work
         _, _ = r.r.Discard(n + skipped)
@@ -2648,7 +2648,7 @@ func (r *dotReader) finalize(n int, skipped int, err error) (int, error) <span c
         }</span>
 
         // as long as something was written, we do not propagate the err if any
-        <span class="cov9" title="1184587">if n &gt; 0 </span><span class="cov9" title="1180464">{
+        <span class="cov9" title="1184591">if n &gt; 0 </span><span class="cov9" title="1180468">{
                 return n, nil
         }</span>
 
@@ -2661,7 +2661,7 @@ func (r *dotReader) finalize(n int, skipped int, err error) (int, error) <span c
         <span class="cov6" title="4123">return n, err</span>
 }
 
-func (r *dotReader) peek(blen int) ([]byte, error) <span class="cov9" title="1184587">{
+func (r *dotReader) peek(blen int) ([]byte, error) <span class="cov9" title="1184591">{
         minimumPeek := 5
         if r.state == stateBegin </span><span class="cov6" title="8292">{
                 minimumPeek = 3
@@ -2670,11 +2670,11 @@ func (r *dotReader) peek(blen int) ([]byte, error) <span class="cov9" title="118
         // IMPORTANT: We cannot wait on read,
         // because no EOL returns. So we call peek with minimumPeek to fill the buffer probably with more
         // to get as much data as possible in the second peek.
-        <span class="cov9" title="1184587">if r.r.Buffered() &lt; minimumPeek </span><span class="cov9" title="1042339">{
+        <span class="cov9" title="1184591">if r.r.Buffered() &lt; minimumPeek </span><span class="cov9" title="1042343">{
                 _, _ = r.r.Peek(minimumPeek)
         }</span>
         // min 5, max buffer size, default len(b)
-        <span class="cov9" title="1184587">return r.r.Peek(max(min(blen, r.r.Buffered()), minimumPeek))</span>
+        <span class="cov9" title="1184591">return r.r.Peek(max(min(blen, r.r.Buffered()), minimumPeek))</span>
 }
 </pre>
 		
@@ -4504,10 +4504,10 @@ func (c *Conn) Close(err error) <span class="cov4" title="88">{
         _ = c.text.W.Flush()
 
         closeErr := c.conn.Close()
-        if closeErr != nil </span><span class="cov3" title="41">{
+        if closeErr != nil </span><span class="cov3" title="42">{
                 if err == nil </span><span class="cov0" title="0">{
                         err = closeErr
-                }</span> else<span class="cov3" title="41"> {
+                }</span> else<span class="cov3" title="42"> {
                         err = errors.Join(err, closeErr)
                 }</span>
         }
@@ -5755,7 +5755,7 @@ func (s *Server) Close() error <span class="cov7" title="49">{
                 }</span>
         }
 
-        <span class="cov7" title="49">for conn := range s.conns </span><span class="cov7" title="44">{
+        <span class="cov7" title="49">for conn := range s.conns </span><span class="cov7" title="43">{
                 // directly close underlying connection
                 _ = conn.conn.Close()
         }</span>
