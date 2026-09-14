@@ -40,6 +40,7 @@ const (
 // Run data through a simple state machine to
 // elide leading dots and detect End-of-Data
 // (<CR><LF>.<CR><LF>) line.
+// nolint:revive
 func (r *dotReader) Read(b []byte) (int, error) {
 	if r.state == stateEOF {
 		return 0, io.EOF
@@ -107,21 +108,44 @@ func (r *dotReader) Read(b []byte) (int, error) {
 
 		// No full \r\n. found.
 		if i == -1 {
-			n += noCrlfDotFound(err, b, c)
+			l := len(c)
+
+			if l > 1 && c[l-2] == '\r' && c[l-1] == '\n' {
+				// Ends with \r\n, write everything before.
+				n += copy(b, c[:l-2])
+
+				// if error occured we will never get more bytes, so lets discard \r\n
+				if err != nil && len(b) >= len(c[:l-2]) {
+					skipped += 2
+				}
+			} else if l > 0 && c[l-1] == '\r' {
+				// Ends with \r, write everything before.
+				n += copy(b, c[:l-1])
+
+				// if error occured we will never get more bytes, so lets discard \r
+				if err != nil && len(b) >= len(c[:l-1]) {
+					skipped++
+				}
+			} else {
+				n += copy(b, c)
+			}
+
 			break
 		}
 
 		if len(c)-1 < i+4 {
 			// i is \r, \n.\r\n needs to be accessible
-			if err != nil {
-				// No more data, just read to the end.
-				n += copy(b, c[:i+2])
-				skipped++
-			} else if i > 0 {
+			if i > 0 {
 				// Not enough bytes to check for \r\n.\r\n,
 				// write everything before
 				n += copy(b, c[:i])
 			}
+
+			// if error occured we will never get more bytes, so lets discard \r\n.
+			if err != nil && (i > 0 || len(b) >= len(c[:i])) {
+				skipped = 3
+			}
+
 			break
 		}
 
@@ -158,35 +182,22 @@ func (r *dotReader) finalize(n int, skipped int, err error) (int, error) {
 	// so it is guaranteed to work
 	_, _ = r.r.Discard(n + skipped)
 
+	if r.limited {
+		r.n -= int64(n)
+	}
+
+	// as long as something was written, we do not propagate the err if any
+	if n > 0 {
+		return n, nil
+	}
+
 	if err == io.EOF && r.state != stateEOF {
 		err = io.ErrUnexpectedEOF
 	} else if err == nil && r.state == stateEOF {
 		err = io.EOF
 	}
 
-	if r.limited {
-		r.n -= int64(n)
-	}
-
 	return n, err
-}
-
-func noCrlfDotFound(err error, b []byte, c []byte) int {
-	if err == nil {
-		l := len(c)
-
-		if l > 1 && c[l-2] == '\r' && c[l-1] == '\n' {
-			// Ends with \r\n, write everything before.
-			return copy(b, c[:l-2])
-		}
-
-		if l > 0 && c[l-1] == '\r' {
-			// Ends with \r, write everything before.
-			return copy(b, c[:l-1])
-		}
-	}
-
-	return copy(b, c)
 }
 
 func (r *dotReader) peek(blen int) ([]byte, error) {

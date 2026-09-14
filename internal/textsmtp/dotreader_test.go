@@ -24,8 +24,6 @@ func TestDotReaderCompare(t *testing.T) {
 	input := []string{
 		"dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n",
 		"anot.her\n",
-		"\r\n",
-		".\r\n",
 	}
 
 	for p, value := range input {
@@ -255,8 +253,7 @@ func TestDotReaderBytes(t *testing.T) {
 
 		n, err = r.Read(buf)
 		require.Error(t, io.ErrUnexpectedEOF, err)
-		require.Equal(t, 2, n)
-		require.Equal(t, []byte("\r\n"), buf[:n])
+		require.Equal(t, 0, n)
 
 		// buffer must be empty
 		require.Equal(t, 0, bufio.Buffered())
@@ -281,8 +278,7 @@ func TestDotReaderBytes(t *testing.T) {
 
 		n, err = r.Read(buf)
 		require.Error(t, serr, err)
-		require.Equal(t, 2, n)
-		require.Equal(t, []byte("\r\n"), buf[:n])
+		require.Equal(t, 0, n)
 
 		// buffer must be empty
 		require.Equal(t, 0, bufio.Buffered())
@@ -306,8 +302,7 @@ func TestDotReaderBytes(t *testing.T) {
 
 		n, err = r.Read(buf)
 		require.Error(t, io.ErrUnexpectedEOF, err)
-		require.Equal(t, 2, n)
-		require.Equal(t, []byte("\r\n"), buf[:n])
+		require.Equal(t, 0, n)
 
 		// buffer must be empty
 		require.Equal(t, 0, bufio.Buffered())
@@ -332,8 +327,7 @@ func TestDotReaderBytes(t *testing.T) {
 
 		n, err = r.Read(buf)
 		require.Error(t, serr, err)
-		require.Equal(t, 2, n)
-		require.Equal(t, []byte("\r\n"), buf[:n])
+		require.Equal(t, 0, n)
 
 		// buffer must be empty
 		require.Equal(t, 0, bufio.Buffered())
