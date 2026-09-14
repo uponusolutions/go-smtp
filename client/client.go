@@ -25,7 +25,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -194,22 +193,12 @@ func (c *Client) initConn(conn net.Conn, expectGreet bool) error {
 func (c *Client) setConn(conn net.Conn) {
 	c.conn = conn
 
-	if c.cfg.debug != nil {
-		c.cfg.text = smtpproto.NewTextproto(struct {
-			io.Reader
-			io.Writer
-			io.Closer
-		}{
-			io.TeeReader(c.conn, c.cfg.debug),
-			io.MultiWriter(c.conn, c.cfg.debug),
-			c.conn,
-		}, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength)
-	}
-
 	if c.cfg.text != nil {
 		c.cfg.text.Replace(conn)
 	} else {
-		c.cfg.text = smtpproto.NewTextproto(conn, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength)
+		c.cfg.text = smtpproto.NewTextproto(
+			conn, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength, c.cfg.debugRead, c.cfg.debugWrite,
+		)
 	}
 }
 

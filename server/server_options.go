@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -97,6 +98,10 @@ type Server struct {
 
 	logger *slog.Logger
 
+	// Logger for all network activity.
+	debugWrite io.Writer
+	debugRead  io.Writer
+
 	wg   sync.WaitGroup
 	done chan struct{}
 
@@ -136,6 +141,20 @@ func New(opts ...Option) *Server {
 func WithLogger(logger *slog.Logger) Option {
 	return func(s *Server) {
 		s.logger = logger
+	}
+}
+
+// WithDebugRead sets the debug writer for every read.
+func WithDebugRead(debugRead io.Writer) Option {
+	return func(c *Server) {
+		c.debugRead = debugRead
+	}
+}
+
+// WithDebugWrite sets the debug writer for every write.
+func WithDebugWrite(debugWrite io.Writer) Option {
+	return func(c *Server) {
+		c.debugWrite = debugWrite
 	}
 }
 

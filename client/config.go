@@ -95,7 +95,8 @@ type Config struct {
 	writerSize int
 
 	// Logger for all network activity.
-	debug io.Writer
+	debugRead  io.Writer
+	debugWrite io.Writer
 
 	// Chunking max size
 	// A zero value disables chunk size limitation.
@@ -196,5 +197,19 @@ func WithReaderSize(readerSize int) Option {
 func WithWriterSize(writerSize int) Option {
 	return func(c *Config) {
 		c.writerSize = writerSize
+	}
+}
+
+// WithDebugRead sets the debug writer for every read.
+func WithDebugRead(debugRead io.Writer) Option {
+	return func(c *Config) {
+		c.debugRead = debugRead
+	}
+}
+
+// WithDebugWrite sets the debug writer for every write.
+func WithDebugWrite(debugWrite io.Writer) Option {
+	return func(c *Config) {
+		c.debugWrite = debugWrite
 	}
 }

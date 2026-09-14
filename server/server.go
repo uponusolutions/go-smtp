@@ -79,7 +79,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		ctx:    ctx,
 		server: s,
 		conn:   conn,
-		text:   smtpproto.NewTextproto(conn, s.readerSize, s.writerSize, s.maxLineLength),
+		text:   smtpproto.NewTextproto(conn, s.readerSize, s.writerSize, s.maxLineLength, s.debugRead, s.debugWrite),
 	}
 
 	s.locker.Lock()

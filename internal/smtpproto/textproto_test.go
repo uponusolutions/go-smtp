@@ -13,7 +13,7 @@ import (
 )
 
 func reader(in string, out *bytes.Buffer) *Textproto {
-	return NewTextproto(tester.NewFakeConn(in, out), 4096, 4096, 0)
+	return NewTextproto(tester.NewFakeConn(in, out), 4096, 4096, 0, nil, nil)
 }
 
 func TestReadLine(t *testing.T) {
