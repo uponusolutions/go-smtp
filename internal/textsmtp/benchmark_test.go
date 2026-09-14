@@ -8,7 +8,6 @@ import (
 	"math/rand/v2"
 	upstream "net/textproto"
 	"os"
-	"runtime/debug"
 	"testing"
 
 	"github.com/uponusolutions/go-smtp/internal/textsmtp"
@@ -258,30 +257,6 @@ func setBytes(b *testing.B, n int) {
 	b.SetBytes(int64(n))
 }
 
-// withoutGC disables the garbage collector for the duration of b only, and
-// frees whatever the previous sub-benchmark left behind, so heap pressure does
-// not bleed from one matrix cell into the next.
-//
-// This keeps allocation counts stable but measures a world without GC pauses.
-// Set WITHGC=1 to run under normal GC behaviour, which is closer to what a
-// server under load actually sees.
-func withoutGC(b *testing.B) {
-	b.Helper()
-
-	if os.Getenv("WITHGC") != "" {
-		debug.FreeOSMemory()
-		return
-	}
-
-	old := debug.SetGCPercent(-1)
-	debug.FreeOSMemory()
-
-	b.Cleanup(func() {
-		debug.SetGCPercent(old)
-		debug.FreeOSMemory()
-	})
-}
-
 // BenchmarkDot benchmarks both directions of the dot codec against every
 // payload, source and implementation. The configs are nested as sub-benchmarks,
 // so names are paths, e.g. BenchmarkDot/Read/Text/BytesReader/Fork, and can be
@@ -312,7 +287,6 @@ func BenchmarkDot(b *testing.B) {
 						b.Run(sc.name, func(b *testing.B) {
 							for _, ic := range implConfigs {
 								b.Run(ic.name, func(b *testing.B) {
-									withoutGC(b)
 									dc.run(b, ic, sc, p)
 								})
 							}

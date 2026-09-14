@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"runtime/debug"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -264,30 +263,6 @@ func setBytes(b *testing.B, eml []byte) {
 	b.SetBytes(int64(len(eml)))
 }
 
-// withoutGC disables the garbage collector for the duration of b only, and
-// frees whatever the previous sub-benchmark left behind, so that heap pressure
-// does not bleed from one matrix cell into the next.
-//
-// This keeps allocation counts stable but measures a world without GC pauses.
-// Set WITHGC=1 to run under normal GC behaviour, which is closer to what
-// production latency looks like.
-func withoutGC(b *testing.B) {
-	b.Helper()
-
-	if os.Getenv("WITHGC") != "" {
-		debug.FreeOSMemory()
-		return
-	}
-
-	old := debug.SetGCPercent(-1)
-	debug.FreeOSMemory()
-
-	b.Cleanup(func() {
-		debug.SetGCPercent(old)
-		debug.FreeOSMemory()
-	})
-}
-
 // benchmarkServer runs every client, connection and reader config against one
 // server config. The configs are nested as sub-benchmarks so the resulting
 // names are paths, e.g. Large/Chunking/Pipelining/Reuse/BytesBuffer, which can
@@ -308,7 +283,6 @@ func benchmarkServer(b *testing.B, tc testcase, sc serverConfig) {
 				b.Run(conn.name, func(b *testing.B) {
 					for _, rc := range readerConfigs {
 						b.Run(rc.name, func(b *testing.B) {
-							withoutGC(b)
 							setBytes(b, tc.eml)
 
 							conn.run(b, addr, cc.opts, func(c *mailer.Mailer) error {
