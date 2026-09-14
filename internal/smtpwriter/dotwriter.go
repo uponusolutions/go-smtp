@@ -5,7 +5,7 @@
 // Based on the modifications from
 // https://github.com/go-textproto/textproto/blob/v0/writer.go
 
-package textsmtp
+package smtpwriter
 
 import (
 	"bufio"
@@ -15,20 +15,20 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-// NewDotWriter returns a writer that can be used to write a dot-encoding to w.
+// NewDot returns a writer that can be used to write a dot-encoding to w.
 // It takes care of inserting leading dots when necessary,
 // translating line-ending \n into \r\n, and adding the final .\r\n line
 // when the DotWriter is closed. The caller should close the
 // DotWriter before the next call to a method on w.
 //
 // See the documentation for Reader's DotReader method for details about dot-encoding.
-func NewDotWriter(writer *bufio.Writer) io.WriteCloser {
-	return &dotWriter{
+func NewDot(writer *bufio.Writer) io.WriteCloser {
+	return &dot{
 		W: writer,
 	}
 }
 
-type dotWriter struct {
+type dot struct {
 	W     *bufio.Writer
 	state int
 }
@@ -40,7 +40,7 @@ const (
 	wstateData             // writing data in middle of line
 )
 
-func (d *dotWriter) Write(b []byte) (n int, err error) {
+func (d *dot) Write(b []byte) (n int, err error) {
 	var (
 		i    int
 		p    []byte
@@ -108,7 +108,7 @@ func (d *dotWriter) Write(b []byte) (n int, err error) {
 	return n, err
 }
 
-func (d *dotWriter) Close() error {
+func (d *dot) Close() error {
 	bw := d.W
 	// nolint revive
 	switch d.state {

@@ -1,4 +1,4 @@
-package textsmtp_test
+package upstream
 
 import (
 	"bufio"
@@ -11,7 +11,8 @@ import (
 // https://github.com/emersion/go-smtp/blob/8d5af0d9db3ace5e4fdc0e8b427f5b157b0c6c44/data.go
 // to serve as the upstream comparison.
 
-type dotReaderUpstream struct {
+// DotReader implements a smtp dot reader.
+type DotReader struct {
 	r     *bufio.Reader
 	state int
 
@@ -19,8 +20,9 @@ type dotReaderUpstream struct {
 	n       int64 // Maximum bytes remaining
 }
 
-func newDotReaderUpstream(r *bufio.Reader, maxMessageBytes int) *dotReaderUpstream {
-	dr := &dotReaderUpstream{
+// NewDotReader creates a new smtp dot reader.
+func NewDotReader(r *bufio.Reader, maxMessageBytes int) *DotReader {
+	dr := &DotReader{
 		r: r,
 	}
 
@@ -32,7 +34,7 @@ func newDotReaderUpstream(r *bufio.Reader, maxMessageBytes int) *dotReaderUpstre
 	return dr
 }
 
-func (r *dotReaderUpstream) Read(b []byte) (n int, err error) {
+func (r *DotReader) Read(b []byte) (n int, err error) {
 	if r.limited {
 		if r.n <= 0 {
 			return 0, smtp.ErrDataTooLarge

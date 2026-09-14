@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpproto"
 	"github.com/uponusolutions/go-smtp/tester"
 
 	"github.com/uponusolutions/go-sasl"
@@ -60,7 +60,7 @@ func TestBasic(t *testing.T) {
 	cmdbuf := &bytes.Buffer{}
 	fake := tester.NewFakeConn(server, cmdbuf)
 
-	c := &Client{conn: fake, cfg: Config{text: textsmtp.NewTextproto(fake, 4096, 4096, 0), localName: "localhost"}}
+	c := &Client{conn: fake, cfg: Config{text: smtpproto.NewTextproto(fake, 4096, 4096, 0), localName: "localhost"}}
 
 	if err := c.helo(); err != nil {
 		t.Fatalf("HELO failed: %s", err)
@@ -298,14 +298,14 @@ func TestClient_TooLongLine(t *testing.T) {
 	require.NoError(t, c.Hello())
 
 	err := c.Mail("whatever", nil)
-	if err != textsmtp.ErrTooLongLine {
+	if err != smtpproto.ErrTooLongLine {
 		t.Fatal("MAIL succeeded or returned a different error:", err)
 	}
 
 	// ErrTooLongLine is "sticky" since the connection is in broken state and
 	// the only reasonable way to recover is to close it.
 	err = c.Mail("whatever", nil)
-	if err != textsmtp.ErrTooLongLine {
+	if err != smtpproto.ErrTooLongLine {
 		t.Fatal("Second MAIL succeeded or returned a different error:", err)
 	}
 }

@@ -1,4 +1,4 @@
-package textsmtp
+package smtpreader
 
 import (
 	"bufio"
@@ -51,7 +51,7 @@ func TestBdatReaderArgErrors(t *testing.T) {
 		require.False(t, prefix)
 		size, last, err := BdatArg(arg[5:])
 		require.NoError(t, err)
-		reader := NewBdatReader(size, last, 0, readerInput, func() (string, string, error) {
+		reader := NewBdat(size, last, 0, readerInput, func() (string, string, error) {
 			return "BDAT", "4 FIRST", nil
 		})
 		_, err = io.ReadAll(reader)
@@ -59,7 +59,7 @@ func TestBdatReaderArgErrors(t *testing.T) {
 
 		size, last, err = BdatArg(arg[5:])
 		require.NoError(t, err)
-		reader = NewBdatReader(size, last, 0, readerInput, func() (string, string, error) {
+		reader = NewBdat(size, last, 0, readerInput, func() (string, string, error) {
 			return "STRANGE", "4 LAST", nil
 		})
 		_, err = io.ReadAll(reader)
@@ -79,7 +79,7 @@ func TestBdatReader(t *testing.T) {
 
 		size, last, err := BdatArg(arg[5:])
 		require.NoError(t, err)
-		reader := NewBdatReader(size, last, 0, readerInput, func() (string, string, error) {
+		reader := NewBdat(size, last, 0, readerInput, func() (string, string, error) {
 			byteArg, prefix, err := readerInput.ReadLine()
 			arg := string(byteArg)
 
@@ -104,7 +104,7 @@ func TestBdatReader(t *testing.T) {
 
 		size, last, err := BdatArg(arg[5:])
 		require.NoError(t, err)
-		reader := NewBdatReader(size, last, 0, readerInput, func() (string, string, error) {
+		reader := NewBdat(size, last, 0, readerInput, func() (string, string, error) {
 			byteArg, prefix, err := readerInput.ReadLine()
 			arg := string(byteArg)
 
@@ -129,7 +129,7 @@ func TestBdatReader(t *testing.T) {
 
 		size, last, err := BdatArg(arg[5:])
 		require.NoError(t, err)
-		reader := NewBdatReader(size, last, 4, readerInput, func() (string, string, error) {
+		reader := NewBdat(size, last, 4, readerInput, func() (string, string, error) {
 			byteArg, prefix, err := readerInput.ReadLine()
 			arg := string(byteArg)
 
@@ -152,7 +152,7 @@ func TestBdatReader(t *testing.T) {
 
 		size, last, err := BdatArg(arg[5:])
 		require.NoError(t, err)
-		reader := NewBdatReader(size, last, 6, readerInput, func() (string, string, error) {
+		reader := NewBdat(size, last, 6, readerInput, func() (string, string, error) {
 			byteArg, prefix, err := readerInput.ReadLine()
 			arg := string(byteArg)
 
@@ -175,7 +175,7 @@ func TestBdatReader(t *testing.T) {
 
 		size, last, err := BdatArg(arg[5:])
 		require.NoError(t, err)
-		reader := NewBdatReader(size, last, 4, readerInput, func() (string, string, error) {
+		reader := NewBdat(size, last, 4, readerInput, func() (string, string, error) {
 			return "", "", io.EOF
 		})
 		_, err = io.ReadAll(reader)
@@ -193,7 +193,7 @@ func TestBdatReader(t *testing.T) {
 
 		size, last, err := BdatArg(arg[5:])
 		require.NoError(t, err)
-		reader := NewBdatReader(size, last, 4, readerInput, func() (string, string, error) {
+		reader := NewBdat(size, last, 4, readerInput, func() (string, string, error) {
 			return "", "", smtp.ErrAuthFailed
 		})
 		require.NoError(t, err)

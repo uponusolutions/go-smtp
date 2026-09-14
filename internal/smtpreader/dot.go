@@ -1,4 +1,4 @@
-package textsmtp
+package smtpreader
 
 import (
 	"bufio"
@@ -8,16 +8,16 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-type dotReader struct {
+type dot struct {
 	r       *bufio.Reader
 	state   int
 	limited bool
 	n       int64 // Maximum bytes remaining.
 }
 
-// NewDotReader creates a new dot reader.
-func NewDotReader(reader *bufio.Reader, maxMessageBytes int64) io.Reader {
-	dr := &dotReader{
+// NewDot creates a new dot reader.
+func NewDot(reader *bufio.Reader, maxMessageBytes int64) io.Reader {
+	dr := &dot{
 		r: reader,
 	}
 
@@ -41,7 +41,7 @@ const (
 // elide leading dots and detect End-of-Data
 // (<CR><LF>.<CR><LF>) line.
 // nolint:revive
-func (r *dotReader) Read(b []byte) (int, error) {
+func (r *dot) Read(b []byte) (int, error) {
 	if r.state == stateEOF {
 		return 0, io.EOF
 	}
@@ -170,7 +170,7 @@ func (r *dotReader) Read(b []byte) (int, error) {
 	return r.finalize(n, skipped, err)
 }
 
-func (r *dotReader) finalize(n int, skipped int, err error) (int, error) {
+func (r *dot) finalize(n int, skipped int, err error) (int, error) {
 	// n + skipped is always smaller then what was peeked,
 	// so it is guaranteed to work
 	_, _ = r.r.Discard(n + skipped)
@@ -193,7 +193,7 @@ func (r *dotReader) finalize(n int, skipped int, err error) (int, error) {
 	return n, err
 }
 
-func (r *dotReader) peek(blen int) ([]byte, error) {
+func (r *dot) peek(blen int) ([]byte, error) {
 	minimumPeek := 5
 	if r.state == stateBegin {
 		minimumPeek = 3

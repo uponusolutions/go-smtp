@@ -1,4 +1,4 @@
-package textsmtp
+package smtpwriter
 
 import (
 	"bufio"
@@ -14,10 +14,10 @@ var (
 	crlf     = []byte("\r\n")
 )
 
-// NewBdatWriter returns a writer that can be used to write bdat commands to w.
+// NewBdat returns a writer that can be used to write bdat commands to w.
 // The caller should close the BdatWriter before the next call to a method on w.
-func NewBdatWriter(maxChunkSize int, writer *bufio.Writer, read func() error, size int) io.WriteCloser {
-	return &bdatWriter{
+func NewBdat(maxChunkSize int, writer *bufio.Writer, read func() error, size int) io.WriteCloser {
+	return &bdat{
 		w:                  writer,
 		read:               read,
 		maxChunkSize:       maxChunkSize,
@@ -27,7 +27,7 @@ func NewBdatWriter(maxChunkSize int, writer *bufio.Writer, read func() error, si
 	}
 }
 
-type bdatWriter struct {
+type bdat struct {
 	w    *bufio.Writer
 	read func() error
 	// maximum bdat chunk size
@@ -44,7 +44,7 @@ type bdatWriter struct {
 }
 
 // Write writes bytes as multiple bdat commands split by max chunk size.
-func (d *bdatWriter) Write(b []byte) (n int, err error) {
+func (d *bdat) Write(b []byte) (n int, err error) {
 	d.started = true
 
 	var p int
@@ -85,7 +85,7 @@ func (d *bdatWriter) Write(b []byte) (n int, err error) {
 }
 
 // write writes b until everything is written
-func (d *bdatWriter) write(b []byte) (n int, err error) {
+func (d *bdat) write(b []byte) (n int, err error) {
 	var p int
 	for n < len(b) {
 		p, err = d.w.Write(b[n:])
@@ -107,7 +107,7 @@ func (d *bdatWriter) write(b []byte) (n int, err error) {
 // writeBdat writes b as bdat command and checks return
 // b must be smaller or equal maxChunkSize
 // if size is known we always use max chunk size
-func (d *bdatWriter) writeBdat(b []byte, last bool) (n int, err error) {
+func (d *bdat) writeBdat(b []byte, last bool) (n int, err error) {
 	if d.remainingChunkSize == 0 {
 		size := len(b)
 		// if size is known we can create nice chunks
@@ -150,7 +150,7 @@ func (d *bdatWriter) writeBdat(b []byte, last bool) (n int, err error) {
 }
 
 // write BDAT <SIZE> \r\n
-func (d *bdatWriter) bdat(size int, last bool) (err error) {
+func (d *bdat) bdat(size int, last bool) (err error) {
 	if _, err = d.w.Write(prefix); err != nil {
 		return err
 	}
@@ -173,7 +173,7 @@ func (d *bdatWriter) bdat(size int, last bool) (err error) {
 	return nil
 }
 
-func (d *bdatWriter) Close() error {
+func (d *bdat) Close() error {
 	// The close came to early, more bytes expected
 	if d.knownSize && d.remainingSize > 0 {
 		if _, err := d.Write(make([]byte, d.remainingSize)); err != nil {

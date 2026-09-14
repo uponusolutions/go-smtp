@@ -16,7 +16,8 @@ import (
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/internal/parse"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpproto"
+	"github.com/uponusolutions/go-smtp/internal/smtpreader"
 )
 
 type state int32
@@ -38,7 +39,7 @@ type Conn struct {
 
 	state state
 
-	text   *textsmtp.Textproto
+	text   *smtpproto.Textproto
 	server *Server
 
 	session    Session
@@ -456,7 +457,7 @@ func (c *Conn) handleError(err error) {
 		return
 	}
 
-	if err == textsmtp.ErrTooLongLine {
+	if err == smtpproto.ErrTooLongLine {
 		c.writeStatus(smtp.NewStatusS(500, smtp.EnhancedCode{5, 4, 0}, "Too long line"))
 		c.Close(errors.New("line too long"))
 		return
@@ -564,7 +565,7 @@ func (c *Conn) handleMail(arg string) error {
 				return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "ENVID is not implemented")
 			}
 			value, err := decodeXtext(arg.Value)
-			if err != nil || value == "" || !textsmtp.IsPrintableASCII(value) {
+			if err != nil || value == "" || !smtpproto.IsPrintableASCII(value) {
 				return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ENVID parameter value")
 			}
 			opts.EnvelopeID = value
@@ -711,7 +712,7 @@ func handleRcptNotify(server *Server, opts *smtp.RcptOptions, value string) erro
 	for val := range strings.SplitSeq(value, ",") {
 		notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
 	}
-	if err := textsmtp.CheckNotifySet(notify); err != nil {
+	if err := smtpproto.CheckNotifySet(notify); err != nil {
 		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
 	}
 	opts.Notify = notify
@@ -910,7 +911,7 @@ func (c *Conn) handleData(arg string) error {
 		c.writeStatus(smtp.NewStatusS(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>"))
 
 		// r gets exposed to be able to discard the rest of the message
-		r = textsmtp.NewDotReader(c.text.R, c.server.maxMessageBytes)
+		r = smtpreader.NewDot(c.text.R, c.server.maxMessageBytes)
 		return r
 	}
 
@@ -936,7 +937,7 @@ func (c *Conn) handleData(arg string) error {
 }
 
 func (c *Conn) handleBdatDiscard(arg string) error {
-	size, _, err := textsmtp.BdatArg(arg)
+	size, _, err := smtpreader.BdatArg(arg)
 	if err != nil {
 		return err
 	}
@@ -950,7 +951,7 @@ func (c *Conn) handleBdatDiscard(arg string) error {
 }
 
 func (c *Conn) handleBdat(arg string) error {
-	size, last, err := textsmtp.BdatArg(arg)
+	size, last, err := smtpreader.BdatArg(arg)
 	if err != nil {
 		return err
 	}
@@ -965,7 +966,7 @@ func (c *Conn) handleBdat(arg string) error {
 
 	closed := false
 
-	data := textsmtp.NewBdatReader(size, last, c.server.maxMessageBytes, c.text.R, func() (string, string, error) {
+	data := smtpreader.NewBdat(size, last, c.server.maxMessageBytes, c.text.R, func() (string, string, error) {
 		// if bdat is closed (error occurred)
 		if closed {
 			return "", "", io.EOF

@@ -4,7 +4,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpproto"
 )
 
 const defaultChunkingMaxSize = 1048576 * 2
@@ -70,7 +70,7 @@ const (
 
 // Config contains all configuration needed to configure a smtp client.
 type Config struct {
-	text      *textsmtp.Textproto
+	text      *smtpproto.Textproto
 	localName string // the name to use in HELO/EHLO/LHLO
 
 	// Time to wait for tls handshake to succeed.

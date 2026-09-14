@@ -1,4 +1,4 @@
-package textsmtp_test
+package smtpreader_test
 
 import (
 	"bufio"
@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpreader"
 )
 
 type fragmentReader struct {
@@ -53,7 +53,7 @@ func TestDataReaderFragmented(t *testing.T) {
 						wire += "NEXT\r\n"
 					}
 					buffered := bufio.NewReader(fragmentReader{strings.NewReader(wire), input})
-					r := textsmtp.NewDotReader(buffered, 0)
+					r := smtpreader.NewDot(buffered, 0)
 
 					var got bytes.Buffer
 					buffer := make([]byte, output)
@@ -79,7 +79,7 @@ func (w *writeOnlyBuffer) Write(p []byte) (int, error) { return w.b.Write(p) }
 
 func TestDataReaderBulkLimit(t *testing.T) {
 	for _, limit := range []int64{1, 63, 4095, 4096, 4097} {
-		r := textsmtp.NewDotReader(bufio.NewReader(strings.NewReader(strings.Repeat("a", 8192)+"\r\n.\r\n")), limit)
+		r := smtpreader.NewDot(bufio.NewReader(strings.NewReader(strings.Repeat("a", 8192)+"\r\n.\r\n")), limit)
 		data, err := io.ReadAll(r)
 		if err != smtp.ErrDataTooLarge || int64(len(data)) != limit {
 			t.Fatalf("limit %d: read %d, %v", limit, len(data), err)

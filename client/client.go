@@ -33,7 +33,8 @@ import (
 
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpproto"
+	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
 )
 
 // Client implements a SMTP Client with .
@@ -194,7 +195,7 @@ func (c *Client) setConn(conn net.Conn) {
 	c.conn = conn
 
 	if c.cfg.debug != nil {
-		c.cfg.text = textsmtp.NewTextproto(struct {
+		c.cfg.text = smtpproto.NewTextproto(struct {
 			io.Reader
 			io.Writer
 			io.Closer
@@ -204,10 +205,11 @@ func (c *Client) setConn(conn net.Conn) {
 			c.conn,
 		}, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength)
 	}
+
 	if c.cfg.text != nil {
 		c.cfg.text.Replace(conn)
 	} else {
-		c.cfg.text = textsmtp.NewTextproto(conn, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength)
+		c.cfg.text = smtpproto.NewTextproto(conn, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength)
 	}
 }
 
@@ -325,7 +327,7 @@ func (c *Client) cmd(expectCode int, message string) (*smtp.Status, error) {
 		return nil, err
 	}
 
-	if textsmtp.IsCodeUnexpected(status.Code, expectCode) {
+	if smtpproto.IsCodeUnexpected(status.Code, expectCode) {
 		return nil, status
 	}
 
@@ -697,7 +699,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 			return errors.New("smtp: Unknown RET parameter value")
 		}
 		if opts.EnvelopeID != "" {
-			if !textsmtp.IsPrintableASCII(opts.EnvelopeID) {
+			if !smtpproto.IsPrintableASCII(opts.EnvelopeID) {
 				return errors.New("smtp: Malformed ENVID parameter value")
 			}
 			fmt.Fprintf(&sb, " ENVID=%s", encodeXtext(opts.EnvelopeID))
@@ -780,7 +782,7 @@ func (c *Client) RcptResponse() error {
 func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string) error {
 	if len(opts.Notify) != 0 {
 		sb.WriteString(" NOTIFY=")
-		if err := textsmtp.CheckNotifySet(opts.Notify); err != nil {
+		if err := smtpproto.CheckNotifySet(opts.Notify); err != nil {
 			return errors.New("smtp: Malformed NOTIFY parameter value")
 		}
 		for i, v := range opts.Notify {
@@ -794,7 +796,7 @@ func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string)
 		var enc string
 		switch opts.OriginalRecipientType {
 		case smtp.DSNAddressTypeRFC822:
-			if !textsmtp.IsPrintableASCII(opts.OriginalRecipient) {
+			if !smtpproto.IsPrintableASCII(opts.OriginalRecipient) {
 				return errors.New("smtp: Illegal address")
 			}
 			enc = encodeXtext(opts.OriginalRecipient)
@@ -850,7 +852,7 @@ func (c *Client) Data() (*ContentCloser, error) {
 	if c.PipeliningActive() {
 		return nil, nil
 	}
-	return &ContentCloser{c: c, writer: textsmtp.NewDotWriter(c.cfg.text.W)}, nil
+	return &ContentCloser{c: c, writer: smtpwriter.NewDot(c.cfg.text.W)}, nil
 }
 
 // DataResponse returns the result of previous send data command if pipelining is enabled
@@ -858,7 +860,7 @@ func (c *Client) DataResponse() (*ContentCloser, error) {
 	if err := c.readResponseValid(354); err != nil {
 		return nil, err
 	}
-	return &ContentCloser{c: c, writer: textsmtp.NewDotWriter(c.cfg.text.W)}, nil
+	return &ContentCloser{c: c, writer: smtpwriter.NewDot(c.cfg.text.W)}, nil
 }
 
 // Bdat issues a BDAT command to the server and returns a writer that
@@ -890,12 +892,12 @@ func (c *Client) Bdat(size int) (*ContentCloser, error) {
 			c.chunkingBuffer = make([]byte, bufferSize)
 		}
 
-		return &ContentCloser{c: c, writer: textsmtp.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
+		return &ContentCloser{c: c, writer: smtpwriter.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
 			return c.cfg.text.ReadResponseValid(250)
 		}, size, c.chunkingBuffer[:bufferSize])}, nil
 	}
 
-	return &ContentCloser{c: c, writer: textsmtp.NewBdatWriter(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
+	return &ContentCloser{c: c, writer: smtpwriter.NewBdat(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
 		return c.cfg.text.ReadResponseValid(250)
 	}, size)}, nil
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package textsmtp_test
+package smtpwriter_test
 
 import (
 	"bufio"
@@ -13,25 +13,25 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
-//go:embed testdata/writer/*
+//go:embed testdata/*
 var embedFSWriter embed.FS
 
 func TestDotWriter(t *testing.T) {
 	t.Run("CompareTest", func(t *testing.T) {
-		tester.WriterCompareTest(t, &embedFSWriter, "testdata/writer", func(b io.Writer) io.WriteCloser {
+		tester.WriterCompareTest(t, &embedFSWriter, "testdata", func(b io.Writer) io.WriteCloser {
 			return upstream.NewWriter(bufio.NewWriter(b)).DotWriter()
 		}, func(b io.Writer) io.WriteCloser {
-			return textsmtp.NewDotWriter(bufio.NewWriter(b))
+			return smtpwriter.NewDot(bufio.NewWriter(b))
 		})
 	})
 
 	t.Run("Encode", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
+		d := smtpwriter.NewDot(bufio.NewWriter(&buf))
 		n, err := d.Write([]byte("abc\n.def\n..ghi\n.jkl\n."))
 		if n != 21 || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
@@ -45,7 +45,7 @@ func TestDotWriter(t *testing.T) {
 
 	t.Run("EncodeNoError", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
+		d := smtpwriter.NewDot(bufio.NewWriter(&buf))
 		n, err := d.Write([]byte("abc\r\n.def\r\n..ghi\r\n.jkl\r\n."))
 		if n != 25 || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
@@ -59,7 +59,7 @@ func TestDotWriter(t *testing.T) {
 
 	t.Run("EncodeSeparateWrites", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
+		d := smtpwriter.NewDot(bufio.NewWriter(&buf))
 		n, err := d.Write([]byte("abc\r"))
 		if n != 4 || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
@@ -79,7 +79,7 @@ func TestDotWriter(t *testing.T) {
 
 	t.Run("EncodeSeparateWritesEndsWithR", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
+		d := smtpwriter.NewDot(bufio.NewWriter(&buf))
 		n, err := d.Write([]byte("abc\r"))
 		if n != 4 || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
@@ -100,7 +100,7 @@ func TestDotWriter(t *testing.T) {
 
 	t.Run("EncodeSeparateWritesContainsR", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
+		d := smtpwriter.NewDot(bufio.NewWriter(&buf))
 		n, err := d.Write([]byte("abc\r"))
 		if n != 4 || err != nil {
 			t.Fatalf("Write: %d, %s", n, err)
@@ -131,7 +131,7 @@ func TestDotWriterLeadingDot(t *testing.T) {
 		{"..x\r\n", "...x\r\n.\r\n"},
 	} {
 		var buf bytes.Buffer
-		d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
+		d := smtpwriter.NewDot(bufio.NewWriter(&buf))
 		_, err := d.Write([]byte(tc.in))
 		require.NoError(t, err)
 		require.NoError(t, d.Close())
@@ -141,7 +141,7 @@ func TestDotWriterLeadingDot(t *testing.T) {
 
 func TestDotWriterCloseEmptyWrite(t *testing.T) {
 	var buf bytes.Buffer
-	d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
+	d := smtpwriter.NewDot(bufio.NewWriter(&buf))
 	n, err := d.Write([]byte{})
 	if n != 0 || err != nil {
 		t.Fatalf("Write: %d, %s", n, err)
@@ -155,7 +155,7 @@ func TestDotWriterCloseEmptyWrite(t *testing.T) {
 
 func TestDotWriterCloseNoWrite(t *testing.T) {
 	var buf bytes.Buffer
-	d := textsmtp.NewDotWriter(bufio.NewWriter(&buf))
+	d := smtpwriter.NewDot(bufio.NewWriter(&buf))
 	require.NoError(t, d.Close())
 	want := "\r\n.\r\n"
 	if s := buf.String(); s != want {

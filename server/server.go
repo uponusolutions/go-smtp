@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpproto"
 )
 
 // Serve accepts incoming connections on the Listener l.
@@ -79,7 +79,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		ctx:    ctx,
 		server: s,
 		conn:   conn,
-		text:   textsmtp.NewTextproto(conn, s.readerSize, s.writerSize, s.maxLineLength),
+		text:   smtpproto.NewTextproto(conn, s.readerSize, s.writerSize, s.maxLineLength),
 	}
 
 	s.locker.Lock()

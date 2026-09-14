@@ -1,4 +1,4 @@
-package textsmtp
+package smtpwriter
 
 import (
 	"bufio"
@@ -9,7 +9,7 @@ import (
 // The caller should close the BdatWriter before the next call to a method on w.
 func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() error, size int, buffer []byte) io.WriteCloser {
 	return &bdatWriterBuffered{
-		writer: bdatWriter{
+		writer: bdat{
 			w:             writer,
 			read:          read,
 			maxChunkSize:  maxChunkSize,
@@ -24,7 +24,7 @@ func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() e
 type bdatWriterBuffered struct {
 	buffer   []byte
 	position int
-	writer   bdatWriter
+	writer   bdat
 }
 
 // ReadFrom implements io.ReadFrom.

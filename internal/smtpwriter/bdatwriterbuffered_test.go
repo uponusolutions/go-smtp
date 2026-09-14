@@ -1,4 +1,4 @@
-package textsmtp_test
+package smtpwriter_test
 
 import (
 	"bufio"
@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
 func TestBdatWriterReaderFrom(t *testing.T) {
 	var buf bytes.Buffer
-	d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 1048576*2))
+	d := smtpwriter.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 1048576*2))
 
 	in := []byte("ab")
 
@@ -34,7 +34,7 @@ func TestBdatWriterReaderFrom(t *testing.T) {
 
 func TestBdatWriterReaderFromExact(t *testing.T) {
 	var buf bytes.Buffer
-	d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 2))
+	d := smtpwriter.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 2))
 
 	in := []byte("ab")
 
@@ -54,7 +54,7 @@ func TestBdatWriterReaderFromExact(t *testing.T) {
 func TestBdatWriterBuffered(t *testing.T) {
 	t.Run("WithoutChunkSize", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 1048576*2))
+		d := smtpwriter.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 1048576*2))
 
 		input1 := []byte("a")
 		n, err := d.Write(input1)
@@ -78,7 +78,7 @@ func TestBdatWriterBuffered(t *testing.T) {
 
 	t.Run("WithChunkSize", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriterBuffered(1, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 1))
+		d := smtpwriter.NewBdatWriterBuffered(1, bufio.NewWriter(&buf), func() error { return nil }, 0, make([]byte, 1))
 
 		input1 := []byte("ab")
 		n, err := d.Write(input1)
@@ -104,14 +104,14 @@ func TestBdatWriterBuffered(t *testing.T) {
 		var buf bytes.Buffer
 
 		// read is never called as buffer lead to a single bdat
-		d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return errors.New("failed") }, 0, make([]byte, 1048576*2))
+		d := smtpwriter.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return errors.New("failed") }, 0, make([]byte, 1048576*2))
 		n, err := d.Write([]byte("ab"))
 		require.Equal(t, 2, n)
 		require.NoError(t, err)
 		err = d.Close()
 		require.NoError(t, err)
 
-		d = textsmtp.NewBdatWriterBuffered(1, bufio.NewWriter(&buf), func() error { return errors.New("failed") }, 0, make([]byte, 1))
+		d = smtpwriter.NewBdatWriterBuffered(1, bufio.NewWriter(&buf), func() error { return errors.New("failed") }, 0, make([]byte, 1))
 		n, err = d.Write([]byte("ab"))
 		require.Equal(t, 1, n)
 		require.ErrorContains(t, err, "failed")
@@ -119,7 +119,7 @@ func TestBdatWriterBuffered(t *testing.T) {
 
 	t.Run("WithSize", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 2, make([]byte, 1048576*2))
+		d := smtpwriter.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 2, make([]byte, 1048576*2))
 
 		input1 := []byte("a")
 		n, err := d.Write(input1)
@@ -142,7 +142,7 @@ func TestBdatWriterBuffered(t *testing.T) {
 
 	t.Run("WithSizeErrorTooMuch", func(t *testing.T) {
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 1, make([]byte, 1048576*2))
+		d := smtpwriter.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, 1, make([]byte, 1048576*2))
 
 		input1 := []byte("a")
 		n, err := d.Write(input1)
@@ -160,7 +160,7 @@ func TestBdatWriterBuffered(t *testing.T) {
 		size := 3
 
 		var buf bytes.Buffer
-		d := textsmtp.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, size, make([]byte, 1048576*2))
+		d := smtpwriter.NewBdatWriterBuffered(0, bufio.NewWriter(&buf), func() error { return nil }, size, make([]byte, 1048576*2))
 
 		input1 := []byte("a")
 		n, err := d.Write(input1)

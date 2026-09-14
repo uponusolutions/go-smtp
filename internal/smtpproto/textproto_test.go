@@ -1,4 +1,4 @@
-package textsmtp
+package smtpproto
 
 import (
 	"bytes"

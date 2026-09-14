@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpproto"
 )
 
 // Parses the BY argument defined in RFC2852 section 4.
@@ -176,7 +176,7 @@ func decodeTypedAddress(val string) (smtp.DSNAddressType, string, error) {
 	switch smtp.DSNAddressType(aType) {
 	case smtp.DSNAddressTypeRFC822:
 		aAddr, err = decodeXtext(aAddr)
-		if err == nil && !textsmtp.IsPrintableASCII(aAddr) {
+		if err == nil && !smtpproto.IsPrintableASCII(aAddr) {
 			err = errors.New("illegal address:" + aAddr)
 		}
 	case smtp.DSNAddressTypeUTF8:

@@ -1,4 +1,4 @@
-package textsmtp_test
+package internal
 
 import (
 	"bufio"
@@ -6,12 +6,14 @@ import (
 	"encoding/binary"
 	"io"
 	"math/rand/v2"
-	upstream "net/textproto"
+	upstreamtextproto "net/textproto"
 	"os"
 	"testing"
 
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpreader"
+	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
 	"github.com/uponusolutions/go-smtp/tester"
+	"github.com/uponusolutions/go-smtp/tester/upstream"
 )
 
 // payloadSize is used for both directions so read and write throughput are
@@ -99,7 +101,7 @@ func encode(b *testing.B, raw []byte) []byte {
 	var buf bytes.Buffer
 
 	bw := bufio.NewWriter(&buf)
-	w := upstream.NewWriter(bw).DotWriter()
+	w := upstreamtextproto.NewWriter(bw).DotWriter()
 
 	if _, err := w.Write(raw); err != nil {
 		b.Fatalf("encode payload: %v", err)
@@ -121,7 +123,7 @@ func encode(b *testing.B, raw []byte) []byte {
 func decodedLen(b *testing.B, enc []byte) int64 {
 	b.Helper()
 
-	r := newDotReaderUpstream(bufio.NewReader(bytes.NewReader(enc)), 0)
+	r := upstream.NewDotReader(bufio.NewReader(bytes.NewReader(enc)), 0)
 
 	n, err := io.Copy(io.Discard, r)
 	if err != nil {
@@ -142,19 +144,19 @@ var implConfigs = []implConfig{
 	{
 		name: "Upstream",
 		dotReader: func(br *bufio.Reader) io.Reader {
-			return newDotReaderUpstream(br, 0)
+			return upstream.NewDotReader(br, 0)
 		},
 		dotWriter: func(bw *bufio.Writer) io.WriteCloser {
-			return upstream.NewWriter(bw).DotWriter()
+			return upstreamtextproto.NewWriter(bw).DotWriter()
 		},
 	},
 	{
 		name: "Fork",
 		dotReader: func(br *bufio.Reader) io.Reader {
-			return textsmtp.NewDotReader(br, 0)
+			return smtpreader.NewDot(br, 0)
 		},
 		dotWriter: func(bw *bufio.Writer) io.WriteCloser {
-			return textsmtp.NewDotWriter(bw)
+			return smtpwriter.NewDot(bw)
 		},
 	},
 }

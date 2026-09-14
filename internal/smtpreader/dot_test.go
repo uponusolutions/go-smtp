@@ -1,4 +1,4 @@
-package textsmtp_test
+package smtpreader_test
 
 import (
 	"bufio"
@@ -13,11 +13,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/textsmtp"
+	"github.com/uponusolutions/go-smtp/internal/smtpreader"
 	"github.com/uponusolutions/go-smtp/tester"
+	"github.com/uponusolutions/go-smtp/tester/upstream"
 )
 
-//go:embed testdata/reader/*
+//go:embed testdata/*
 var embedFSReader embed.FS
 
 func TestDotReaderCompare(t *testing.T) {
@@ -33,10 +34,10 @@ func TestDotReaderCompare(t *testing.T) {
 			readerUpstream := bufio.NewReader(strings.NewReader(value))
 			readerFork := bufio.NewReader(strings.NewReader(value))
 
-			dotReaderUpstream := newDotReaderUpstream(readerUpstream, 0)
+			dotReaderUpstream := upstream.NewDotReader(readerUpstream, 0)
 			bufUpstream := make([]byte, 1)
 
-			dotReaderFork := textsmtp.NewDotReader(readerFork, 0)
+			dotReaderFork := smtpreader.NewDot(readerFork, 0)
 			bufFork := make([]byte, 1)
 
 			i := 0
@@ -70,23 +71,23 @@ func TestDotReaderCompare(t *testing.T) {
 
 func TestDotReader(t *testing.T) {
 	t.Run("CompareTest", func(t *testing.T) {
-		tester.ReaderCompareTest(t, &embedFSReader, "testdata/reader", func(b io.Reader) ([]byte, error) {
-			reader := newDotReaderUpstream(bufio.NewReader(b), 0)
+		tester.ReaderCompareTest(t, &embedFSReader, "testdata", func(b io.Reader) ([]byte, error) {
+			reader := upstream.NewDotReader(bufio.NewReader(b), 0)
 			return io.ReadAll(reader)
 		}, func(b io.Reader) ([]byte, error) {
-			reader := textsmtp.NewDotReader(bufio.NewReader(b), 0) // textsmtp.NewDotReader(bufio.NewReader(b), 999999)
+			reader := smtpreader.NewDot(bufio.NewReader(b), 0) // textsmtp.NewDotReader(bufio.NewReader(b), 999999)
 			return io.ReadAll(reader)
 		})
 	})
 
 	t.Run("Decode", func(t *testing.T) {
 		buf := bufio.NewReader(strings.NewReader("dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n"))
-		r := textsmtp.NewDotReader(buf, 0)
+		r := smtpreader.NewDot(buf, 0)
 		b, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.Equal(t, []byte("dotlines\r\nfoo\r\n.bar\n...baz\nquux\r\n\r\n"), b)
 
-		r = textsmtp.NewDotReader(buf, 0)
+		r = smtpreader.NewDot(buf, 0)
 		b, err = io.ReadAll(r)
 		require.Error(t, io.ErrUnexpectedEOF, err)
 		require.Equal(t, []byte("anot.her\n"), b)
@@ -105,7 +106,7 @@ func TestDotReader(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { _, err := io.WriteString(client, ".\r\n"); done <- err }()
 		buf := bufio.NewReader(server)
-		r := textsmtp.NewDotReader(buf, 0)
+		r := smtpreader.NewDot(buf, 0)
 		got, err := io.ReadAll(r)
 
 		require.NoError(t, err)
@@ -120,7 +121,7 @@ func TestDotReader(t *testing.T) {
 	// https://github.com/Jabberwocky238/go-smtp/blob/b0673510e58009b47a2c9b6e6ca5fc189c3c5ba4/data_test.go
 	t.Run("ZeroRead", func(t *testing.T) {
 		buf := bufio.NewReader(strings.NewReader("..first\r\n.\r\nNEXT\r\n"))
-		r := textsmtp.NewDotReader(buf, 0)
+		r := smtpreader.NewDot(buf, 0)
 		if n, err := r.Read(nil); n != 0 || err != nil {
 			t.Fatalf("zero read: %d, %v", n, err)
 		}
@@ -137,13 +138,13 @@ func TestDotReader(t *testing.T) {
 		input := "dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nanot.her\n"
 
 		buf := bufio.NewReader(strings.NewReader(input))
-		r := textsmtp.NewDotReader(buf, 35)
+		r := smtpreader.NewDot(buf, 35)
 		b, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.Equal(t, []byte("dotlines\r\nfoo\r\n.bar\n...baz\nquux\r\n\r\n"), b)
 
 		buf = bufio.NewReader(strings.NewReader(input))
-		r = textsmtp.NewDotReader(buf, 34)
+		r = smtpreader.NewDot(buf, 34)
 		b, err = io.ReadAll(r)
 		require.Error(t, smtp.ErrDataTooLarge, err)
 		require.Equal(t, []byte("dotlines\r\nfoo\r\n.bar\n...baz\nquux\r\n\r"), b)
@@ -162,7 +163,7 @@ func TestDotReaderBytes(t *testing.T) {
 		reader, writer := io.Pipe()
 		buf := make([]byte, 255)
 		bufio := bufio.NewReader(reader)
-		r := textsmtp.NewDotReader(bufio, 0)
+		r := smtpreader.NewDot(bufio, 0)
 
 		// only t is read
 		write(writer, "t\r\n.\r")
@@ -186,7 +187,7 @@ func TestDotReaderBytes(t *testing.T) {
 		reader, writer := io.Pipe()
 		buf := make([]byte, 1) // smallest buffer possible
 		bufio := bufio.NewReader(reader)
-		r := textsmtp.NewDotReader(bufio, 0)
+		r := smtpreader.NewDot(bufio, 0)
 
 		// only t is read
 		write(writer, "t\r\n.\r")
@@ -217,7 +218,7 @@ func TestDotReaderBytes(t *testing.T) {
 		reader, writer := io.Pipe()
 		buf := make([]byte, 255)
 		bufio := bufio.NewReader(reader)
-		r := textsmtp.NewDotReader(bufio, 0)
+		r := smtpreader.NewDot(bufio, 0)
 
 		// only t is read
 		write(writer, "testtest\r\n.")
@@ -241,7 +242,7 @@ func TestDotReaderBytes(t *testing.T) {
 		reader, writer := io.Pipe()
 		buf := make([]byte, 255)
 		bufio := bufio.NewReader(reader)
-		r := textsmtp.NewDotReader(bufio, 0)
+		r := smtpreader.NewDot(bufio, 0)
 
 		// only t is read
 		write(writer, "testtest\r\n.")
@@ -266,7 +267,7 @@ func TestDotReaderBytes(t *testing.T) {
 		reader, writer := io.Pipe()
 		buf := make([]byte, 255)
 		bufio := bufio.NewReader(reader)
-		r := textsmtp.NewDotReader(bufio, 0)
+		r := smtpreader.NewDot(bufio, 0)
 
 		// only t is read
 		write(writer, "testtest\r\n.")
@@ -292,7 +293,7 @@ func TestDotReaderBytes(t *testing.T) {
 		reader, writer := io.Pipe()
 		buf := make([]byte, 255)
 		bufio := bufio.NewReader(reader)
-		r := textsmtp.NewDotReader(bufio, 0)
+		r := smtpreader.NewDot(bufio, 0)
 
 		// only t is read
 		write(writer, "testtest\r\n")
@@ -317,7 +318,7 @@ func TestDotReaderBytes(t *testing.T) {
 		reader, writer := io.Pipe()
 		buf := make([]byte, 255)
 		bufio := bufio.NewReader(reader)
-		r := textsmtp.NewDotReader(bufio, 0)
+		r := smtpreader.NewDot(bufio, 0)
 
 		// only t is read
 		write(writer, "testtest\r\n")
@@ -351,7 +352,7 @@ func TestDotReaderNoBlockAfterEnd(t *testing.T) {
 	// waiting for the next command would be.
 	go func() { _, _ = pw.Write([]byte("hi\r\n.\r\n")) }()
 
-	r := textsmtp.NewDotReader(bufio.NewReader(pr), 0)
+	r := smtpreader.NewDot(bufio.NewReader(pr), 0)
 
 	// Consume the message up to the end marker.
 	body, err := io.ReadAll(io.LimitReader(r, 4))
