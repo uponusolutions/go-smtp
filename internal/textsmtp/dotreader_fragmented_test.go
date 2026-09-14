@@ -39,6 +39,7 @@ func TestDataReaderFragmented(t *testing.T) {
 		{"bare-lf", "first\n.second\r\n.\r\n", "first\n.second\r\n", nil},
 		{"bare-cr", "first\rsecond\r\n.\r\n", "first\rsecond\r\n", nil},
 		{"dot-cr", ".\rx\r\n.\r\n", "\rx\r\n", nil}, // original "x\r\n" -- why should \r be removed?
+		{"loose-cr-lf", "a\rb\nc\rd\r\n.\r\n", "a\rb\nc\rd\r\n", nil},
 		{"unterminated", "hello\r\n", "hello\r\n", io.ErrUnexpectedEOF},
 		{"split-dot", "hello\r\n.", "hello\r\n", io.ErrUnexpectedEOF},
 		{"long-run", strings.Repeat("a", 8193) + "\r\n.\r\n", strings.Repeat("a", 8193) + "\r\n", nil},
