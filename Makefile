@@ -32,6 +32,7 @@ stats:
 
 pprof:
 	go test . -bench ^Benchmark/^SmallWithChunking$$ -benchtime=10s -run ^$$ -cpuprofile cpu.pprof -memprofile mem.pprof
+	# go test ./mailer -run TestClient_SendMailDirectManyRcptsPipelining -cpuprofile cpu.pprof -memprofile mem.pprof
 	go tool pprof -http=":8000" cpu.pprof
 
 vet:
