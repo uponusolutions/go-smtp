@@ -69,7 +69,7 @@ func (r *dotReader) Read(b []byte) (int, error) {
 		b[0] = '\n'
 		n++
 		skipped += 2
-		if c[3] == '\r' && c[4] == '\n' {
+		if len(c) >= 5 && c[3] == '\r' && c[4] == '\n' {
 			r.state = stateEOF
 			skipped += 2 // skip .\n\r
 			return r.finalize(n, skipped, err)
@@ -110,22 +110,12 @@ func (r *dotReader) Read(b []byte) (int, error) {
 		if i == -1 {
 			l := len(c)
 
-			if l > 1 && c[l-2] == '\r' && c[l-1] == '\n' {
+			if l > 1 && c[l-2] == '\r' && c[l-1] == '\n' && err == nil {
 				// Ends with \r\n, write everything before.
 				n += copy(b, c[:l-2])
-
-				// if error occured we will never get more bytes, so lets discard \r\n
-				if err != nil && len(b) >= len(c[:l-2]) {
-					skipped += 2
-				}
-			} else if l > 0 && c[l-1] == '\r' {
+			} else if l > 0 && c[l-1] == '\r' && err == nil {
 				// Ends with \r, write everything before.
 				n += copy(b, c[:l-1])
-
-				// if error occured we will never get more bytes, so lets discard \r
-				if err != nil && len(b) >= len(c[:l-1]) {
-					skipped++
-				}
 			} else {
 				n += copy(b, c)
 			}
@@ -133,17 +123,20 @@ func (r *dotReader) Read(b []byte) (int, error) {
 			break
 		}
 
+		// i is \r, \n.\r\n needs to be accessible
 		if len(c)-1 < i+4 {
-			// i is \r, \n.\r\n needs to be accessible
-			if i > 0 {
+			if err != nil {
+				n += copy(b, c[:i+2])
+				if len(b) >= len(c[:i+2]) {
+					skipped = len(c) - (i + 2)
+				} else if len(b) == len(c[:i+2])-1 {
+					r.state = stateCR // Next time we want to write '\n'.
+					skipped--         // Prevent \r from being discarded
+				}
+			} else if i > 0 {
 				// Not enough bytes to check for \r\n.\r\n,
 				// write everything before
 				n += copy(b, c[:i])
-			}
-
-			// if error occured we will never get more bytes, so lets discard \r\n.
-			if err != nil && (i > 0 || len(b) >= len(c[:i])) {
-				skipped = 3
 			}
 
 			break
