@@ -95,7 +95,8 @@ func (s *Status) Text() string {
 	return strings.Join(s.Lines, "\n")
 }
 
-// Text returns all lines joined by \n in a single string.
+// String returns the status as a formatted message.
+// Important: Should not be used for sending a response.
 func (s *Status) String() string {
 	base := fmt.Sprintf("%03d", s.Code)
 	if s.EnhancedCode != NoEnhancedCode {
