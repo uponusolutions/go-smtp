@@ -72,14 +72,7 @@ func NewStatusS(code int, enhCode EnhancedCode, msg string) *Status {
 
 // Error returns a error string.
 func (s *Status) Error() string {
-	base := fmt.Sprintf("SMTP error %03d", s.Code)
-	if s.EnhancedCode != NoEnhancedCode {
-		base += fmt.Sprintf(" %d.%d.%d", s.EnhancedCode[0], s.EnhancedCode[1], s.EnhancedCode[2])
-	}
-	if len(s.Lines) > 0 {
-		return base + ": " + s.Text()
-	}
-	return base
+	return s.String()
 }
 
 // Positive returns true if the status code is 2xx.
@@ -100,6 +93,18 @@ func (s *Status) Permanent() bool {
 // Text returns all lines joined by \n in a single string.
 func (s *Status) Text() string {
 	return strings.Join(s.Lines, "\n")
+}
+
+// Text returns all lines joined by \n in a single string.
+func (s *Status) String() string {
+	base := fmt.Sprintf("%03d", s.Code)
+	if s.EnhancedCode != NoEnhancedCode {
+		base += fmt.Sprintf(" %d.%d.%d", s.EnhancedCode[0], s.EnhancedCode[1], s.EnhancedCode[2])
+	}
+	if len(s.Lines) > 0 {
+		return base + " " + s.Text()
+	}
+	return base
 }
 
 // StatusWriter is an interface which needs to be implemented by a writer to be used by Status.WriteTo.

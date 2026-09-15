@@ -471,7 +471,7 @@ func HelloCase(t *testing.T, i int) {
 		err = c.Hello()
 	case 1:
 		err = c.StartTLS(nil, "fake.host")
-		if err.Error() == "SMTP error 502: Not implemented" {
+		if err.Error() == "502 Not implemented" {
 			err = nil
 			_ = c.Quit()
 		}
@@ -632,7 +632,7 @@ func TestAuthFailed(t *testing.T) {
 
 	if err == nil {
 		t.Error("Auth: expected error; got none")
-	} else if err.Error() != "SMTP error 535: Invalid credentials\nplease see www.example.com" {
+	} else if err.Error() != "535 Invalid credentials\nplease see www.example.com" {
 		t.Errorf("Auth: got error: %v, want: %s", err, "Invalid credentials\nplease see www.example.com")
 	}
 

@@ -243,5 +243,5 @@ func TestReadMultiLine(t *testing.T) {
 	require.True(t, ok)
 
 	require.Equal(t, expectedText, status.Text())
-	require.Equal(t, "SMTP error 550 5.1.1: "+expectedText, status.Error())
+	require.Equal(t, "550 5.1.1 "+expectedText, status.Error())
 }
