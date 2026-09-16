@@ -678,7 +678,7 @@ func TestClient_AllRejectedKeepsConnection(t *testing.T) {
 
 	require.Equal(
 		t,
-		smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command."),
+		smtp.ErrNoRecipients,
 		err,
 		"internal BDAT sizing error leaked to the caller",
 	)
@@ -697,7 +697,7 @@ func TestClient_AllRejectedChunkingKeepsConnection(t *testing.T) {
 
 	require.Equal(
 		t,
-		smtp.NewStatusS(502, smtp.EnhancedCode{5, 5, 1}, "Missing RCPT TO command."),
+		smtp.ErrNoRecipients,
 		err,
 		"internal BDAT sizing error leaked to the caller",
 	)
