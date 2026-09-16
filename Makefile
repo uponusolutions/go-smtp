@@ -31,9 +31,13 @@ stats:
 	go tool -modfile=go.tool.mod benchstat .bench/*.txt
 
 pprof:
-	go test . -bench ^Benchmark/^SmallWithChunking$$ -benchtime=10s -run ^$$ -cpuprofile cpu.pprof -memprofile mem.pprof
-	# go test ./mailer -run TestClient_SendMailDirectManyRcptsPipelining -cpuprofile cpu.pprof -memprofile mem.pprof
+	go test . -bench '$(BENCH)' -benchtime=$(TIME) -run ^$$ -cpuprofile cpu.pprof -memprofile mem.pprof
+
+pprof-cpu:
 	go tool pprof -http=":8000" cpu.pprof
+
+pprof-mem:
+	go tool pprof -http=":8000" mem.pprof
 
 vet:
 	go vet ./...
