@@ -32,7 +32,8 @@ import (
 
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
-	"github.com/uponusolutions/go-smtp/internal/smtpproto"
+	"github.com/uponusolutions/go-smtp/internal/parse"
+	"github.com/uponusolutions/go-smtp/internal/smtpreader"
 	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
 )
 
@@ -46,7 +47,9 @@ type Client struct {
 
 	// keep a reference to the connection so it can be used to create a TLS
 	// connection later
-	conn net.Conn
+	conn     net.Conn
+	receiver *smtpreader.Receiver
+	sender   *smtpwriter.Sender
 
 	// connAddress is set on dial and is not reset on disconnect
 	// to be able to use ServerAddress() after disconnect
@@ -189,26 +192,31 @@ func (c *Client) initConn(conn net.Conn, expectGreet bool) error {
 	return c.Hello()
 }
 
-// setConn sets the underlying network connection for the client.
+// setConn sets the underlying network connection.
 func (c *Client) setConn(conn net.Conn) {
 	c.conn = conn
 
-	if c.cfg.text != nil {
-		c.cfg.text.Replace(conn)
+	if c.receiver != nil {
+		c.receiver.Reset(conn)
 	} else {
-		c.cfg.text = smtpproto.NewTextproto(
-			conn, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength,
-		)
+		c.receiver = smtpreader.NewReceiver(conn, c.cfg.readerSize, c.cfg.maxLineLength)
+	}
+
+	if c.sender != nil {
+		c.sender.Reset(conn)
+	} else {
+		c.sender = smtpwriter.NewSender(conn, c.cfg.writerSize)
 	}
 }
 
 // Close closes the connection.
-func (c *Client) Close() error {
+func (c *Client) Close() (err error) {
 	if c.conn == nil {
 		return nil
 	}
-
-	err := c.cfg.text.Close()
+	c.receiver.Reset(nil)
+	c.sender.Reset(nil)
+	err = c.conn.Close()
 	c.conn = nil
 	return err
 }
@@ -220,7 +228,7 @@ func (c *Client) greet() error {
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	status, err := c.cfg.text.ReadResponse()
+	status, err := c.receiver.ReadResponse()
 	// probably connectivity error
 	if err != nil {
 		_ = c.Close()
@@ -296,27 +304,27 @@ func (c *Client) cmd(expectCode int, message string) (*smtp.Status, error) {
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	_, err := c.cfg.text.W.WriteString(message)
+	_, err := c.sender.WriteString(message)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = c.cfg.text.W.Write(smtp.Crnl)
+	_, err = c.sender.Write(smtp.Crnl)
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.cfg.text.W.Flush()
+	err = c.sender.Flush()
 	if err != nil {
 		return nil, err
 	}
 
-	status, err := c.cfg.text.ReadResponse()
+	status, err := c.receiver.ReadResponse()
 	if err != nil {
 		return nil, err
 	}
 
-	if smtpproto.IsCodeUnexpected(status.Code, expectCode) {
+	if smtpreader.IsCodeUnexpected(status.Code, expectCode) {
 		return nil, status
 	}
 
@@ -349,8 +357,8 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) 
 		// If the buffer can not hold the first request, ignore congestion.
 		// Typically the 4k buffio is enough to make it fast, it don't expect any buffers from tcp.
 		// Outcomment to see TestClient_SendMailDirectManyRcptsPipelining failing.
-		if len(message)+2 > c.cfg.text.W.Available() && c.connPipelining.pending > 0 {
-			err := c.cfg.text.W.Flush()
+		if len(message)+2 > c.sender.Available() && c.connPipelining.pending > 0 {
+			err := c.sender.Flush()
 			if err != nil {
 				return err
 			}
@@ -359,18 +367,18 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) 
 		}
 	}
 
-	_, err := c.cfg.text.W.WriteString(message)
+	_, err := c.sender.WriteString(message)
 	if err != nil {
 		return err
 	}
 
-	_, err = c.cfg.text.W.Write(smtp.Crnl)
+	_, err = c.sender.Write(smtp.Crnl)
 	if err != nil {
 		return err
 	}
 
 	if !c.PipeliningActive() || pType == pipeliningTypeLast {
-		err = c.cfg.text.W.Flush()
+		err = c.sender.Flush()
 		if err != nil {
 			return err
 		}
@@ -384,7 +392,7 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) 
 		return nil
 	}
 
-	return c.cfg.text.ReadResponseValid(expectCode)
+	return c.receiver.ReadResponseValid(expectCode)
 }
 
 // Conclude concludes the current pipelining group.
@@ -397,7 +405,7 @@ func (c *Client) Conclude() error {
 		return ErrPipeliningNotEnabled
 	}
 	c.connPipelining.concluded = true
-	return c.cfg.text.W.Flush()
+	return c.sender.Flush()
 }
 
 func (c *Client) readResponseValid(expectCode int) error {
@@ -409,11 +417,11 @@ func (c *Client) readResponseValid(expectCode int) error {
 	defer timeout()
 
 	// Make sure everything is flushed, probably already done if group has ended.
-	if err := c.cfg.text.W.Flush(); err != nil {
+	if err := c.sender.Flush(); err != nil {
 		return err
 	}
 
-	return c.cfg.text.ReadResponseValid(expectCode)
+	return c.receiver.ReadResponseValid(expectCode)
 }
 
 // ClearResponses consumes x pending responses from pipelining
@@ -696,7 +704,7 @@ func (c *Client) Mail(from string, opts *MailOptions) error {
 			return errors.New("smtp: Unknown RET parameter value")
 		}
 		if opts.EnvelopeID != "" {
-			if !smtpproto.IsPrintableASCII(opts.EnvelopeID) {
+			if !parse.IsPrintableASCII(opts.EnvelopeID) {
 				return errors.New("smtp: Malformed ENVID parameter value")
 			}
 			fmt.Fprintf(&sb, " ENVID=%s", encodeXtext(opts.EnvelopeID))
@@ -779,7 +787,7 @@ func (c *Client) RcptResponse() error {
 func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string) error {
 	if len(opts.Notify) != 0 {
 		sb.WriteString(" NOTIFY=")
-		if err := smtpproto.CheckNotifySet(opts.Notify); err != nil {
+		if err := parse.CheckNotifySet(opts.Notify); err != nil {
 			return errors.New("smtp: Malformed NOTIFY parameter value")
 		}
 		for i, v := range opts.Notify {
@@ -793,7 +801,7 @@ func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string)
 		var enc string
 		switch opts.OriginalRecipientType {
 		case smtp.DSNAddressTypeRFC822:
-			if !smtpproto.IsPrintableASCII(opts.OriginalRecipient) {
+			if !parse.IsPrintableASCII(opts.OriginalRecipient) {
 				return errors.New("smtp: Illegal address")
 			}
 			enc = encodeXtext(opts.OriginalRecipient)
@@ -849,7 +857,7 @@ func (c *Client) Data() (*ContentCloser, error) {
 	if c.PipeliningActive() {
 		return nil, nil
 	}
-	return &ContentCloser{c: c, writer: smtpwriter.NewDot(c.cfg.text.W)}, nil
+	return &ContentCloser{c: c, writer: smtpwriter.NewDot(c.sender.Writer)}, nil
 }
 
 // DataResponse returns the result of previous send data command if pipelining is enabled
@@ -857,7 +865,7 @@ func (c *Client) DataResponse() (*ContentCloser, error) {
 	if err := c.readResponseValid(354); err != nil {
 		return nil, err
 	}
-	return &ContentCloser{c: c, writer: smtpwriter.NewDot(c.cfg.text.W)}, nil
+	return &ContentCloser{c: c, writer: smtpwriter.NewDot(c.sender.Writer)}, nil
 }
 
 // Bdat issues a BDAT command to the server and returns a writer that
@@ -889,13 +897,13 @@ func (c *Client) Bdat(size int) (*ContentCloser, error) {
 			c.chunkingBuffer = make([]byte, bufferSize)
 		}
 
-		return &ContentCloser{c: c, writer: smtpwriter.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
-			return c.cfg.text.ReadResponseValid(250)
+		return &ContentCloser{c: c, writer: smtpwriter.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.sender.Writer, func() error {
+			return c.receiver.ReadResponseValid(250)
 		}, size, c.chunkingBuffer[:bufferSize])}, nil
 	}
 
-	return &ContentCloser{c: c, writer: smtpwriter.NewBdat(c.cfg.chunkingMaxSize, c.cfg.text.W, func() error {
-		return c.cfg.text.ReadResponseValid(250)
+	return &ContentCloser{c: c, writer: smtpwriter.NewBdat(c.cfg.chunkingMaxSize, c.sender.Writer, func() error {
+		return c.receiver.ReadResponseValid(250)
 	}, size)}, nil
 }
 

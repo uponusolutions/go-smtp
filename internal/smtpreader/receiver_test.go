@@ -1,4 +1,4 @@
-package smtpproto
+package smtpreader
 
 import (
 	"bytes"
@@ -12,21 +12,21 @@ import (
 	"github.com/uponusolutions/go-smtp/tester"
 )
 
-func reader(in string, out *bytes.Buffer) *Textproto {
-	return NewTextproto(tester.NewFakeConn(in, out), 4096, 4096, 0)
+func reader(in string, out *bytes.Buffer) *Receiver {
+	return NewReceiver(tester.NewFakeConn(in, out), 4096, 0)
 }
 
 func TestReadLine(t *testing.T) {
 	r := reader("line1\nline2\n", &bytes.Buffer{})
-	s, err := r.ReadLine()
+	s, err := r.ReadFullLine()
 	if s != "line1" || err != nil {
 		t.Fatalf("Line 1: %s, %v", s, err)
 	}
-	s, err = r.ReadLine()
+	s, err = r.ReadFullLine()
 	if s != "line2" || err != nil {
 		t.Fatalf("Line 2: %s, %v", s, err)
 	}
-	s, err = r.ReadLine()
+	s, err = r.ReadFullLine()
 	if s != "" || err != io.EOF {
 		t.Fatalf("EOF: %s, %v", s, err)
 	}

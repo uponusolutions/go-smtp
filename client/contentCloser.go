@@ -38,7 +38,7 @@ func (d *ContentCloser) CloseWithResponse() (*smtp.Status, error) {
 	timeout := smtp.Timeout(d.c.conn, d.c.cfg.submissionTimeout)
 	defer timeout()
 
-	status, err := d.c.cfg.text.ReadResponse()
+	status, err := d.c.receiver.ReadResponse()
 
 	if err == nil && status.Code != 250 {
 		err = status

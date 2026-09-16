@@ -1,6 +1,7 @@
 package smtp
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -9,6 +10,9 @@ import (
 )
 
 var (
+	// ErrTooLongLine occurs if the smtp line is too long.
+	ErrTooLongLine = errors.New("smtp: too long a line in input stream")
+
 	// Crnl \r\n
 	Crnl = []byte{'\r', '\n'}
 	// Dotcrnl .\r\n

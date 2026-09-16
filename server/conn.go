@@ -16,8 +16,8 @@ import (
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/internal/parse"
-	"github.com/uponusolutions/go-smtp/internal/smtpproto"
 	"github.com/uponusolutions/go-smtp/internal/smtpreader"
+	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
 )
 
 type state int32
@@ -35,11 +35,12 @@ const (
 type Conn struct {
 	ctx context.Context
 
-	conn net.Conn
+	conn     net.Conn
+	receiver *smtpreader.Receiver
+	sender   *smtpwriter.Sender
 
 	state state
 
-	text   *smtpproto.Textproto
 	server *Server
 
 	session    Session
@@ -250,7 +251,7 @@ func (c *Conn) Close(err error) {
 	c.logger().DebugContext(c.ctx, "connection is closing")
 
 	// flush any pending data from writer before closing connection
-	_ = c.text.W.Flush()
+	_ = c.sender.Flush()
 
 	closeErr := c.conn.Close()
 	if closeErr != nil {
@@ -457,7 +458,7 @@ func (c *Conn) handleError(err error) {
 		return
 	}
 
-	if err == smtpproto.ErrTooLongLine {
+	if err == smtp.ErrTooLongLine {
 		c.writeStatus(smtp.NewStatusS(500, smtp.EnhancedCode{5, 4, 0}, "Too long line"))
 		c.Close(errors.New("line too long"))
 		return
@@ -565,7 +566,7 @@ func (c *Conn) handleMail(arg string) error {
 				return smtp.NewStatusS(504, smtp.EnhancedCode{5, 5, 4}, "ENVID is not implemented")
 			}
 			value, err := decodeXtext(arg.Value)
-			if err != nil || value == "" || !smtpproto.IsPrintableASCII(value) {
+			if err != nil || value == "" || !parse.IsPrintableASCII(value) {
 				return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed ENVID parameter value")
 			}
 			opts.EnvelopeID = value
@@ -712,7 +713,7 @@ func handleRcptNotify(server *Server, opts *smtp.RcptOptions, value string) erro
 	for val := range strings.SplitSeq(value, ",") {
 		notify = append(notify, smtp.DSNNotify(strings.ToUpper(val)))
 	}
-	if err := smtpproto.CheckNotifySet(notify); err != nil {
+	if err := parse.CheckNotifySet(notify); err != nil {
 		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "Malformed NOTIFY parameter value")
 	}
 	opts.Notify = notify
@@ -881,7 +882,8 @@ func (c *Conn) handleStartTLS() error {
 	}
 
 	c.conn = tlsConn
-	c.text.Replace(tlsConn)
+	c.receiver.Reset(tlsConn)
+	c.sender.Reset(tlsConn)
 	c.state = stateUpgrade // same as StateInit but calls logout/reset on ehlo/helo
 
 	return nil
@@ -911,7 +913,7 @@ func (c *Conn) handleData(arg string) error {
 		c.writeStatus(smtp.NewStatusS(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>"))
 
 		// r gets exposed to be able to discard the rest of the message
-		r = smtpreader.NewDot(c.text.R, c.server.maxMessageBytes)
+		r = smtpreader.NewDot(c.receiver.Reader, c.server.maxMessageBytes)
 		return r
 	}
 
@@ -941,7 +943,7 @@ func (c *Conn) handleBdatDiscard(arg string) error {
 	if err != nil {
 		return err
 	}
-	if _, err = c.text.R.Discard(int(size)); err != nil {
+	if _, err = c.receiver.Discard(int(size)); err != nil {
 		return err
 	}
 	if !c.server.enableCHUNKING {
@@ -958,7 +960,7 @@ func (c *Conn) handleBdat(arg string) error {
 
 	// at least a single recipient needs to be set
 	if c.recipients == 0 {
-		if _, err = c.text.R.Discard(int(size)); err != nil {
+		if _, err = c.receiver.Discard(int(size)); err != nil {
 			return err
 		}
 		return smtp.ErrNoRecipients
@@ -966,7 +968,7 @@ func (c *Conn) handleBdat(arg string) error {
 
 	closed := false
 
-	data := smtpreader.NewBdat(size, last, c.server.maxMessageBytes, c.text.R, func() (string, string, error) {
+	data := smtpreader.NewBdat(size, last, c.server.maxMessageBytes, c.receiver, func() (string, string, error) {
 		// if bdat is closed (error occurred)
 		if closed {
 			return "", "", io.EOF
@@ -1036,13 +1038,13 @@ func (c *Conn) writeStatus(status *smtp.Status) {
 	}
 
 	// TODO: error handling
-	_, _ = status.WriteTo(c.text.W)
+	_, _ = status.WriteTo(c.sender)
 
 	// PIPELINE support
 	// If there is something buffered in c.text.R then we can assume another command is following.
 	// This means the client is doing pipelining and we don't need to respond just now.
-	if c.text.R.Buffered() == 0 {
-		_ = c.text.W.Flush()
+	if c.receiver.Buffered() == 0 {
+		_ = c.sender.Flush()
 	}
 }
 
@@ -1059,7 +1061,7 @@ func (c *Conn) readLine() (string, error) {
 	if c.server.readTimeout != 0 {
 		_ = c.conn.SetReadDeadline(time.Now().Add(c.server.readTimeout))
 	}
-	line, err := c.text.ReadLine()
+	line, err := c.receiver.ReadFullLine()
 	if err == nil {
 		c.logger().DebugContext(c.ctx, "read", slog.String("line", line))
 	}

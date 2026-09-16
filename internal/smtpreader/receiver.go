@@ -1,4 +1,4 @@
-package smtpproto
+package smtpreader
 
 import (
 	"bufio"
@@ -12,41 +12,36 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-// Textproto is used as a wrapper around a connection to read and write to it
-type Textproto struct {
-	R                  *bufio.Reader
-	W                  *bufio.Writer
-	conn               io.ReadWriteCloser
+// Receiver is used as a wrapper around a connection to read from it
+type Receiver struct {
+	*bufio.Reader
 	maxLineLength      int
 	lineLengthExceeded bool
 }
 
-// NewTextproto creates a new connection wrapper.
-func NewTextproto(
-	conn io.ReadWriteCloser,
+// NewReceiver creates a new connection wrapper.
+func NewReceiver(
+	conn io.Reader,
 	readerSize int,
-	writerSize int,
 	maxLineLength int,
-) *Textproto {
+) *Receiver {
 	if readerSize == 0 {
 		readerSize = 4096 // default
 	}
 
-	if writerSize == 0 {
-		writerSize = 4096 // default
-	}
-
-	return &Textproto{
-		R:                  bufio.NewReaderSize(conn, readerSize),
-		W:                  bufio.NewWriterSize(conn, writerSize),
-		conn:               conn,
+	return &Receiver{
+		Reader:             bufio.NewReaderSize(conn, readerSize),
 		maxLineLength:      maxLineLength,
 		lineLengthExceeded: false,
 	}
 }
 
-// ErrTooLongLine occurs if the smtp line is too long.
-var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
+// ReadFullLine reads a single line from r,
+// eliding the final \n or \r\n from the returned string.
+func (t *Receiver) ReadFullLine() (string, error) {
+	line, err := t.readLineSlice()
+	return string(line), err
+}
 
 // ReadResponse reads a multi-line response of the form:
 //
@@ -67,7 +62,7 @@ var ErrTooLongLine = errors.New("smtp: too long a line in input stream")
 //	message line 2
 //	...
 //	code message line n
-func (t *Textproto) ReadResponse() (*smtp.Status, error) {
+func (t *Receiver) ReadResponse() (*smtp.Status, error) {
 	status, continued, err := t.readFirstCodeLine()
 	if err != nil {
 		return nil, err
@@ -80,25 +75,8 @@ func (t *Textproto) ReadResponse() (*smtp.Status, error) {
 	return status, nil
 }
 
-func (t *Textproto) readResponseExtra(status *smtp.Status, continued bool, appendMessage bool) error {
-	var message string
-	var err error
-
-	encCodePart := status.EnhancedCode.ToPart()
-	for continued {
-		continued, message, err = t.readExtraCodeLine(strconv.Itoa(status.Code), encCodePart)
-		if err != nil {
-			return err
-		}
-		if appendMessage {
-			status.Lines = append(status.Lines, message)
-		}
-	}
-	return nil
-}
-
 // ReadResponseValid returns an error if the code does not match expectation.
-func (t *Textproto) ReadResponseValid(expectCode int) error {
+func (t *Receiver) ReadResponseValid(expectCode int) error {
 	status, continued, err := t.readFirstCodeLine()
 	if err != nil {
 		return err
@@ -118,8 +96,25 @@ func (t *Textproto) ReadResponseValid(expectCode int) error {
 	return nil
 }
 
-func (t *Textproto) readFirstCodeLine() (*smtp.Status, bool, error) {
-	line, err := t.ReadLine()
+func (t *Receiver) readResponseExtra(status *smtp.Status, continued bool, appendMessage bool) error {
+	var message string
+	var err error
+
+	encCodePart := status.EnhancedCode.ToPart()
+	for continued {
+		continued, message, err = t.readExtraCodeLine(strconv.Itoa(status.Code), encCodePart)
+		if err != nil {
+			return err
+		}
+		if appendMessage {
+			status.Lines = append(status.Lines, message)
+		}
+	}
+	return nil
+}
+
+func (t *Receiver) readFirstCodeLine() (*smtp.Status, bool, error) {
+	line, err := t.ReadFullLine()
 	if err != nil {
 		return nil, false, err
 	}
@@ -156,8 +151,8 @@ func parseFirstCodeLine(line string) (*smtp.Status, bool, error) {
 	return smtp.NewStatusS(code, enhCode, message), continued, nil
 }
 
-func (t *Textproto) readExtraCodeLine(codeString string, enhCodePart []byte) (continued bool, message string, err error) {
-	line, err := t.ReadLine()
+func (t *Receiver) readExtraCodeLine(codeString string, enhCodePart []byte) (continued bool, message string, err error) {
+	line, err := t.ReadFullLine()
 	if err != nil {
 		return false, "", err
 	}
@@ -203,29 +198,22 @@ func IsCodeUnexpected(code int, expectCode int) bool {
 		100 <= expectCode && expectCode < 1000 && code != expectCode
 }
 
-// ReadLine reads a single line from r,
-// eliding the final \n or \r\n from the returned string.
-func (t *Textproto) ReadLine() (string, error) {
-	line, err := t.readLineSlice()
-	return string(line), err
-}
-
-func (t *Textproto) readLineSlice() ([]byte, error) {
+func (t *Receiver) readLineSlice() ([]byte, error) {
 	// If the line limit was exceeded once, the connection shouldn't be used anymore.
 	if t.lineLengthExceeded {
-		return nil, ErrTooLongLine
+		return nil, smtp.ErrTooLongLine
 	}
 
 	var line []byte
 	for {
-		l, more, err := t.R.ReadLine()
+		l, more, err := t.ReadLine()
 		if err != nil {
 			return nil, err
 		}
 
 		if t.maxLineLength > 0 && len(l)+len(line) > t.maxLineLength {
 			t.lineLengthExceeded = true
-			return nil, ErrTooLongLine
+			return nil, smtp.ErrTooLongLine
 		}
 
 		// Avoid the copy if the first call produced a full line.
@@ -238,16 +226,4 @@ func (t *Textproto) readLineSlice() ([]byte, error) {
 		}
 	}
 	return line, nil
-}
-
-// Replace conn.
-func (t *Textproto) Replace(conn io.ReadWriteCloser) {
-	t.conn = conn
-	t.R.Reset(t.conn)
-	t.W.Reset(t.conn)
-}
-
-// Close closes the connection.
-func (t *Textproto) Close() error {
-	return t.conn.Close()
 }
