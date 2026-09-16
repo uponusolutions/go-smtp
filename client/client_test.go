@@ -24,8 +24,8 @@ import (
 // Don't send a trailing space on AUTH command when there's no initial response:
 // https://github.com/golang/go/issues/17794
 func TestClientAuthTrimSpace(t *testing.T) {
-	server := "220 hello world\r\n" +
-		"200 some more"
+	server := "334 notbase64\r\n" +
+		"501 5.0.0 Negotiation cancelled"
 	wrote := &bytes.Buffer{}
 
 	fake := tester.NewFakeConn(server, wrote)
@@ -636,6 +636,8 @@ func TestAuthFailed(t *testing.T) {
 		t.Errorf("Auth: got error: %v, want: %s", err, "Invalid credentials\nplease see www.example.com")
 	}
 
+	require.NoError(t, c.Quit())
+
 	actualcmds := cmdbuf.String()
 	if client != actualcmds {
 		t.Errorf("Got:\n%s\nExpected:\n%s", actualcmds, client)
@@ -652,7 +654,7 @@ var authFailedServer = `220 hello world
 
 var authFailedClient = `EHLO localhost
 AUTH PLAIN AHVzZXIAcGFzcw==
-*
+QUIT
 `
 
 func TestTLSConnState(t *testing.T) {

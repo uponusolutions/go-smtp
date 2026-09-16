@@ -606,35 +606,43 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 		status, err = c.cmd(0, "AUTH "+mech+" "+string(resp64))
 	}
 
-	for err == nil {
-		var msg []byte
+	if err != nil {
+		return err
+	}
+
+	for {
 		switch status.Code {
 		case 334:
-			msg, err = encoding.DecodeString(strings.Join(status.Lines, "\n"))
-		case 235:
-			// the last message isn't base64 because it isn't a challenge
-			msg = []byte(strings.Join(status.Lines, "\n"))
-		default:
-			err = status
-		}
-		if err == nil {
-			if status.Code == 334 {
-				resp, err = saslClient.Next(msg)
-			} else {
-				resp = nil
+			// failed to decode answer => abort
+			msg, err := encoding.DecodeString(strings.Join(status.Lines, "\n"))
+			if err != nil {
+				return c.authAbort(err)
 			}
+			// sasl returned error or nil instead
+			resp, err = saslClient.Next(msg)
+			if err != nil {
+				return c.authAbort(err)
+			}
+			resp64 = make([]byte, encoding.EncodedLen(len(resp)))
+			encoding.Encode(resp64, resp)
+			status, err = c.cmd(0, string(resp64))
+			if err != nil {
+				return err
+			}
+		case 235:
+			return nil
+		default:
+			// status like 501 mean authentication aborted,
+			// but essentially everything except 335 and 235 can be interpreted as such.
+			return status
 		}
-		if err != nil {
-			// abort the AUTH
-			_ = c.cmdValid(pipeliningTypeForbidden, 501, "*")
-			break
-		}
-		if resp == nil {
-			break
-		}
-		resp64 = make([]byte, encoding.EncodedLen(len(resp)))
-		encoding.Encode(resp64, resp)
-		status, err = c.cmd(0, string(resp64))
+	}
+}
+
+func (c *Client) authAbort(err error) error {
+	// If abort fails, the state is strange
+	if errAbort := c.cmdValid(pipeliningTypeForbidden, 501, "*"); errAbort != nil {
+		err = errors.Join(err, errAbort)
 	}
 	return err
 }
