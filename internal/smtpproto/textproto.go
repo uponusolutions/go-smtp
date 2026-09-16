@@ -12,32 +12,6 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
-func applyDebug(conn io.ReadWriteCloser, debugRead io.Writer, debugWrite io.Writer) io.ReadWriteCloser {
-	if debugRead == nil && debugWrite == nil {
-		return conn
-	}
-
-	var reader io.Reader = conn
-	if debugRead != nil {
-		reader = io.TeeReader(conn, debugRead)
-	}
-
-	var writer io.Writer = conn
-	if debugWrite != nil {
-		writer = io.MultiWriter(conn, debugWrite)
-	}
-
-	return struct {
-		io.Reader
-		io.Writer
-		io.Closer
-	}{
-		reader,
-		writer,
-		conn,
-	}
-}
-
 // Textproto is used as a wrapper around a connection to read and write to it
 type Textproto struct {
 	R                  *bufio.Reader
@@ -45,8 +19,6 @@ type Textproto struct {
 	conn               io.ReadWriteCloser
 	maxLineLength      int
 	lineLengthExceeded bool
-	debugRead          io.Writer
-	debugWrite         io.Writer
 }
 
 // NewTextproto creates a new connection wrapper.
@@ -55,8 +27,6 @@ func NewTextproto(
 	readerSize int,
 	writerSize int,
 	maxLineLength int,
-	debugRead io.Writer,
-	debugWrite io.Writer,
 ) *Textproto {
 	if readerSize == 0 {
 		readerSize = 4096 // default
@@ -66,14 +36,10 @@ func NewTextproto(
 		writerSize = 4096 // default
 	}
 
-	conn = applyDebug(conn, debugRead, debugWrite)
-
 	return &Textproto{
 		R:                  bufio.NewReaderSize(conn, readerSize),
 		W:                  bufio.NewWriterSize(conn, writerSize),
 		conn:               conn,
-		debugRead:          debugRead,
-		debugWrite:         debugWrite,
 		maxLineLength:      maxLineLength,
 		lineLengthExceeded: false,
 	}
@@ -276,7 +242,6 @@ func (t *Textproto) readLineSlice() ([]byte, error) {
 
 // Replace conn.
 func (t *Textproto) Replace(conn io.ReadWriteCloser) {
-	conn = applyDebug(conn, t.debugRead, t.debugWrite)
 	t.conn = conn
 	t.R.Reset(t.conn)
 	t.W.Reset(t.conn)

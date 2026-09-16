@@ -197,7 +197,7 @@ func (c *Client) setConn(conn net.Conn) {
 		c.cfg.text.Replace(conn)
 	} else {
 		c.cfg.text = smtpproto.NewTextproto(
-			conn, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength, c.cfg.debugRead, c.cfg.debugWrite,
+			conn, c.cfg.readerSize, c.cfg.writerSize, c.cfg.maxLineLength,
 		)
 	}
 }

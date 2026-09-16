@@ -61,7 +61,7 @@ func TestBasic(t *testing.T) {
 	fake := tester.NewFakeConn(server, cmdbuf)
 
 	c := &Client{
-		conn: fake, cfg: Config{text: smtpproto.NewTextproto(fake, 4096, 4096, 0, nil, nil), localName: "localhost"},
+		conn: fake, cfg: Config{text: smtpproto.NewTextproto(fake, 4096, 4096, 0), localName: "localhost"},
 	}
 
 	if err := c.helo(); err != nil {
