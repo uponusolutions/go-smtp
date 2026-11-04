@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/uponusolutions/go-smtp"
@@ -82,6 +84,25 @@ func TestClient_DisconnectTwicePipeline(t *testing.T) {
 	c := New(WithServerAddresses(addr[0]), WithBasic(client.WithPipelining(true)))
 	require.NoError(t, c.Connect(t.Context()))
 	require.NoError(t, c.Terminate())
+	require.NoError(t, c.Disconnect())
+}
+
+func TestClient_DialControl(t *testing.T) {
+	errRefused := errors.New("refused")
+	var seen []string
+	c := New(WithServerAddresses(addr[0]), WithBasic(client.WithDialControl(func(_, address string, _ syscall.RawConn) error {
+		seen = append(seen, address)
+		return errRefused
+	})))
+
+	require.ErrorIs(t, c.Connect(t.Context()), errRefused)
+	// The server listens on all interfaces, its address may be tried in more than one family.
+	require.NotEmpty(t, seen)
+
+	c = New(WithServerAddresses(addr[0]), WithBasic(client.WithDialControl(func(string, string, syscall.RawConn) error {
+		return nil
+	})))
+	require.NoError(t, c.Connect(t.Context()))
 	require.NoError(t, c.Disconnect())
 }
 

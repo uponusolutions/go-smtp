@@ -1,6 +1,7 @@
 package client
 
 import (
+	"syscall"
 	"time"
 )
 
@@ -75,6 +76,9 @@ type Config struct {
 	// Time to wait for dial to succeed.
 	dialTimeout time.Duration
 
+	// Called with the resolved address of every connection before it is made, see net.Dialer.Control.
+	dialControl func(network, address string, c syscall.RawConn) error
+
 	// Time to wait for command responses (this includes 3xx reply to DATA).
 	commandTimeout time.Duration
 
@@ -126,6 +130,15 @@ func WithCommandTimeout(commandTimeout time.Duration) Option {
 func WithDialTimeout(dialTimeout time.Duration) Option {
 	return func(c *Config) {
 		c.dialTimeout = dialTimeout
+	}
+}
+
+// WithDialControl sets the net.Dialer.Control of the connections.
+// It is called with the resolved address before connecting, an error refuses the connection.
+// This lets callers refuse addresses, e.g. internal networks for servers users configure.
+func WithDialControl(control func(network, address string, c syscall.RawConn) error) Option {
+	return func(c *Config) {
+		c.dialControl = control
 	}
 }
 
