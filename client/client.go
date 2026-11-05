@@ -149,8 +149,7 @@ type VrfyOptions struct {
 // Dial returns a connection to an SMTP server at addr. The addr must
 // include a port, as in "mail.example.com:smtp".
 func (c *Client) Dial(ctx context.Context, addr string) error {
-	dialer := net.Dialer{Timeout: c.cfg.dialTimeout}
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	conn, err := c.netDialer().DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return err
 	}
@@ -159,13 +158,18 @@ func (c *Client) Dial(ctx context.Context, addr string) error {
 	return c.initConn(conn, true)
 }
 
+// netDialer returns the dialer of the connections.
+func (c *Client) netDialer() *net.Dialer {
+	return &net.Dialer{Timeout: c.cfg.dialTimeout, Control: c.cfg.dialControl}
+}
+
 // DialTLS returns a connection to an SMTP server at addr via TLS.
 // The addr must include a port, as in "mail.example.com:smtps".
 //
 // A nil tlsConfig is equivalent to a zero tls.Config.
 func (c *Client) DialTLS(ctx context.Context, config *tls.Config, addr string) error {
 	tlsDialer := tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: c.cfg.dialTimeout},
+		NetDialer: c.netDialer(),
 		Config:    config,
 	}
 	conn, err := tlsDialer.DialContext(ctx, "tcp", addr)

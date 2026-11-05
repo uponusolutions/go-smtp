@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1022,4 +1023,25 @@ func TestClientMTPRIORITY(t *testing.T) {
 	if actualcmds := wrote.String(); client != actualcmds {
 		t.Errorf("wrote %q; want %q", actualcmds, client)
 	}
+}
+
+func TestClientDialControl(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = ln.Close() }()
+
+	errRefused := errors.New("refused")
+	var seen []string
+	c := New(WithDialControl(func(_, address string, _ syscall.RawConn) error {
+		seen = append(seen, address)
+		return errRefused
+	}))
+
+	err = c.Dial(context.Background(), ln.Addr().String())
+	require.ErrorIs(t, err, errRefused)
+
+	err = c.DialTLS(context.Background(), &tls.Config{ServerName: "example.com", RootCAs: testRootCAs}, ln.Addr().String())
+	require.ErrorIs(t, err, errRefused)
+
+	require.Equal(t, []string{ln.Addr().String(), ln.Addr().String()}, seen)
 }
