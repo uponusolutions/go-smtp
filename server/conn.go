@@ -20,6 +20,11 @@ import (
 	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
 )
 
+// errMessageTooLarge is returned by the DATA and BDAT handlers if the message
+// exceeded the maximum message size. The payload remaining on the wire was not
+// consumed, so the connection is out of sync and must be closed.
+var errMessageTooLarge = errors.New("smtp: maximum message size exceeded")
+
 type state int32
 
 const (
@@ -455,6 +460,12 @@ func (c *Conn) handleError(err error) {
 			c.Close(nil)
 		}
 
+		return
+	}
+
+	if errors.Is(err, errMessageTooLarge) {
+		c.writeStatus(smtp.ErrDataTooLarge)
+		c.Close(err)
 		return
 	}
 
@@ -918,18 +929,24 @@ func (c *Conn) handleData(arg string) error {
 	}
 
 	uuid, err := c.session.Data(c.ctx, rstart)
-	if err != nil {
-		// an error which isn't a smtp status error will always terminate the connection
-		// if it is an smtp status then we need to make sure the stream ist read to the end
-		if _, ok := err.(*smtp.Status); ok && r != nil {
-			_, _ = io.Copy(io.Discard, r)
-		}
+
+	// an error which isn't a smtp status error will always terminate the connection
+	if _, ok := err.(*smtp.Status); err != nil && !ok {
 		return err
 	}
 
-	// Make sure all the data has been consumed
+	// Make sure all the data has been consumed, regardless of what the backend returned.
+	// The reader keeps returning ErrDataTooLarge once the limit is hit, so this also
+	// detects a breach the backend swallowed. In that case the rest of the message is
+	// still on the wire and the connection can't be resynchronised.
 	if r != nil {
-		_, _ = io.Copy(io.Discard, r)
+		if _, discardErr := io.Copy(io.Discard, r); errors.Is(discardErr, smtp.ErrDataTooLarge) {
+			return errMessageTooLarge
+		}
+	}
+
+	if err != nil {
+		return err
 	}
 
 	if err = c.reset(); err != nil {
@@ -980,28 +997,39 @@ func (c *Conn) handleBdat(arg string) error {
 	queueid, err := c.session.Data(c.ctx, func() io.Reader {
 		return data
 	})
-	if err != nil {
-		if smtpErr, ok := err.(*smtp.Status); ok {
-			// read anything left to continue after this failure, ignore any read error
-			// https://www.rfc-editor.org/rfc/rfc3030.html
-			// If a 5XX or 4XX code is received by the sender-SMTP in response to a BDAT
-			// chunk, the transaction should be considered failed and the sender-
-			// SMTP MUST NOT send any additional BDAT segments.  If the receiver-
-			// SMTP has declared support for command pipelining [PIPE], the receiver
-			// SMTP MUST be prepared to accept and discard additional BDAT chunks
-			// already in the pipeline after the failed BDAT.
-			closed = true
-			_, _ = io.Copy(io.Discard, data)
-			// write down error after data is discarded to prevent deadlock because of pipelining
-			c.writeStatus(smtpErr)
-			return c.reset()
-		}
-		// an error which isn't a SMTPStatus error will always terminate the connection
+
+	smtpErr, isStatus := err.(*smtp.Status)
+
+	// an error which isn't a SMTPStatus error will always terminate the connection
+	if err != nil && !isStatus {
 		return err
 	}
 
-	// Make sure all the data has been consumed
-	_, _ = io.Copy(io.Discard, data)
+	if err != nil {
+		// read anything left to continue after this failure
+		// https://www.rfc-editor.org/rfc/rfc3030.html
+		// If a 5XX or 4XX code is received by the sender-SMTP in response to a BDAT
+		// chunk, the transaction should be considered failed and the sender-
+		// SMTP MUST NOT send any additional BDAT segments.  If the receiver-
+		// SMTP has declared support for command pipelining [PIPE], the receiver
+		// SMTP MUST be prepared to accept and discard additional BDAT chunks
+		// already in the pipeline after the failed BDAT.
+		closed = true
+	}
+
+	// Make sure all the data has been consumed, regardless of what the backend returned.
+	// The reader keeps returning ErrDataTooLarge once the limit is hit, so this also
+	// detects a breach the backend swallowed. In that case the chunk is still on the
+	// wire and the connection can't be resynchronised.
+	if _, discardErr := io.Copy(io.Discard, data); errors.Is(discardErr, smtp.ErrDataTooLarge) {
+		return errMessageTooLarge
+	}
+
+	if err != nil {
+		// write down error after data is discarded to prevent deadlock because of pipelining
+		c.writeStatus(smtpErr)
+		return c.reset()
+	}
 
 	if err = c.reset(); err != nil {
 		return err

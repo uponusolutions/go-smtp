@@ -201,3 +201,48 @@ func TestBdatReader(t *testing.T) {
 		require.ErrorIs(t, smtp.ErrAuthFailed, err)
 	})
 }
+
+// The server relies on the limit error being sticky to detect a breach the
+// backend swallowed: every further Read must fail without consuming input.
+func TestBdatReaderLimitSticky(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		read  string
+		rest  string
+	}{
+		{name: "FirstChunk", input: "BDAT 5 LAST\r\nhappyNOOP\r\n", read: "", rest: "happyNOOP\r\n"},
+		{name: "SecondChunk", input: "BDAT 3\r\nhapBDAT 2 LAST\r\npyNOOP\r\n", read: "hap", rest: "pyNOOP\r\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			readerInput := bufio.NewReader(strings.NewReader(tc.input))
+			line, _, err := readerInput.ReadLine()
+			require.NoError(t, err)
+			size, last, err := BdatArg(string(line[5:]))
+			require.NoError(t, err)
+
+			reader := NewBdat(size, last, 4, readerInput, func() (string, string, error) {
+				line, _, err := readerInput.ReadLine()
+				if err != nil {
+					return "", "", err
+				}
+				return string(line[0:4]), string(line[5:]), nil
+			})
+
+			res, err := io.ReadAll(reader)
+			require.ErrorIs(t, err, smtp.ErrDataTooLarge)
+			require.Equal(t, tc.read, string(res))
+
+			for range 3 {
+				n, err := reader.Read(make([]byte, 10))
+				require.Zero(t, n)
+				require.ErrorIs(t, err, smtp.ErrDataTooLarge)
+			}
+
+			// the chunk is still pending on the input
+			rest, err := io.ReadAll(readerInput)
+			require.NoError(t, err)
+			require.Equal(t, tc.rest, string(rest))
+		})
+	}
+}

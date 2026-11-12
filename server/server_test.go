@@ -45,6 +45,15 @@ type backend struct {
 
 	panicOnMail bool
 	userErr     error
+
+	// If set, Data opens the reader and returns this error without reading.
+	rejectAfterOpen error
+
+	// If set, Data ignores read errors and accepts the (truncated) message.
+	swallowDataErr bool
+
+	// Errors passed to Session.Close.
+	closeErrors chan error
 }
 
 func (be *backend) NewSession(ctx context.Context, _ *server.Conn) (context.Context, server.Session, error) {
@@ -90,7 +99,10 @@ func (s *session) Reset(ctx context.Context, _ bool) (context.Context, error) {
 	return ctx, nil
 }
 
-func (*session) Close(_ context.Context, _ error) {
+func (s *session) Close(_ context.Context, err error) {
+	if s.backend.closeErrors != nil {
+		s.backend.closeErrors <- err
+	}
 }
 
 func (*session) STARTTLS(_ context.Context, tls *tls.Config) (*tls.Config, error) {
@@ -128,8 +140,12 @@ func (s *session) Data(_ context.Context, r func() io.Reader) (string, error) {
 		}
 		return "", err
 	}
+	if s.backend.rejectAfterOpen != nil {
+		_ = r()
+		return "", s.backend.rejectAfterOpen
+	}
 	b, err := io.ReadAll(r())
-	if err != nil {
+	if err != nil && !s.backend.swallowDataErr {
 		if s.backend.dataErrors != nil {
 			s.backend.dataErrors <- err
 		}

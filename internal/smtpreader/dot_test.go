@@ -373,3 +373,24 @@ func TestDotReaderNoBlockAfterEnd(t *testing.T) {
 		t.Fatal("Read blocked after end marker (denial of service)")
 	}
 }
+
+// The server relies on the limit error being sticky to detect a breach the
+// backend swallowed: every further Read must fail without consuming input.
+func TestDotReaderLimitSticky(t *testing.T) {
+	buf := bufio.NewReader(strings.NewReader("dotlines\r\n.foo\r\n..bar\n...baz\nquux\r\n\r\n.\r\nNOOP\r\n"))
+	r := smtpreader.NewDot(buf, 34)
+
+	_, err := io.ReadAll(r)
+	require.ErrorIs(t, err, smtp.ErrDataTooLarge)
+
+	for range 3 {
+		n, err := r.Read(make([]byte, 10))
+		require.Zero(t, n)
+		require.ErrorIs(t, err, smtp.ErrDataTooLarge)
+	}
+
+	// the terminator and the following command are still pending on the input
+	rest, err := io.ReadAll(buf)
+	require.NoError(t, err)
+	require.True(t, strings.HasSuffix(string(rest), "\n.\r\nNOOP\r\n"), "got %q", rest)
+}
