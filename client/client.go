@@ -612,6 +612,11 @@ func (c *Client) Auth(saslClient sasl.Client) error {
 		// (RFC 4954 section 4). https://github.com/emersion/go-smtp/issues/301
 		status, err = c.cmd(0, "AUTH "+mech)
 		if err == nil && status.Code == 334 && len(resp64) > 0 {
+			// The server must ask for the initial response with an empty challenge;
+			// anything else would make us drop the initial response, so abort.
+			if strings.Join(status.Lines, "") != "" {
+				return c.authAbort(errors.New("smtp: server sent a challenge instead of asking for the initial response"))
+			}
 			status, err = c.cmd(0, string(resp64))
 		}
 	} else {
