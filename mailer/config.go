@@ -34,6 +34,18 @@ type Security int32
 const (
 	// SecurityPreferStartTLS tries to use StartTLS but fallbacks to plain if
 	// StartTLS is not available or TLS Handshake failed.
+	//
+	// Security note: this is opportunistic TLS and provides no protection
+	// against an active attacker. An attacker on the network path can strip
+	// STARTTLS from the EHLO response or break the TLS handshake to force the
+	// fallback to a plain connection.
+	//
+	// If a SASL client is configured, authentication is still performed after
+	// such a fallback, i.e. credentials are sent over the unencrypted
+	// connection (for mechanisms like PLAIN or LOGIN the password is only
+	// base64 encoded). This is intended: the mode prefers delivering over
+	// failing. If credentials must never be sent in plain text, use
+	// SecurityStartTLS or SecurityTLS instead.
 	SecurityPreferStartTLS Security = 0
 	// SecurityPlain is always just a plain connection.
 	SecurityPlain Security = 1

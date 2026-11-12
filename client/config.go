@@ -45,6 +45,11 @@ type Security int32
 
 const (
 	// SecurityPreferStartTLS tries to use StartTls but fallbacks to plain.
+	//
+	// Security note: this is opportunistic TLS and an active attacker can
+	// force the fallback to plain. Any authentication performed afterwards
+	// sends the credentials unencrypted. Use SecurityStartTLS or SecurityTLS
+	// if credentials must never be sent in plain text.
 	SecurityPreferStartTLS Security = 0
 	// SecurityPlain is always just a plain connection.
 	SecurityPlain Security = 1
