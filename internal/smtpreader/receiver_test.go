@@ -13,7 +13,7 @@ import (
 )
 
 func reader(in string, out *bytes.Buffer) *Receiver {
-	return NewReceiver(tester.NewFakeConn(in, out), 4096, 0)
+	return NewReceiver(tester.NewFakeConn(in, out), 4096, 0, 0)
 }
 
 func TestReadLine(t *testing.T) {
@@ -244,4 +244,30 @@ func TestReadMultiLine(t *testing.T) {
 
 	require.Equal(t, expectedText, status.Text())
 	require.Equal(t, "550 5.1.1 "+expectedText, status.Error())
+}
+
+func TestReadResponseTooManyLines(t *testing.T) {
+	const maxResponseLines = 16
+	limited := func(in string) *Receiver {
+		return NewReceiver(tester.NewFakeConn(in, &bytes.Buffer{}), 4096, 0, maxResponseLines)
+	}
+
+	in := strings.Repeat("250-ext\r\n", maxResponseLines) + "250 last\r\n"
+	_, err := limited(in).ReadResponse()
+	require.ErrorIs(t, err, ErrTooManyResponseLines)
+
+	in = strings.Repeat("250-ext\r\n", maxResponseLines-1) + "250 last\r\n"
+	status, err := limited(in).ReadResponse()
+	require.NoError(t, err)
+	require.Len(t, status.Lines, maxResponseLines)
+
+	// ReadResponseValid is limited as well
+	in = strings.Repeat("250-ext\r\n", maxResponseLines) + "250 last\r\n"
+	require.ErrorIs(t, limited(in).ReadResponseValid(250), ErrTooManyResponseLines)
+
+	// zero disables the limit
+	in = strings.Repeat("250-ext\r\n", 10*maxResponseLines) + "250 last\r\n"
+	status, err = reader(in, &bytes.Buffer{}).ReadResponse()
+	require.NoError(t, err)
+	require.Len(t, status.Lines, 10*maxResponseLines+1)
 }

@@ -7,12 +7,16 @@ import (
 
 // NewBdatWriterBuffered returns a writer that can be used to write bdat commands to w.
 // The caller should close the BdatWriter before the next call to a method on w.
-func NewBdatWriterBuffered(maxChunkSize int, writer *bufio.Writer, read func() error, size int, buffer []byte) io.WriteCloser {
+// Without a buffer (len(buffer) == 0) the unbuffered bdat writer is returned,
+// buffering into an empty buffer would never make progress.
+func NewBdatWriterBuffered(writer *bufio.Writer, read func() error, size int, buffer []byte) io.WriteCloser {
+	if len(buffer) == 0 {
+		return NewBdat(writer, read, size)
+	}
 	return &bdatWriterBuffered{
 		writer: bdat{
 			w:             writer,
 			read:          read,
-			maxChunkSize:  maxChunkSize,
 			remainingSize: size,
 			knownSize:     size > 0,
 		},
@@ -50,7 +54,8 @@ func (d *bdatWriterBuffered) ReadFrom(r io.Reader) (n int64, err error) {
 	return n, err
 }
 
-// Write writes bytes as multiple bdat commands split by max chunk size.
+// Write buffers b, every full buffer is sent as bdat chunk.
+// Writes larger than the buffer are passed through if the buffer is empty.
 func (d *bdatWriterBuffered) Write(b []byte) (n int, err error) {
 	var p int
 

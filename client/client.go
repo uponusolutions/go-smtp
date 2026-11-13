@@ -42,7 +42,7 @@ type Client struct {
 	cfg Config
 
 	// The buffer is used if chunking/bdat is used with buffering.
-	// It is created on first use and it's size is chunkingMaxSize.
+	// It is created on first use and its size is chunkingBufferSize.
 	chunkingBuffer []byte
 
 	// keep a reference to the connection so it can be used to create a TLS
@@ -203,7 +203,7 @@ func (c *Client) setConn(conn net.Conn) {
 	if c.receiver != nil {
 		c.receiver.Reset(conn)
 	} else {
-		c.receiver = smtpreader.NewReceiver(conn, c.cfg.readerSize, c.cfg.maxLineLength)
+		c.receiver = smtpreader.NewReceiver(conn, c.cfg.readerSize, c.cfg.maxLineLength, c.cfg.maxResponseLines)
 	}
 
 	if c.sender != nil {
@@ -836,7 +836,7 @@ func rcptDSN(sb *strings.Builder, opts *smtp.RcptOptions, ext map[string]string)
 //
 // If server returns an error, it will be of type *smtp.
 func (c *Client) Content(size int) (*ContentCloser, error) {
-	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
+	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunking && ok {
 		if c.PipeliningActive() {
 			return nil, nil
 		}
@@ -847,7 +847,7 @@ func (c *Client) Content(size int) (*ContentCloser, error) {
 
 // ContentResponse returns the result of previous send data command if pipelining is enabled
 func (c *Client) ContentResponse(size int) (*ContentCloser, error) {
-	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunkingMaxSize >= 0 && ok {
+	if _, ok := c.connExt["CHUNKING"]; c.cfg.chunking && ok {
 		return c.Bdat(size)
 	}
 	return c.DataResponse()
@@ -888,30 +888,26 @@ func (c *Client) Bdat(size int) (*ContentCloser, error) {
 		return nil, ErrPipeliningNoPendingRequired
 	}
 
-	if c.cfg.chunkingMaxSize < 0 {
-		return nil, errors.New("smtp: chunking is disabled on the client by negative chunking max size)")
+	if !c.cfg.chunking {
+		return nil, errors.New("smtp: chunking is disabled on the client")
 	}
 	if _, ok := c.connExt["CHUNKING"]; !ok {
 		return nil, errors.New("smtp: server doesn't support chunking")
 	}
 
-	// if chunking max size is active but smaller than a typically []byte write call, the buffer is just overhead
-	if c.cfg.chunkingBuffer && size == 0 && (c.cfg.chunkingMaxSize == 0 || c.cfg.chunkingMaxSize > 4096) {
-		// c.bdatBuffer is init on first use and always reuse it
-		bufferSize := defaultChunkingMaxSize
-		if c.cfg.chunkingMaxSize > 0 {
-			bufferSize = c.cfg.chunkingMaxSize
-		}
-		if len(c.chunkingBuffer) < bufferSize {
-			c.chunkingBuffer = make([]byte, bufferSize)
+	// the size is unknown, buffer to send chunks of chunkingBufferSize
+	if size == 0 && c.cfg.chunkingBufferSize > 0 {
+		// c.chunkingBuffer is init on first use and always reused
+		if len(c.chunkingBuffer) < c.cfg.chunkingBufferSize {
+			c.chunkingBuffer = make([]byte, c.cfg.chunkingBufferSize)
 		}
 
-		return &ContentCloser{c: c, writer: smtpwriter.NewBdatWriterBuffered(c.cfg.chunkingMaxSize, c.sender.Writer, func() error {
+		return &ContentCloser{c: c, writer: smtpwriter.NewBdatWriterBuffered(c.sender.Writer, func() error {
 			return c.receiver.ReadResponseValid(250)
-		}, size, c.chunkingBuffer[:bufferSize])}, nil
+		}, size, c.chunkingBuffer[:c.cfg.chunkingBufferSize])}, nil
 	}
 
-	return &ContentCloser{c: c, writer: smtpwriter.NewBdat(c.cfg.chunkingMaxSize, c.sender.Writer, func() error {
+	return &ContentCloser{c: c, writer: smtpwriter.NewBdat(c.sender.Writer, func() error {
 		return c.receiver.ReadResponseValid(250)
 	}, size)}, nil
 }

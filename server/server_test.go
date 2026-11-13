@@ -232,7 +232,6 @@ func testServer(t *testing.T, bei *backend, opts ...server.Option) (be *backend,
 	curOpts := []server.Option{
 		server.WithAddr("127.0.0.1:0"),
 		server.WithBackend(be),
-		server.WithMaxLineLength(2000),
 		server.WithHostname("localhost"),
 	}
 
@@ -1104,7 +1103,7 @@ func TestServer_tooLongLine(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer func() { _ = s.Close() }()
 
-	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov> "+strings.Repeat("A", 2*4096))
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov> "+strings.Repeat("A", 2*12288))
 	scanOk(t, c, scanner)
 	if !strings.HasPrefix(scanner.Text(), "500 ") {
 		t.Fatal("Invalid response, expected an error but got:", scanner.Text())
@@ -2175,5 +2174,177 @@ func TestServerXOORG(t *testing.T) {
 
 	if val := be.anonmsgs[0].Opts.XOORG; *val != "test.com" {
 		t.Fatal("Invalid XOORG parameter value:", val)
+	}
+}
+
+func TestServer_DefaultMaxLineLength(t *testing.T) {
+	_, s, c, scanner := testServerAuthenticated(t, nil)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<"+strings.Repeat("a", 12288)+">\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "500 5.4.0 ") {
+		t.Fatal("Invalid too long MAIL response:", scanner.Text())
+	}
+}
+
+func TestServer_DefaultMaxMessageBytes(t *testing.T) {
+	_, s, c, _, caps := testServerEhlo(t, nil)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	want := "SIZE " + strconv.Itoa(32<<20)
+	if !caps[want] {
+		t.Fatalf("Missing capability %q, got %v", want, caps)
+	}
+}
+
+func TestServer_DefaultMaxRecipients(t *testing.T) {
+	_, s, c, _, caps := testServerEhlo(t, nil)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	want := "LIMITS RCPTMAX=1000"
+	if !caps[want] {
+		t.Fatalf("Missing capability %q, got %v", want, caps)
+	}
+}
+
+func TestServer_ReadTimeoutIdle(t *testing.T) {
+	_, s, c, scanner := testServerGreeted(t, nil, server.WithReadTimeout(100*time.Millisecond))
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "421 4.4.2 ") {
+		t.Fatal("Invalid idle timeout response:", scanner.Text())
+	}
+	if scan(t, c, scanner) {
+		t.Fatal("Expected connection to be closed, got:", scanner.Text())
+	}
+}
+
+// A client going silent in the middle of DATA is disconnected after the data timeout.
+func TestServer_DataTimeoutStalled(t *testing.T) {
+	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithDataTimeout(100*time.Millisecond))
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "From: root@nsa.gov\r\n\r\nonly a part")
+
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "421 4.4.2 ") {
+		t.Fatal("Invalid response for stalled DATA:", scanner.Text())
+	}
+}
+
+// DATA uses the data timeout, a transfer taking longer than the read timeout must succeed.
+func TestServer_ReadTimeoutSlowData(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithReadTimeout(150*time.Millisecond))
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "354 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	_, _ = io.WriteString(c, "From: root@nsa.gov\r\n\r\n")
+	for range 6 {
+		time.Sleep(50 * time.Millisecond)
+		_, _ = io.WriteString(c, "slow line\r\n")
+	}
+	_, _ = io.WriteString(c, ".\r\n")
+
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+	if len(be.messages) != 1 {
+		t.Fatal("Invalid number of sent messages:", be.messages)
+	}
+}
+
+// The data timeout limits the whole DATA transfer, even if the client keeps sending.
+func TestServer_DataTimeoutWholeTransfer(t *testing.T) {
+	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithDataTimeout(150*time.Millisecond))
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanOk(t, c, scanner)
+
+	_, _ = io.WriteString(c, "From: root@nsa.gov\r\n\r\n")
+	for range 6 {
+		time.Sleep(50 * time.Millisecond)
+		_, _ = io.WriteString(c, "slow line\r\n")
+	}
+	_, _ = io.WriteString(c, ".\r\n")
+
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "421 4.4.2 ") {
+		t.Fatal("Invalid response for too long DATA:", scanner.Text())
+	}
+}
+
+// After a transfer the data deadline must not stay active, even if the read timeout is disabled.
+func TestServer_DataTimeoutClearedAfterTransfer(t *testing.T) {
+	_, s, c, scanner := testServerAuthenticated(t, nil,
+		server.WithReadTimeout(0), server.WithDataTimeout(100*time.Millisecond))
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanOk(t, c, scanner)
+	_, _ = io.WriteString(c, "From: root@nsa.gov\r\n\r\nHey\r\n.\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	_, _ = io.WriteString(c, "NOOP\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid NOOP response:", scanner.Text())
 	}
 }

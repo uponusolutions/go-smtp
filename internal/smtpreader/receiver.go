@@ -12,10 +12,14 @@ import (
 	"github.com/uponusolutions/go-smtp"
 )
 
+// ErrTooManyResponseLines is returned if a response exceeds the maximum response lines.
+var ErrTooManyResponseLines = textproto.ProtocolError("response has too many lines")
+
 // Receiver is used as a wrapper around a connection to read from it
 type Receiver struct {
 	*bufio.Reader
 	maxLineLength      int
+	maxResponseLines   int
 	lineLengthExceeded bool
 }
 
@@ -24,6 +28,7 @@ func NewReceiver(
 	conn io.Reader,
 	readerSize int,
 	maxLineLength int,
+	maxResponseLines int,
 ) *Receiver {
 	if readerSize == 0 {
 		readerSize = 4096 // default
@@ -32,6 +37,7 @@ func NewReceiver(
 	return &Receiver{
 		Reader:             bufio.NewReaderSize(conn, readerSize),
 		maxLineLength:      maxLineLength,
+		maxResponseLines:   maxResponseLines,
 		lineLengthExceeded: false,
 	}
 }
@@ -101,7 +107,10 @@ func (t *Receiver) readResponseExtra(status *smtp.Status, continued bool, append
 	var err error
 
 	encCodePart := status.EnhancedCode.ToPart()
-	for continued {
+	for lines := 1; continued; lines++ {
+		if t.maxResponseLines > 0 && lines >= t.maxResponseLines {
+			return ErrTooManyResponseLines
+		}
 		continued, message, err = t.readExtraCodeLine(strconv.Itoa(status.Code), encCodePart)
 		if err != nil {
 			return err

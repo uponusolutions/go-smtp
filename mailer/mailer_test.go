@@ -124,7 +124,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 
 	assert.NoError(t, c.Disconnect())
 
-	c = New(WithServerAddresses(addr[0]), WithBasic(client.WithChunkingMaxSize(-1)))
+	c = New(WithServerAddresses(addr[0]), WithBasic(client.WithChunking(false)))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))

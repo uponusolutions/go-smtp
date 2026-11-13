@@ -153,9 +153,9 @@ Exchange Online outgoing connectors.
 
 The hot paths are the dot and BDAT readers and writers, which stream without
 copying the whole message into memory. The client picks BDAT over DATA when the
-server advertises CHUNKING; `client.WithChunkingMaxSize` caps the chunk size and
-`client.WithChunkingBuffer` controls whether small reads are coalesced before
-being written out. Pipelining removes a round trip per command in both the mailer
+server advertises CHUNKING; `client.WithChunking` turns BDAT on or off and
+`client.WithChunkingBufferSize` (2 MiB by default, 0 disables buffering) controls
+how messages of unknown size are coalesced into chunks. Pipelining removes a round trip per command in both the mailer
 and the server.
 
 Benchmarks run in CI and are published on the

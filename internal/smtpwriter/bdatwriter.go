@@ -15,12 +15,13 @@ var (
 )
 
 // NewBdat returns a writer that can be used to write bdat commands to w.
+// If size is known (> 0) the message is sent as a single chunk, otherwise
+// every write is sent as its own chunk.
 // The caller should close the BdatWriter before the next call to a method on w.
-func NewBdat(maxChunkSize int, writer *bufio.Writer, read func() error, size int) io.WriteCloser {
+func NewBdat(writer *bufio.Writer, read func() error, size int) io.WriteCloser {
 	return &bdat{
 		w:                  writer,
 		read:               read,
-		maxChunkSize:       maxChunkSize,
 		remainingSize:      size,
 		knownSize:          size > 0,
 		remainingChunkSize: 0,
@@ -30,8 +31,6 @@ func NewBdat(maxChunkSize int, writer *bufio.Writer, read func() error, size int
 type bdat struct {
 	w    *bufio.Writer
 	read func() error
-	// maximum bdat chunk size
-	maxChunkSize int
 	// size still expected to be written
 	remainingSize int
 	// if true then size is known, so remainingSize is respected
@@ -43,7 +42,7 @@ type bdat struct {
 	started bool
 }
 
-// Write writes bytes as multiple bdat commands split by max chunk size.
+// Write writes bytes as bdat chunk, or as part of the single chunk if the size is known.
 func (d *bdat) Write(b []byte) (n int, err error) {
 	d.started = true
 
@@ -63,22 +62,11 @@ func (d *bdat) Write(b []byte) (n int, err error) {
 		}
 	}
 
-	// more then max chunk size received
-	for d.maxChunkSize > 0 && len(b) > d.maxChunkSize {
-		p, err = d.writeBdat(b[:d.maxChunkSize], false)
-		n += p
-		b = b[p:]
-
-		if err != nil {
-			return n, err
-		}
-	}
-
 	if d.knownSize && d.remainingSize < len(b) {
 		return n, errors.New("got more bytes than expected, check length")
 	}
 
-	p, err = d.writeBdat(b, d.knownSize && (d.maxChunkSize == 0 || d.remainingSize <= d.maxChunkSize))
+	p, err = d.writeBdat(b, d.knownSize)
 	n += p
 
 	return n, err
@@ -105,18 +93,12 @@ func (d *bdat) write(b []byte) (n int, err error) {
 }
 
 // writeBdat writes b as bdat command and checks return
-// b must be smaller or equal maxChunkSize
-// if size is known we always use max chunk size
+// if size is known a single chunk with the remaining size is started
 func (d *bdat) writeBdat(b []byte, last bool) (n int, err error) {
 	if d.remainingChunkSize == 0 {
 		size := len(b)
-		// if size is known we can create nice chunks
-		if d.knownSize && (d.maxChunkSize == 0 || size < d.maxChunkSize) {
-			if d.maxChunkSize == 0 {
-				size = d.remainingSize
-			} else {
-				size = min(d.maxChunkSize, d.remainingSize)
-			}
+		if d.knownSize {
+			size = d.remainingSize
 			d.remainingChunkSize = size
 		}
 		if err = d.bdat(size, last); err != nil {

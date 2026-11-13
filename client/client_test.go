@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -64,7 +65,7 @@ func TestBasic(t *testing.T) {
 
 	c := &Client{
 		conn:     fake,
-		receiver: smtpreader.NewReceiver(fake, 4096, 0),
+		receiver: smtpreader.NewReceiver(fake, 4096, 0, 0),
 		sender:   smtpwriter.NewSender(fake, 4096),
 		cfg: Config{
 			localName: "localhost",
@@ -1119,4 +1120,104 @@ func TestClientDialControl(t *testing.T) {
 	require.ErrorIs(t, err, errRefused)
 
 	require.Equal(t, []string{ln.Addr().String(), ln.Addr().String()}, seen)
+}
+
+func TestClientMaxResponseLines(t *testing.T) {
+	ehlo := func(lines int) string {
+		return strings.Repeat("250-EXT\r\n", lines-1) + "250 LAST\r\n"
+	}
+
+	defaultMaxResponseLines := DefaultConfig().maxResponseLines
+	require.Equal(t, 512, defaultMaxResponseLines)
+
+	t.Run("default", func(t *testing.T) {
+		c := New()
+		c.setConn(tester.NewFakeConn(ehlo(defaultMaxResponseLines+1), &bytes.Buffer{}))
+		require.ErrorIs(t, c.ehlo(), smtpreader.ErrTooManyResponseLines)
+
+		c = New()
+		c.setConn(tester.NewFakeConn(ehlo(defaultMaxResponseLines), &bytes.Buffer{}))
+		require.NoError(t, c.ehlo())
+	})
+
+	t.Run("configured", func(t *testing.T) {
+		c := New(WithMaxResponseLines(4))
+		c.setConn(tester.NewFakeConn(ehlo(5), &bytes.Buffer{}))
+		require.ErrorIs(t, c.ehlo(), smtpreader.ErrTooManyResponseLines)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		c := New(WithMaxResponseLines(0))
+		c.setConn(tester.NewFakeConn(ehlo(10*defaultMaxResponseLines), &bytes.Buffer{}))
+		require.NoError(t, c.ehlo())
+	})
+}
+
+func TestClientChunking(t *testing.T) {
+	require.True(t, DefaultConfig().chunking)
+	require.Equal(t, 2<<20, DefaultConfig().chunkingBufferSize)
+
+	body := strings.Repeat("x", 3<<20)
+
+	// send connects a client with opts to a fake CHUNKING server, sends body
+	// and returns what was written to the server.
+	send := func(t *testing.T, size int, src io.Reader, opts ...Option) string {
+		wrote := &bytes.Buffer{}
+		c := New(opts...)
+		c.setConn(tester.NewFakeConn("250-localhost\r\n250 CHUNKING\r\n"+strings.Repeat("250 2.0.0 OK\r\n", 8), wrote))
+		require.NoError(t, c.ehlo())
+
+		w, err := c.Content(size)
+		require.NoError(t, err)
+		_, err = io.Copy(w.Writer(), src)
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+		return wrote.String()
+	}
+	// hides WriterTo of strings.Reader, so io.Copy uses ReadFrom of the writer
+	plain := func(s string) io.Reader { return struct{ io.Reader }{strings.NewReader(s)} }
+
+	t.Run("known size is sent as single chunk", func(t *testing.T) {
+		out := send(t, len(body), plain(body))
+		require.Equal(t, 1, strings.Count(out, "BDAT "))
+		require.Contains(t, out, "BDAT "+strconv.Itoa(len(body))+" LAST\r\n")
+	})
+
+	t.Run("unknown size is chunked by the default buffer", func(t *testing.T) {
+		out := send(t, 0, plain(body))
+		require.Equal(t, 2, strings.Count(out, "BDAT "))
+		require.Contains(t, out, "BDAT "+strconv.Itoa(2<<20)+"\r\n")
+		require.Contains(t, out, "BDAT "+strconv.Itoa(len(body)-2<<20)+" LAST\r\n")
+	})
+
+	t.Run("unknown size is chunked by a configured buffer", func(t *testing.T) {
+		out := send(t, 0, plain(body), WithChunkingBufferSize(1<<20))
+		// the third full buffer is sent before EOF is known, so an empty last chunk follows
+		require.Equal(t, 3, strings.Count(out, "BDAT "+strconv.Itoa(1<<20)+"\r\n"))
+		require.Equal(t, 4, strings.Count(out, "BDAT "))
+		require.True(t, strings.HasSuffix(out, "BDAT 0 LAST\r\n"))
+	})
+
+	t.Run("zero buffer size disables buffering", func(t *testing.T) {
+		out := send(t, 0, strings.NewReader("abc"), WithChunkingBufferSize(0))
+		require.Contains(t, out, "BDAT 3\r\nabcBDAT 0 LAST\r\n")
+	})
+
+	t.Run("disabled chunking uses DATA", func(t *testing.T) {
+		wrote := &bytes.Buffer{}
+		c := New(WithChunking(false))
+		c.setConn(tester.NewFakeConn("250-localhost\r\n250 CHUNKING\r\n354 go ahead\r\n250 2.0.0 OK\r\n", wrote))
+		require.NoError(t, c.ehlo())
+
+		w, err := c.Content(3)
+		require.NoError(t, err)
+		_, err = io.WriteString(w, "abc")
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+		require.Contains(t, wrote.String(), "DATA\r\nabc\r\n.\r\n")
+		require.NotContains(t, wrote.String(), "BDAT")
+
+		_, err = c.Bdat(0)
+		require.ErrorContains(t, err, "chunking is disabled")
+	})
 }

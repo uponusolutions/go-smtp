@@ -81,7 +81,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		server:   s,
 		conn:     conn,
 		sender:   smtpwriter.NewSender(conn, s.writerSize),
-		receiver: smtpreader.NewReceiver(conn, s.readerSize, s.maxLineLength),
+		receiver: smtpreader.NewReceiver(conn, s.readerSize, s.maxLineLength, 0),
 	}
 
 	s.locker.Lock()
@@ -126,10 +126,10 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	// explicit tls handshake call
 	if tlsConn, ok := c.conn.(*tls.Conn); ok {
-		if d := s.readTimeout; d != 0 {
+		if d := s.readTimeout; d > 0 {
 			_ = c.conn.SetReadDeadline(time.Now().Add(d))
 		}
-		if d := s.writeTimeout; d != 0 {
+		if d := s.writeTimeout; d > 0 {
 			_ = c.conn.SetWriteDeadline(time.Now().Add(d))
 		}
 		if err := tlsConn.Handshake(); err != nil {

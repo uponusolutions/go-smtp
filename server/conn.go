@@ -67,6 +67,7 @@ func (c *Conn) run() (err error) {
 	c.greet()
 
 	for {
+		c.renewReadDeadline()
 		cmd, arg, err = c.nextCommand()
 		if err != nil {
 			return err
@@ -840,6 +841,7 @@ func (c *Conn) handleAuth(arg string) error {
 		}
 		c.writeStatus(smtp.NewStatusS(334, smtp.NoEnhancedCode, encoded))
 
+		c.renewReadDeadline()
 		encoded, err = c.readLine()
 		if err != nil {
 			return err
@@ -887,6 +889,8 @@ func (c *Conn) handleStartTLS() error {
 	// Upgrade to TLS
 	tlsConn := tls.Server(c.conn, tlsConfig)
 
+	c.renewReadDeadline()
+
 	if err := tlsConn.HandshakeContext(c.ctx); err != nil {
 		// err is not a smtp error and will terminate the connection
 		return err
@@ -922,6 +926,7 @@ func (c *Conn) handleData(arg string) error {
 		}
 		// We have recipients, go to accept data
 		c.writeStatus(smtp.NewStatusS(354, smtp.NoEnhancedCode, "Go ahead. End your data with <CR><LF>.<CR><LF>"))
+		c.setDataDeadline()
 
 		// r gets exposed to be able to discard the rest of the message
 		r = smtpreader.NewDot(c.receiver.Reader, c.server.maxMessageBytes)
@@ -960,6 +965,7 @@ func (c *Conn) handleBdatDiscard(arg string) error {
 	if err != nil {
 		return err
 	}
+	c.setDataDeadline()
 	if _, err = c.receiver.Discard(int(size)); err != nil {
 		return err
 	}
@@ -974,6 +980,10 @@ func (c *Conn) handleBdat(arg string) error {
 	if err != nil {
 		return err
 	}
+
+	// The whole transfer, all chunks until LAST, has to finish within the data timeout.
+	// The BDAT lines between chunks are read without renewing the deadline.
+	c.setDataDeadline()
 
 	// at least a single recipient needs to be set
 	if c.recipients == 0 {
@@ -1061,7 +1071,7 @@ func (c *Conn) writeStatus(status *smtp.Status) {
 	)
 
 	// TODO: error handling
-	if c.server.writeTimeout != 0 {
+	if c.server.writeTimeout > 0 {
 		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
 	}
 
@@ -1084,11 +1094,29 @@ func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, e
 	return smtp.NewStatusS(code, enhCode, msg)
 }
 
-// Reads a line of input
-func (c *Conn) readLine() (string, error) {
-	if c.server.readTimeout != 0 {
-		_ = c.conn.SetReadDeadline(time.Now().Add(c.server.readTimeout))
+// renewReadDeadline sets the read deadline to now plus the read timeout,
+// a zero read timeout means no deadline.
+func (c *Conn) renewReadDeadline() {
+	setReadDeadline(c.conn, c.server.readTimeout)
+}
+
+// setDataDeadline sets the read deadline for a whole DATA or BDAT transfer
+// to now plus the data timeout, a zero data timeout means no deadline.
+func (c *Conn) setDataDeadline() {
+	setReadDeadline(c.conn, c.server.dataTimeout)
+}
+
+func setReadDeadline(conn net.Conn, timeout time.Duration) {
+	var deadline time.Time
+	if timeout > 0 {
+		deadline = time.Now().Add(timeout)
 	}
+	_ = conn.SetReadDeadline(deadline)
+}
+
+// readLine reads a line of input.
+// It doesn't touch the read deadline, the caller has to set it.
+func (c *Conn) readLine() (string, error) {
 	line, err := c.receiver.ReadFullLine()
 	if err == nil {
 		c.logger().DebugContext(c.ctx, "read", slog.String("line", line))

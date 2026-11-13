@@ -37,6 +37,7 @@ type Server struct {
 
 	readTimeout  time.Duration
 	writeTimeout time.Duration
+	dataTimeout  time.Duration
 
 	implicitTLS bool
 
@@ -114,11 +115,36 @@ func (s *Server) Backend() Backend {
 type Option func(*Server)
 
 // New creates a new SMTP server.
+//
+// The server is bounded by default (line length, message size, recipients
+// and read/write timeouts). Each limit can be disabled explicitly by setting
+// it to zero with the corresponding option.
 func New(opts ...Option) *Server {
 	s := &Server{
 		done:     make(chan struct{}, 1),
 		conns:    make(map[*Conn]struct{}),
 		hostname: "localhost",
+
+		// RFC 4954 extends the maximum line length of the AUTH command (and
+		// the SASL responses) to 12288 octets, which also covers commands with
+		// all usual ESMTP parameters (RFC 5321 allows 512 octets plus extensions).
+		maxLineLength: 12288,
+
+		// 32 MiB
+		maxMessageBytes: 32 << 20,
+
+		// RFC 5321 requires at least 100 recipients to be accepted.
+		maxRecipients: 1000,
+
+		// RFC 5321 (Section 4.5.3.2.7) recommends at least 5 minutes.
+		readTimeout: 5 * time.Minute,
+
+		// Whole DATA or BDAT transfer, RFC 5321 (Section 4.5.3.2.6) lets a
+		// client wait 10 minutes for the reply after the data, so the transfer
+		// itself gets the same. With 32 MiB this requires about 55 KB/s.
+		dataTimeout: 10 * time.Minute,
+
+		writeTimeout: 5 * time.Minute,
 	}
 
 	for _, o := range opts {
@@ -153,14 +179,27 @@ func WithNetwork(network string) Option {
 	}
 }
 
-// WithReadTimeout sets the read timeout.
+// WithReadTimeout sets the read timeout for every command line.
+// DATA and BDAT transfers use the data timeout instead, see WithDataTimeout.
+// Defaults to 5 minutes, zero disables the timeout.
 func WithReadTimeout(readTimeout time.Duration) Option {
 	return func(s *Server) {
 		s.readTimeout = readTimeout
 	}
 }
 
+// WithDataTimeout sets the timeout for a whole DATA or BDAT transfer.
+// For BDAT it covers all chunks until the LAST chunk, including the BDAT
+// command lines in between. It also applies when a BDAT chunk is discarded.
+// Defaults to 10 minutes, zero disables the timeout (no deadline during the transfer).
+func WithDataTimeout(dataTimeout time.Duration) Option {
+	return func(s *Server) {
+		s.dataTimeout = dataTimeout
+	}
+}
+
 // WithWriteTimeout sets the write timeout.
+// Defaults to 5 minutes, zero disables the timeout.
 func WithWriteTimeout(writeTimeout time.Duration) Option {
 	return func(s *Server) {
 		s.writeTimeout = writeTimeout
@@ -168,6 +207,7 @@ func WithWriteTimeout(writeTimeout time.Duration) Option {
 }
 
 // WithMaxMessageBytes sets the max message size.
+// Defaults to 32 MiB, zero (or a negative value) disables the limit.
 func WithMaxMessageBytes(maxMessageBytes int64) Option {
 	return func(s *Server) {
 		s.maxMessageBytes = maxMessageBytes
@@ -175,6 +215,7 @@ func WithMaxMessageBytes(maxMessageBytes int64) Option {
 }
 
 // WithMaxLineLength sets the max length per line.
+// Defaults to 12288, zero (or a negative value) disables the limit.
 func WithMaxLineLength(maxLineLength int) Option {
 	return func(s *Server) {
 		s.maxLineLength = maxLineLength
@@ -182,6 +223,7 @@ func WithMaxLineLength(maxLineLength int) Option {
 }
 
 // WithMaxRecipients sets the max recipients per mail.
+// Defaults to 1000, zero (or a negative value) disables the limit.
 func WithMaxRecipients(maxRecipients int) Option {
 	return func(s *Server) {
 		s.maxRecipients = maxRecipients

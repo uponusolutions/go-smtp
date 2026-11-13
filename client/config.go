@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-const defaultChunkingMaxSize = 1048576 * 2
-
 // DefaultConfig returns the default configuration of a client.
 func DefaultConfig() Config {
 	return Config{
@@ -27,16 +25,22 @@ func DefaultConfig() Config {
 		// Doubled maximum line length per RFC 5321 (Section 4.5.3.1.6)
 		maxLineLength: 2000,
 
+		// Max lines of a single (multiline) server response.
+		// Real world EHLO responses have less than 50 lines, so this
+		// is generous while bounding a response to about 1 MB (with the default max
+		// line length of 2000).
+		maxResponseLines: 512,
+
 		// Reader buffer of textproto
 		readerSize: 4096,
 		// Writer buffer of textproto
 		writerSize: 4096,
 
-		// Default chunking max size, 2 MiB
-		chunkingMaxSize: defaultChunkingMaxSize,
+		// Use chunking (BDAT) if the server supports it.
+		chunking: true,
 
-		// chunking buffer enabled by default
-		chunkingBuffer: true,
+		// Messages of unknown size are buffered and sent in chunks of 2 MiB.
+		chunkingBufferSize: 2 << 20,
 	}
 }
 
@@ -93,22 +97,23 @@ type Config struct {
 	// Max line length, defaults to 2000
 	maxLineLength int
 
+	// Max lines of a single (multiline) response, defaults to 512.
+	// A zero or negative value disables the limit.
+	maxResponseLines int
+
 	// Reader size
 	readerSize int
 
 	// Writer size
 	writerSize int
 
-	// Chunking max size
-	// A zero value disables chunk size limitation.
-	// A negative value disables chunking from the client.
-	chunkingMaxSize int
+	// Use chunking (BDAT) if the server supports it, defaults to true.
+	chunking bool
 
-	// If no size is available and chunkingMaxSize > 4096 then
-	// the buffer is automatically used.
-	// If you guarantee that you reader has large enough chunks,
-	// you can disable the chunking buffer here.
-	chunkingBuffer bool
+	// Size of the buffer used for chunking if the message size is unknown,
+	// defaults to 2 MiB. Every full buffer is sent as one chunk.
+	// A zero or negative value disables buffering.
+	chunkingBufferSize int
 
 	// Enable pipelining if the server supports it.
 	pipelining bool
@@ -168,24 +173,34 @@ func WithMaxLineLength(maxLineLength int) Option {
 	}
 }
 
-// WithChunkingMaxSize sets the chunking max size.
-// A zero value disables chunk size limitation.
-// A negative value disables chunking from the client.
-func WithChunkingMaxSize(chunkingMaxSize int) Option {
+// WithMaxResponseLines sets the maximum number of lines of a single (multiline)
+// server response. Defaults to 512.
+// A zero or negative value disables the limit.
+func WithMaxResponseLines(maxResponseLines int) Option {
 	return func(c *Config) {
-		c.chunkingMaxSize = chunkingMaxSize
+		c.maxResponseLines = maxResponseLines
 	}
 }
 
-// WithChunkingBuffer sets if the chunking buffer is used when necessary
-// If no size is available and chunkingMaxSize > 4096 then
-// the buffer is automatically used.
-// If you guarantee that you reader has large enough chunks,
-// you can disable the chunking buffer here.
-// It is enabled by default.
-func WithChunkingBuffer(enabled bool) Option {
+// WithChunking sets if chunking (BDAT, RFC 3030) is used when the server
+// supports it. It is enabled by default. If disabled, DATA is used.
+//
+// A message of known size is always sent as a single chunk.
+func WithChunking(enabled bool) Option {
 	return func(c *Config) {
-		c.chunkingBuffer = enabled
+		c.chunking = enabled
+	}
+}
+
+// WithChunkingBufferSize sets the size of the buffer used for chunking if
+// the message size is unknown. Every full buffer is sent as one chunk, so it
+// is the chunk size of such messages. Defaults to 2 MiB.
+//
+// A zero or negative value disables buffering, then every write is sent as
+// its own chunk. Only do this if your writes are large enough.
+func WithChunkingBufferSize(chunkingBufferSize int) Option {
+	return func(c *Config) {
+		c.chunkingBufferSize = chunkingBufferSize
 	}
 }
 

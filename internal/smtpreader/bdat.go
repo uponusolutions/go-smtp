@@ -93,7 +93,7 @@ func (d *bdat) Read(b []byte) (int, error) {
 		}
 	}
 
-	if d.maxMessageBytes != 0 && d.bytesReceived+d.size > d.maxMessageBytes {
+	if d.maxMessageBytes > 0 && d.bytesReceived+d.size > d.maxMessageBytes {
 		return 0, smtp.ErrDataTooLarge
 	}
 
