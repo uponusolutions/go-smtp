@@ -17,7 +17,7 @@ import (
 // inside an open transaction (503) and only ends a transaction on RSET or the
 // end of mail data.
 //
-// Recipients starting with "notfound" are rejected. A sender starting with
+// Recipients starting with "notfound" are rejected with a multi-line reply. A sender starting with
 // "nodata" makes DATA fail before 354, one starting with "reject" gets the
 // message rejected after the end of data.
 func newStrictServer(t *testing.T, pipelining bool) (*tester.FakeServer, string) {
@@ -37,7 +37,8 @@ func newStrictServer(t *testing.T, pipelining bool) (*tester.FakeServer, string)
 		},
 		"RCPT": func(fs *tester.FakeSession, line string) bool {
 			if strings.Contains(line, "<notfound") {
-				fs.Reply("550 5.1.1 not found")
+				// multi-line with a two digit detail (RFC 3463)
+				fs.Reply("550-5.1.10 not found", "550 5.1.10 null MX")
 				return true
 			}
 			v, _ := txs.Load(fs)

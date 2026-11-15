@@ -67,11 +67,77 @@ var parseFirstCodeLineTests = []parseFirstCodeLineTest{
 		"",
 	},
 	{
+		// RFC 2034: the class must match the reply code and be 2, 4 or 5
 		"123-1.2.3 test",
 		123,
 		true,
-		smtp.EnhancedCode{1, 2, 3},
+		smtp.NoEnhancedCode,
+		"1.2.3 test",
+		"",
+	},
+	{
+		"523-5.2.3 test",
+		523,
+		true,
+		smtp.EnhancedCode{5, 2, 3},
 		"test",
+		"",
+	},
+	{
+		// RFC 3463: subject and detail have up to 3 digits
+		"550-5.7.26 test",
+		550,
+		true,
+		smtp.EnhancedCode{5, 7, 26},
+		"test",
+		"",
+	},
+	{
+		"451 4.123.999 test",
+		451,
+		false,
+		smtp.EnhancedCode{4, 123, 999},
+		"test",
+		"",
+	},
+	{
+		"550 4.7.1 class mismatch",
+		550,
+		false,
+		smtp.NoEnhancedCode,
+		"4.7.1 class mismatch",
+		"",
+	},
+	{
+		"550 5.1234.1 too many digits",
+		550,
+		false,
+		smtp.NoEnhancedCode,
+		"5.1234.1 too many digits",
+		"",
+	},
+	{
+		"550 5.07.1 leading zero",
+		550,
+		false,
+		smtp.NoEnhancedCode,
+		"5.07.1 leading zero",
+		"",
+	},
+	{
+		"550 5.+7.1 sign",
+		550,
+		false,
+		smtp.NoEnhancedCode,
+		"5.+7.1 sign",
+		"",
+	},
+	{
+		"550 55.7.1 class with two digits",
+		550,
+		false,
+		smtp.NoEnhancedCode,
+		"55.7.1 class with two digits",
 		"",
 	},
 	{
@@ -134,6 +200,23 @@ var parseExtraCodeLineTests = []parseExtraCodeLineTest{
 		false,
 		"test",
 		"",
+	},
+	{
+		"550-5.7.26 test",
+		"550",
+		smtp.EnhancedCode{5, 7, 26}.ToPart(),
+		true,
+		"test",
+		"",
+	},
+	{
+		// RFC 2034: the same enhanced code on every line
+		"550 5.7.2 test",
+		"550",
+		smtp.EnhancedCode{5, 7, 26}.ToPart(),
+		false,
+		"",
+		"invalid response",
 	},
 }
 
@@ -244,6 +327,26 @@ func TestReadMultiLine(t *testing.T) {
 
 	require.Equal(t, expectedText, status.Text())
 	require.Equal(t, "550 5.1.1 "+expectedText, status.Error())
+}
+
+// TestReadMultiLineMultiDigitEnhancedCode reads a Gmail style reply whose
+// enhanced code has a two digit detail. The whole reply has to be consumed,
+// otherwise the next reply is read off by one.
+func TestReadMultiLineMultiDigitEnhancedCode(t *testing.T) {
+	r := reader("550-5.7.26 Unauthenticated email from example.com is not accepted due to\r\n"+
+		"550-5.7.26 domain's DMARC policy. Please contact the administrator of\r\n"+
+		"550 5.7.26 example.com domain if this was a legitimate mail. - gsmtp\r\n"+
+		"250 2.0.0 OK\r\n", &bytes.Buffer{})
+
+	err := r.ReadResponseValid(250)
+	var status *smtp.Status
+	require.ErrorAs(t, err, &status)
+	require.Equal(t, 550, status.Code)
+	require.Equal(t, smtp.EnhancedCode{5, 7, 26}, status.EnhancedCode)
+	require.Len(t, status.Lines, 3)
+	require.Equal(t, "example.com domain if this was a legitimate mail. - gsmtp", status.Lines[2])
+
+	require.NoError(t, r.ReadResponseValid(250), "next reply must be read in sync")
 }
 
 func TestReadResponseTooManyLines(t *testing.T) {

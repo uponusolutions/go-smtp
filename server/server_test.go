@@ -2348,3 +2348,17 @@ func TestServer_DataTimeoutClearedAfterTransfer(t *testing.T) {
 		t.Fatal("Invalid NOOP response:", scanner.Text())
 	}
 }
+
+// TestServer_MultiDigitEnhancedCode checks that a backend's enhanced code with a
+// multi-digit detail (RFC 3463, e.g. Gmail's 5.7.26) goes out unchanged on every line.
+func TestServer_MultiDigitEnhancedCode(t *testing.T) {
+	rejected := smtp.NewStatusM(550, smtp.EnhancedCode{5, 7, 26}, []string{"DMARC", "policy"})
+	_, c, scanner := limitTestServer(t, &backend{rejectAfterOpen: rejected}, 0)
+
+	_, _ = io.WriteString(c, "DATA\r\n")
+	require.True(t, strings.HasPrefix(readReply(t, c, scanner), "354 "))
+	_, _ = io.WriteString(c, "Hello\r\n.\r\n")
+
+	require.Equal(t, "550-5.7.26 DMARC", readReply(t, c, scanner))
+	require.Equal(t, "550 5.7.26 policy", readReply(t, c, scanner))
+}

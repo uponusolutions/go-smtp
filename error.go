@@ -41,19 +41,19 @@ var NoEnhancedCode = EnhancedCode{0, 0, 0}
 
 // ToPart returns the part of the string after the code
 // which is defined by the enhanced code with the trailing whitespace.
-// E.g. "5.1.1 "
+// E.g. "5.1.1 " or "5.7.26 " (RFC 3463: subject and detail have up to 3 digits).
 func (enhCode EnhancedCode) ToPart() []byte {
 	if enhCode == NoEnhancedCode {
 		return nil
 	}
-	return []byte{
-		strconv.Itoa(enhCode[0])[0],
-		'.',
-		strconv.Itoa(enhCode[1])[0],
-		'.',
-		strconv.Itoa(enhCode[2])[0],
-		' ',
-	}
+	// 10 is the longest valid code with the trailing space, e.g. "5.123.123 ".
+	b := make([]byte, 0, 10)
+	b = strconv.AppendInt(b, int64(enhCode[0]), 10)
+	b = append(b, '.')
+	b = strconv.AppendInt(b, int64(enhCode[1]), 10)
+	b = append(b, '.')
+	b = strconv.AppendInt(b, int64(enhCode[2]), 10)
+	return append(b, ' ')
 }
 
 // NewStatusM creates a new status with multiple message lines.

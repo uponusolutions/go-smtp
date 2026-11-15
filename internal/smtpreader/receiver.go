@@ -150,7 +150,7 @@ func parseFirstCodeLine(line string) (*smtp.Status, bool, error) {
 	if index == -1 {
 		return smtp.NewStatusS(code, smtp.NoEnhancedCode, message), continued, nil
 	}
-	enhCode, err := parseEnhancedCode(message[:index])
+	enhCode, err := parseEnhancedCode(message[:index], code)
 	if err != nil {
 		return smtp.NewStatusS(code, smtp.NoEnhancedCode, message), continued, nil
 	}
@@ -179,7 +179,15 @@ func parseExtraCodeLine(line string, codeString string, enhCodePart []byte) (boo
 	return line[3] == '-', line[4+len(enhCodePart):], nil
 }
 
-func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
+// parseEnhancedCode parses an enhanced status code (RFC 3463, RFC 2034):
+//
+//	status-code = class "." subject "." detail
+//	class       = "2" / "4" / "5"   ; must match the first digit of the reply code
+//	subject     = 1*3digit          ; without leading zeros
+//	detail      = 1*3digit          ; without leading zeros
+//
+// Anything else isn't an enhanced code, but the start of the reply text.
+func parseEnhancedCode(s string, replyCode int) (smtp.EnhancedCode, error) {
 	parts := strings.Split(s, ".")
 	if len(parts) != 3 {
 		return smtp.NoEnhancedCode, errors.New("wrong amount of enhanced code parts")
@@ -187,11 +195,19 @@ func parseEnhancedCode(s string) (smtp.EnhancedCode, error) {
 
 	code := smtp.NoEnhancedCode
 	for i, part := range parts {
-		num, err := strconv.Atoi(part)
-		if err != nil {
-			return smtp.NoEnhancedCode, err
+		maxDigits := 3
+		if i == 0 {
+			maxDigits = 1
 		}
-		code[i] = num
+		if len(part) == 0 || len(part) > maxDigits || len(part) > 1 && part[0] == '0' ||
+			strings.IndexFunc(part, func(r rune) bool { return r < '0' || r > '9' }) != -1 {
+			return smtp.NoEnhancedCode, fmt.Errorf("invalid enhanced code part %q", part)
+		}
+		code[i], _ = strconv.Atoi(part)
+	}
+
+	if code[0] != replyCode/100 || code[0] != 2 && code[0] != 4 && code[0] != 5 {
+		return smtp.NoEnhancedCode, fmt.Errorf("enhanced code class %d doesn't match reply code %d", code[0], replyCode)
 	}
 	return code, nil
 }
