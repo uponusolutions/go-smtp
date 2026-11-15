@@ -950,11 +950,18 @@ func (c *Conn) handleData(arg string) error {
 		}
 	}
 
-	if err != nil {
+	// Without a 354 the client sent no message, a rejected DATA command leaves the transaction open.
+	if r == nil && err != nil {
 		return err
 	}
 
-	if err = c.reset(); err != nil {
+	// RFC 5321 4.1.1.4: the end of mail data ends the transaction, whether the message
+	// was accepted or rejected. Keeping it would leave sender and recipients behind,
+	// a following MAIL is refused and a pipelined RCPT/DATA reuses the old envelope.
+	if resetErr := c.reset(); resetErr != nil {
+		return resetErr
+	}
+	if err != nil {
 		return err
 	}
 	return c.accepted(uuid)

@@ -135,6 +135,44 @@ func TestServerLimit_Data_BackendRejectsWithinLimit(t *testing.T) {
 	requireSessionUsable(t, c, scanner)
 }
 
+func TestServerLimit_Data_RejectedEndOfDataEndsTransaction(t *testing.T) {
+	// A message rejected after the end of data ends the transaction, like an accepted one.
+	rejected := smtp.NewStatusS(554, smtp.EnhancedCode{5, 6, 0}, "rejected")
+	_, c, scanner := limitTestServer(t, &backend{rejectAfterOpen: rejected}, 50)
+
+	_, _ = io.WriteString(c, "DATA\r\n")
+	require.True(t, strings.HasPrefix(readReply(t, c, scanner), "354 "))
+	_, _ = io.WriteString(c, "Hello\r\n.\r\n")
+	reply := readReply(t, c, scanner)
+	require.True(t, strings.HasPrefix(reply, "554 5.6.0 "), "got %q", reply)
+
+	// Pipelined RCPT and DATA must not reuse the previous envelope.
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\nDATA\r\n")
+	reply = readReply(t, c, scanner)
+	require.True(t, strings.HasPrefix(reply, "5"), "RCPT without MAIL, got %q", reply)
+	reply = readReply(t, c, scanner)
+	require.True(t, strings.HasPrefix(reply, "5"), "DATA without MAIL, got %q", reply)
+
+	// A new transaction can be started.
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	reply = readReply(t, c, scanner)
+	require.True(t, strings.HasPrefix(reply, "250 "), "got %q", reply)
+}
+
+func TestServerLimit_Data_RejectedCommandKeepsTransaction(t *testing.T) {
+	// A DATA command rejected before 354 carried no message, the transaction stays open.
+	rejected := smtp.NewStatusS(554, smtp.EnhancedCode{5, 6, 0}, "rejected")
+	_, c, scanner := limitTestServer(t, &backend{dataErr: rejected}, 50)
+
+	_, _ = io.WriteString(c, "DATA\r\n")
+	reply := readReply(t, c, scanner)
+	require.True(t, strings.HasPrefix(reply, "554 5.6.0 "), "got %q", reply)
+
+	_, _ = io.WriteString(c, "RCPT TO:<other@gchq.gov.uk>\r\n")
+	reply = readReply(t, c, scanner)
+	require.True(t, strings.HasPrefix(reply, "250 "), "got %q", reply)
+}
+
 func TestServerLimit_Bdat_BackendRejectsWithoutReading(t *testing.T) {
 	rejected := smtp.NewStatusS(554, smtp.EnhancedCode{5, 6, 0}, "rejected")
 	be, c, scanner := limitTestServer(t, &backend{rejectAfterOpen: rejected}, 50)
