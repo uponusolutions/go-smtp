@@ -32,6 +32,7 @@ import (
 
 	"github.com/uponusolutions/go-sasl"
 	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/internal/deadline"
 	"github.com/uponusolutions/go-smtp/internal/parse"
 	"github.com/uponusolutions/go-smtp/internal/smtpreader"
 	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
@@ -260,8 +261,7 @@ func (c *Client) receiveResponseValid(expectCode int) error {
 // if an error occurred the connection is closed
 func (c *Client) greet() error {
 	// Initial greeting timeout. RFC 5321 recommends 5 minutes.
-	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
-	defer timeout()
+	deadline.Set(c.conn, c.cfg.commandTimeout)
 
 	status, err := c.receiveResponse()
 	if err != nil {
@@ -339,8 +339,7 @@ func (c *Client) cmd(expectCode int, message string) (*smtp.Status, error) {
 		return nil, ErrNotConnected
 	}
 
-	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
-	defer timeout()
+	deadline.Set(c.conn, c.cfg.commandTimeout)
 
 	_, err := c.sender.WriteString(message)
 	if err != nil {
@@ -376,8 +375,7 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) 
 		return ErrNotConnected
 	}
 
-	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
-	defer timeout()
+	deadline.Set(c.conn, c.cfg.commandTimeout)
 
 	if c.PipeliningActive() {
 		// group is concluded, please consume all responses
@@ -446,8 +444,7 @@ func (c *Client) Conclude() error {
 		return ErrNotConnected
 	}
 
-	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
-	defer timeout()
+	deadline.Set(c.conn, c.cfg.commandTimeout)
 
 	if !c.PipeliningActive() {
 		return ErrPipeliningNotEnabled
@@ -465,8 +462,7 @@ func (c *Client) readResponseValid(expectCode int) error {
 		return err
 	}
 
-	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
-	defer timeout()
+	deadline.Set(c.conn, c.cfg.commandTimeout)
 
 	// Make sure everything is flushed, probably already done if group has ended.
 	if err := c.sender.Flush(); err != nil {
@@ -558,8 +554,7 @@ func (c *Client) StartTLS(config *tls.Config, serverName string) error {
 
 	conn := tls.Client(c.conn, config)
 
-	timeout := smtp.Timeout(conn, c.cfg.tlsHandshakeTimeout)
-	defer timeout()
+	deadline.Set(conn, c.cfg.tlsHandshakeTimeout)
 
 	err := conn.Handshake()
 	if err != nil {

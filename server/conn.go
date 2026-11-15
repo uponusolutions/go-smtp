@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/internal/deadline"
 	"github.com/uponusolutions/go-smtp/internal/parse"
 	"github.com/uponusolutions/go-smtp/internal/smtpreader"
 	"github.com/uponusolutions/go-smtp/internal/smtpwriter"
@@ -1077,10 +1078,7 @@ func (c *Conn) writeStatus(status *smtp.Status) {
 		c.ctx, "write status", slog.Any("status", status),
 	)
 
-	// TODO: error handling
-	if c.server.writeTimeout > 0 {
-		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
-	}
+	deadline.SetWrite(c.conn, c.server.writeTimeout)
 
 	_, err := status.WriteTo(c.sender)
 
@@ -1109,21 +1107,13 @@ func (c *Conn) newStatusError(code int, enhCode smtp.EnhancedCode, msg string, e
 // renewReadDeadline sets the read deadline to now plus the read timeout,
 // a zero read timeout means no deadline.
 func (c *Conn) renewReadDeadline() {
-	setReadDeadline(c.conn, c.server.readTimeout)
+	deadline.SetRead(c.conn, c.server.readTimeout)
 }
 
 // setDataDeadline sets the read deadline for a whole DATA or BDAT transfer
 // to now plus the data timeout, a zero data timeout means no deadline.
 func (c *Conn) setDataDeadline() {
-	setReadDeadline(c.conn, c.server.dataTimeout)
-}
-
-func setReadDeadline(conn net.Conn, timeout time.Duration) {
-	var deadline time.Time
-	if timeout > 0 {
-		deadline = time.Now().Add(timeout)
-	}
-	_ = conn.SetReadDeadline(deadline)
+	deadline.SetRead(c.conn, c.server.dataTimeout)
 }
 
 // readLine reads a line of input.

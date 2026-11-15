@@ -3,9 +3,9 @@ package client
 import (
 	"errors"
 	"io"
-	"time"
 
 	"github.com/uponusolutions/go-smtp"
+	"github.com/uponusolutions/go-smtp/internal/deadline"
 )
 
 // ContentCloser writes the message content.
@@ -47,13 +47,6 @@ func (d *ContentCloser) CloseWithResponse() (*smtp.Status, error) {
 		return nil, ErrNotConnected
 	}
 
-	// clear the deadline set by newContentCloser
-	defer func() {
-		if d.c.conn != nil {
-			_ = d.c.conn.SetDeadline(time.Time{})
-		}
-	}()
-
 	if err := d.writer.Close(); err != nil {
 		if _, ok := err.(*smtp.Status); !ok {
 			_ = d.c.Close()
@@ -80,10 +73,6 @@ func (d *ContentCloser) Close() error {
 // newContentCloser starts a transfer of the message content,
 // the deadline of the data timeout covers the whole transfer.
 func (c *Client) newContentCloser(writer io.WriteCloser) *ContentCloser {
-	var deadline time.Time
-	if c.cfg.dataTimeout > 0 {
-		deadline = time.Now().Add(c.cfg.dataTimeout)
-	}
-	_ = c.conn.SetDeadline(deadline)
+	deadline.Set(c.conn, c.cfg.dataTimeout)
 	return &ContentCloser{c: c, writer: writer}
 }
