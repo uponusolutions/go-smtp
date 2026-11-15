@@ -2362,3 +2362,25 @@ func TestServer_MultiDigitEnhancedCode(t *testing.T) {
 	require.Equal(t, "550-5.7.26 DMARC", readReply(t, c, scanner))
 	require.Equal(t, "550 5.7.26 policy", readReply(t, c, scanner))
 }
+
+// A client that sends commands but never reads the replies is disconnected after the write timeout.
+func TestServer_WriteTimeoutCloses(t *testing.T) {
+	_, s, c, _ := testServerGreeted(t, nil,
+		server.WithWriteTimeout(100*time.Millisecond), server.WithReadTimeout(time.Minute))
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	noops := strings.Repeat("NOOP\r\n", 1000)
+	stop := time.Now().Add(5 * time.Second)
+	for time.Now().Before(stop) {
+		_ = c.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+		_, err := io.WriteString(c, noops)
+		var netErr net.Error
+		if err != nil && (!errors.As(err, &netErr) || !netErr.Timeout()) {
+			return // connection closed by the server
+		}
+	}
+	t.Fatal("Expected the write timeout to close the connection")
+}

@@ -914,7 +914,7 @@ func (c *Client) Data() (*ContentCloser, error) {
 	if c.PipeliningActive() {
 		return nil, nil
 	}
-	return &ContentCloser{c: c, writer: smtpwriter.NewDot(c.sender.Writer)}, nil
+	return c.newContentCloser(smtpwriter.NewDot(c.sender.Writer)), nil
 }
 
 // DataResponse returns the result of previous send data command if pipelining is enabled
@@ -922,7 +922,7 @@ func (c *Client) DataResponse() (*ContentCloser, error) {
 	if err := c.readResponseValid(354); err != nil {
 		return nil, err
 	}
-	return &ContentCloser{c: c, writer: smtpwriter.NewDot(c.sender.Writer)}, nil
+	return c.newContentCloser(smtpwriter.NewDot(c.sender.Writer)), nil
 }
 
 // Bdat issues a BDAT command to the server and returns a writer that
@@ -950,14 +950,14 @@ func (c *Client) Bdat(size int) (*ContentCloser, error) {
 			c.chunkingBuffer = make([]byte, c.cfg.chunkingBufferSize)
 		}
 
-		return &ContentCloser{c: c, writer: smtpwriter.NewBdatWriterBuffered(c.sender.Writer, func() error {
+		return c.newContentCloser(smtpwriter.NewBdatWriterBuffered(c.sender.Writer, func() error {
 			return c.receiveResponseValid(250)
-		}, size, c.chunkingBuffer[:c.cfg.chunkingBufferSize])}, nil
+		}, size, c.chunkingBuffer[:c.cfg.chunkingBufferSize])), nil
 	}
 
-	return &ContentCloser{c: c, writer: smtpwriter.NewBdat(c.sender.Writer, func() error {
+	return c.newContentCloser(smtpwriter.NewBdat(c.sender.Writer, func() error {
 		return c.receiveResponseValid(250)
-	}, size)}, nil
+	}, size)), nil
 }
 
 // Extension reports whether an extension is support by the server.

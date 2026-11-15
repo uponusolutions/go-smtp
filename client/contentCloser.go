@@ -3,11 +3,13 @@ package client
 import (
 	"errors"
 	"io"
+	"time"
 
 	"github.com/uponusolutions/go-smtp"
 )
 
-// ContentCloser function.
+// ContentCloser writes the message content.
+// The whole transfer, until the reply to the end of the message, has to finish within the data timeout.
 type ContentCloser struct {
 	writer io.WriteCloser
 	c      *Client
@@ -24,7 +26,13 @@ func (d *ContentCloser) Write(p []byte) (n int, err error) {
 	if d.c.conn == nil {
 		return 0, ErrNotConnected
 	}
-	return d.writer.Write(p)
+	n, err = d.writer.Write(p)
+	// The message is only partly sent, the connection can't be used anymore.
+	// A rejected BDAT chunk (*smtp.Status) leaves it in sync.
+	if _, ok := err.(*smtp.Status); err != nil && !ok {
+		_ = d.c.Close()
+	}
+	return n, err
 }
 
 // CloseWithResponse closes the data closer and returns code, msg.
@@ -39,12 +47,19 @@ func (d *ContentCloser) CloseWithResponse() (*smtp.Status, error) {
 		return nil, ErrNotConnected
 	}
 
+	// clear the deadline set by newContentCloser
+	defer func() {
+		if d.c.conn != nil {
+			_ = d.c.conn.SetDeadline(time.Time{})
+		}
+	}()
+
 	if err := d.writer.Close(); err != nil {
+		if _, ok := err.(*smtp.Status); !ok {
+			_ = d.c.Close()
+		}
 		return nil, err
 	}
-
-	timeout := smtp.Timeout(d.c.conn, d.c.cfg.submissionTimeout)
-	defer timeout()
 
 	status, err := d.c.receiveResponse()
 
@@ -60,4 +75,15 @@ func (d *ContentCloser) CloseWithResponse() (*smtp.Status, error) {
 func (d *ContentCloser) Close() error {
 	_, err := d.CloseWithResponse()
 	return err
+}
+
+// newContentCloser starts a transfer of the message content,
+// the deadline of the data timeout covers the whole transfer.
+func (c *Client) newContentCloser(writer io.WriteCloser) *ContentCloser {
+	var deadline time.Time
+	if c.cfg.dataTimeout > 0 {
+		deadline = time.Now().Add(c.cfg.dataTimeout)
+	}
+	_ = c.conn.SetDeadline(deadline)
+	return &ContentCloser{c: c, writer: writer}
 }

@@ -15,7 +15,7 @@ func DefaultConfig() Config {
 		commandTimeout: 5 * time.Minute,
 		// 10 minutes + 2 minute buffer in case the server is doing transparent
 		// forwarding and also follows recommended timeouts.
-		submissionTimeout: 12 * time.Minute,
+		dataTimeout: 12 * time.Minute,
 		// 30 seconds, very generous
 		tlsHandshakeTimeout: 30 * time.Second,
 
@@ -91,8 +91,8 @@ type Config struct {
 	// Time to wait for command responses (this includes 3xx reply to DATA).
 	commandTimeout time.Duration
 
-	// Time to wait for responses after final dot.
-	submissionTimeout time.Duration
+	// Time for a whole DATA or BDAT transfer, including the reply to the end of the message.
+	dataTimeout time.Duration
 
 	// Max line length, defaults to 2000
 	maxLineLength int
@@ -122,14 +122,18 @@ type Config struct {
 // Option defines a client option.
 type Option func(c *Config)
 
-// WithSubmissionTimeout sets the submission timeout.
-func WithSubmissionTimeout(submissionTimeout time.Duration) Option {
+// WithDataTimeout sets the timeout for a whole DATA or BDAT transfer.
+// It starts when the content can be written and covers all chunks and their replies,
+// until the reply to the end of the message.
+// Defaults to 12 minutes, zero disables the timeout (no deadline during the transfer).
+func WithDataTimeout(dataTimeout time.Duration) Option {
 	return func(c *Config) {
-		c.submissionTimeout = submissionTimeout
+		c.dataTimeout = dataTimeout
 	}
 }
 
-// WithCommandTimeout sets the command timeout.
+// WithCommandTimeout sets the timeout for every command and its reply, including the greeting.
+// Defaults to 5 minutes, zero disables the timeout.
 func WithCommandTimeout(commandTimeout time.Duration) Option {
 	return func(c *Config) {
 		c.commandTimeout = commandTimeout
@@ -137,6 +141,7 @@ func WithCommandTimeout(commandTimeout time.Duration) Option {
 }
 
 // WithDialTimeout sets the dial timeout.
+// Defaults to 30 seconds, zero disables the timeout.
 func WithDialTimeout(dialTimeout time.Duration) Option {
 	return func(c *Config) {
 		c.dialTimeout = dialTimeout
@@ -152,7 +157,8 @@ func WithDialControl(control func(network, address string, c syscall.RawConn) er
 	}
 }
 
-// WithTlsHandshakeTimeout sets tls handshake timeout.
+// WithTlsHandshakeTimeout sets the STARTTLS handshake timeout.
+// Defaults to 30 seconds, zero disables the timeout.
 func WithTlsHandshakeTimeout(tlsHandshakeTimeout time.Duration) Option {
 	return func(c *Config) {
 		c.tlsHandshakeTimeout = tlsHandshakeTimeout

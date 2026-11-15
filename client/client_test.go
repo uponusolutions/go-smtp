@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/uponusolutions/go-smtp"
@@ -1201,4 +1203,150 @@ func TestClientProtocolErrorCloses(t *testing.T) {
 		requireClosed(t, c, err)
 		require.ErrorIs(t, w.Close(), ErrNotConnected)
 	})
+}
+
+// timeoutServer greets, answers EHLO with ext and every following line up to n with 250,
+// then hands the connection to stall.
+func timeoutServer(t *testing.T, ext string, n int, stall func(c net.Conn, r *bufio.Reader)) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+	go func() {
+		c, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = c.Close() }()
+		r := bufio.NewReader(c)
+		_, _ = io.WriteString(c, "220 localhost ESMTP\r\n")
+		_, _ = r.ReadString('\n')
+		_, _ = io.WriteString(c, "250-localhost\r\n250 "+ext+"\r\n")
+		for i := 0; i < n; i++ {
+			_, _ = r.ReadString('\n')
+			_, _ = io.WriteString(c, "250 ok\r\n")
+		}
+		stall(c, r)
+	}()
+	return l.Addr().String()
+}
+
+// A zero timeout disables the timeout instead of failing at once.
+func TestClientZeroTimeouts(t *testing.T) {
+	addr := timeoutServer(t, "8BITMIME", 1, func(net.Conn, *bufio.Reader) {})
+	c := New(WithCommandTimeout(0), WithDataTimeout(0))
+	require.NoError(t, c.Dial(context.Background(), addr))
+	require.NoError(t, c.Noop())
+	require.NoError(t, c.Close())
+}
+
+// A server that stops reading the message content doesn't block the client forever.
+func TestClientDataTimeoutDataWrite(t *testing.T) {
+	addr := timeoutServer(t, "8BITMIME", 2, func(c net.Conn, r *bufio.Reader) {
+		_, _ = r.ReadString('\n')
+		_, _ = io.WriteString(c, "354 go ahead\r\n")
+		time.Sleep(5 * time.Second) // stop reading
+	})
+	c := New(WithDataTimeout(100 * time.Millisecond))
+	require.NoError(t, c.Dial(context.Background(), addr))
+	require.NoError(t, c.Mail("a@example.org", nil))
+	require.NoError(t, c.Rcpt("b@example.org", nil))
+	w, err := c.Data()
+	require.NoError(t, err)
+
+	line := []byte(strings.Repeat("a", 1022) + "\r\n")
+	start := time.Now()
+	for err == nil {
+		_, err = w.Write(line)
+	}
+	var netErr net.Error
+	require.ErrorAs(t, err, &netErr)
+	require.True(t, netErr.Timeout())
+	require.Less(t, time.Since(start), 3*time.Second)
+	require.False(t, c.Connected(), "a partly sent message must close the connection")
+}
+
+// A server that never replies to a BDAT chunk doesn't block the client forever.
+func TestClientDataTimeoutBdatReply(t *testing.T) {
+	addr := timeoutServer(t, "CHUNKING", 2, func(_ net.Conn, r *bufio.Reader) {
+		_, _ = io.Copy(io.Discard, r) // read, never reply
+	})
+	c := New(WithDataTimeout(100*time.Millisecond), WithChunkingBufferSize(0))
+	require.NoError(t, c.Dial(context.Background(), addr))
+	require.NoError(t, c.Mail("a@example.org", nil))
+	require.NoError(t, c.Rcpt("b@example.org", nil))
+	w, err := c.Bdat(0)
+	require.NoError(t, err)
+
+	start := time.Now()
+	_, err = w.Write([]byte("Subject: test\r\n"))
+	var netErr net.Error
+	require.ErrorAs(t, err, &netErr)
+	require.True(t, netErr.Timeout())
+	require.Less(t, time.Since(start), 3*time.Second)
+	require.False(t, c.Connected())
+}
+
+// The data timeout covers the whole transfer, not single writes. This includes
+// writes through Writer(), as done by the mailer.
+func TestClientDataTimeoutWholeTransfer(t *testing.T) {
+	addr := timeoutServer(t, "8BITMIME", 2, func(c net.Conn, r *bufio.Reader) {
+		_, _ = r.ReadString('\n')
+		_, _ = io.WriteString(c, "354 go ahead\r\n")
+		_, _ = io.Copy(io.Discard, r) // read, never reply
+	})
+	c := New(WithDataTimeout(150 * time.Millisecond))
+	require.NoError(t, c.Dial(context.Background(), addr))
+	require.NoError(t, c.Mail("a@example.org", nil))
+	require.NoError(t, c.Rcpt("b@example.org", nil))
+	w, err := c.Data()
+	require.NoError(t, err)
+
+	for range 6 {
+		time.Sleep(50 * time.Millisecond)
+		_, err = w.Writer().Write([]byte("slow line\r\n"))
+		require.NoError(t, err) // buffered
+	}
+	err = w.Close()
+	var netErr net.Error
+	require.ErrorAs(t, err, &netErr)
+	require.True(t, netErr.Timeout())
+	require.False(t, c.Connected())
+}
+
+// After a transfer the data deadline must not stay active, even if the command timeout is disabled.
+func TestClientDataTimeoutClearedAfterTransfer(t *testing.T) {
+	addr := timeoutServer(t, "8BITMIME", 2, func(c net.Conn, r *bufio.Reader) {
+		_, _ = r.ReadString('\n')
+		_, _ = io.WriteString(c, "354 go ahead\r\n")
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil || line == ".\r\n" {
+				break
+			}
+		}
+		_, _ = io.WriteString(c, "250 queued\r\n")
+		_, _ = r.ReadString('\n')
+		_, _ = io.WriteString(c, "250 ok\r\n")
+	})
+	c := New(WithCommandTimeout(0), WithDataTimeout(100*time.Millisecond))
+	require.NoError(t, c.Dial(context.Background(), addr))
+	require.NoError(t, c.Mail("a@example.org", nil))
+	require.NoError(t, c.Rcpt("b@example.org", nil))
+	w, err := c.Data()
+	require.NoError(t, err)
+	_, err = w.Write([]byte("Subject: test\r\n\r\nHey\r\n"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	time.Sleep(200 * time.Millisecond)
+	require.NoError(t, c.Noop())
+}
+
+func TestClientDefaultTimeouts(t *testing.T) {
+	cfg := DefaultConfig()
+	require.Equal(t, 5*time.Minute, cfg.commandTimeout)
+	require.Equal(t, 12*time.Minute, cfg.dataTimeout)
+	require.Equal(t, 30*time.Second, cfg.tlsHandshakeTimeout)
+	require.Equal(t, 30*time.Second, cfg.dialTimeout)
 }

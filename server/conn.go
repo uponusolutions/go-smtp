@@ -1082,14 +1082,19 @@ func (c *Conn) writeStatus(status *smtp.Status) {
 		_ = c.conn.SetWriteDeadline(time.Now().Add(c.server.writeTimeout))
 	}
 
-	// TODO: error handling
-	_, _ = status.WriteTo(c.sender)
+	_, err := status.WriteTo(c.sender)
 
 	// PIPELINE support
 	// If there is something buffered in c.text.R then we can assume another command is following.
 	// This means the client is doing pipelining and we don't need to respond just now.
-	if c.receiver.Buffered() == 0 {
-		_ = c.sender.Flush()
+	if err == nil && c.receiver.Buffered() == 0 {
+		err = c.sender.Flush()
+	}
+
+	// A failed write (e.g. write timeout) loses the reply, the session can't go on.
+	// Closing the connection makes the next read fail and ends the session.
+	if err != nil {
+		_ = c.conn.Close()
 	}
 }
 
