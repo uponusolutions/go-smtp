@@ -233,6 +233,29 @@ func (c *Client) Close() (err error) {
 	return err
 }
 
+// receiveResponse reads a reply.
+//
+// Any error other than an *smtp.Status reply (e.g. a malformed or too long reply,
+// a timeout) may leave the rest of the reply unread. The next command would read
+// it as its own reply, so the connection is closed.
+func (c *Client) receiveResponse() (*smtp.Status, error) {
+	status, err := c.receiver.ReadResponse()
+	if err != nil {
+		_ = c.Close()
+	}
+	return status, err
+}
+
+// receiveResponseValid reads a reply and returns it as error if the code isn't expected.
+// The connection is closed like in receiveResponse.
+func (c *Client) receiveResponseValid(expectCode int) error {
+	err := c.receiver.ReadResponseValid(expectCode)
+	if _, ok := err.(*smtp.Status); err != nil && !ok {
+		_ = c.Close()
+	}
+	return err
+}
+
 // Greet reads the greeting of the server
 // if an error occurred the connection is closed
 func (c *Client) greet() error {
@@ -240,10 +263,8 @@ func (c *Client) greet() error {
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
-	status, err := c.receiver.ReadResponse()
-	// probably connectivity error
+	status, err := c.receiveResponse()
 	if err != nil {
-		_ = c.Close()
 		return err
 	}
 
@@ -314,6 +335,10 @@ func (c *Client) consumeResponse() error {
 // cmd is a convenience function that sends a command and returns the response
 // does not support or handle anything related to pipelining
 func (c *Client) cmd(expectCode int, message string) (*smtp.Status, error) {
+	if c.conn == nil {
+		return nil, ErrNotConnected
+	}
+
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
@@ -332,7 +357,7 @@ func (c *Client) cmd(expectCode int, message string) (*smtp.Status, error) {
 		return nil, err
 	}
 
-	status, err := c.receiver.ReadResponse()
+	status, err := c.receiveResponse()
 	if err != nil {
 		return nil, err
 	}
@@ -347,6 +372,10 @@ func (c *Client) cmd(expectCode int, message string) (*smtp.Status, error) {
 // cmdValid is a convenience function that sends a command and returns an error if the expected code doesn't match
 // can handle pipelining
 func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) error {
+	if c.conn == nil {
+		return ErrNotConnected
+	}
+
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
@@ -407,12 +436,16 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) 
 		return nil
 	}
 
-	return c.receiver.ReadResponseValid(expectCode)
+	return c.receiveResponseValid(expectCode)
 }
 
 // Conclude concludes the current pipelining group.
 // Do not call if pipelining is not active.
 func (c *Client) Conclude() error {
+	if c.conn == nil {
+		return ErrNotConnected
+	}
+
 	timeout := smtp.Timeout(c.conn, c.cfg.commandTimeout)
 	defer timeout()
 
@@ -424,6 +457,10 @@ func (c *Client) Conclude() error {
 }
 
 func (c *Client) readResponseValid(expectCode int) error {
+	if c.conn == nil {
+		return ErrNotConnected
+	}
+
 	if err := c.consumeResponse(); err != nil {
 		return err
 	}
@@ -436,7 +473,7 @@ func (c *Client) readResponseValid(expectCode int) error {
 		return err
 	}
 
-	return c.receiver.ReadResponseValid(expectCode)
+	return c.receiveResponseValid(expectCode)
 }
 
 // ClearResponses consumes x pending responses from pipelining
@@ -914,12 +951,12 @@ func (c *Client) Bdat(size int) (*ContentCloser, error) {
 		}
 
 		return &ContentCloser{c: c, writer: smtpwriter.NewBdatWriterBuffered(c.sender.Writer, func() error {
-			return c.receiver.ReadResponseValid(250)
+			return c.receiveResponseValid(250)
 		}, size, c.chunkingBuffer[:c.cfg.chunkingBufferSize])}, nil
 	}
 
 	return &ContentCloser{c: c, writer: smtpwriter.NewBdat(c.sender.Writer, func() error {
-		return c.receiver.ReadResponseValid(250)
+		return c.receiveResponseValid(250)
 	}, size)}, nil
 }
 

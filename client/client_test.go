@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"syscall"
@@ -312,12 +313,15 @@ func TestClient_TooLongLine(t *testing.T) {
 		t.Fatal("MAIL succeeded or returned a different error:", err)
 	}
 
-	// ErrTooLongLine is "sticky" since the connection is in broken state and
-	// the only reasonable way to recover is to close it.
-	err = c.Mail("whatever", nil)
-	if err != smtp.ErrTooLongLine {
-		t.Fatal("Second MAIL succeeded or returned a different error:", err)
-	}
+	// The rest of the line is still unread, the connection is closed.
+	require.False(t, c.Connected())
+	require.ErrorIs(t, c.Mail("whatever", nil), ErrNotConnected)
+
+	// A new connection on the same client isn't affected (the mailer reuses its client).
+	c.setConn(tester.NewFakeConn("220 hello world\r\n250 hello\r\n250 2.1.0 OK\r\n", &bytes.Buffer{}))
+	require.NoError(t, c.greet())
+	require.NoError(t, c.Hello())
+	require.NoError(t, c.Mail("whatever", nil))
 }
 
 var basicServer = `250 mx.google.com at your service
@@ -1132,5 +1136,69 @@ func TestClientChunking(t *testing.T) {
 
 		_, err = c.Bdat(0)
 		require.ErrorContains(t, err, "chunking is disabled")
+	})
+}
+
+// TestClientProtocolErrorCloses checks that the connection is closed if a reply
+// can't be read completely. The rest of the reply would otherwise be read as the
+// reply of the next command, every reply after that off by one.
+func TestClientProtocolErrorCloses(t *testing.T) {
+	// RFC 2034: the same enhanced code on every line of a reply
+	const malformed = "550-5.1.1 first\r\n550 5.1.2 last\r\n"
+
+	connect := func(t *testing.T, server string, opts ...Option) *Client {
+		t.Helper()
+		c := New(opts...)
+		c.setConn(tester.NewFakeConn(server, &bytes.Buffer{}))
+		require.NoError(t, c.ehlo())
+		return c
+	}
+	requireClosed := func(t *testing.T, c *Client, err error) {
+		t.Helper()
+		var protoErr textproto.ProtocolError
+		require.ErrorAs(t, err, &protoErr)
+		require.False(t, c.Connected())
+	}
+
+	t.Run("status reply keeps the connection", func(t *testing.T) {
+		c := connect(t, "250 localhost\r\n550 5.1.1 unknown\r\n250 2.1.5 OK\r\n")
+
+		var status *smtp.Status
+		require.ErrorAs(t, c.Rcpt("a@example.com", nil), &status)
+		require.True(t, c.Connected())
+		require.NoError(t, c.Rcpt("b@example.com", nil))
+	})
+
+	t.Run("malformed reply", func(t *testing.T) {
+		c := connect(t, "250 localhost\r\n"+malformed+"250 2.1.5 OK\r\n")
+
+		requireClosed(t, c, c.Rcpt("a@example.com", nil))
+		require.ErrorIs(t, c.Rcpt("b@example.com", nil), ErrNotConnected)
+	})
+
+	t.Run("malformed reply with pipelining", func(t *testing.T) {
+		c := connect(t, "250-localhost\r\n250 PIPELINING\r\n250 2.1.0 OK\r\n"+malformed+"354 go ahead\r\n",
+			WithPipelining(true))
+
+		require.NoError(t, c.Mail("a@example.com", nil))
+		require.NoError(t, c.Rcpt("b@example.com", nil))
+		w, err := c.Data()
+		require.NoError(t, err)
+		require.Nil(t, w)
+
+		require.NoError(t, c.MailResponse())
+		requireClosed(t, c, c.RcptResponse())
+		_, err = c.DataResponse()
+		require.ErrorIs(t, err, ErrNotConnected)
+	})
+
+	t.Run("malformed reply to a BDAT chunk", func(t *testing.T) {
+		c := connect(t, "250-localhost\r\n250 CHUNKING\r\n"+malformed, WithChunkingBufferSize(0))
+
+		w, err := c.Content(0)
+		require.NoError(t, err)
+		_, err = io.WriteString(w, "abc")
+		requireClosed(t, c, err)
+		require.ErrorIs(t, w.Close(), ErrNotConnected)
 	})
 }

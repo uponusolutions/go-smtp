@@ -374,3 +374,19 @@ func TestReadResponseTooManyLines(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, status.Lines, 10*maxResponseLines+1)
 }
+
+// TestReceiverResetClearsLineLengthExceeded checks that an exceeded line length
+// only blocks the connection it happened on, not the next one after Reset.
+func TestReceiverResetClearsLineLengthExceeded(t *testing.T) {
+	r := NewReceiver(strings.NewReader(strings.Repeat("x", 20)+"\r\n"), 4096, 10, 0)
+
+	_, err := r.ReadFullLine()
+	require.ErrorIs(t, err, smtp.ErrTooLongLine)
+	_, err = r.ReadFullLine()
+	require.ErrorIs(t, err, smtp.ErrTooLongLine, "sticky on the same connection")
+
+	r.Reset(strings.NewReader("250 OK\r\n"))
+	line, err := r.ReadFullLine()
+	require.NoError(t, err)
+	require.Equal(t, "250 OK", line)
+}

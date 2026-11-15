@@ -236,6 +236,10 @@ func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, 
 		pipelining.mail = false
 		if err := c.client.MailResponse(); err != nil {
 			// clear all pending responses, data couldn't be accepted
+			// (nothing to clear if the client closed the connection after a protocol error)
+			if !c.client.Connected() {
+				return nil, nil, err
+			}
 			if responseErr := c.client.ClearResponses(0); responseErr != nil {
 				return nil, nil, errors.Join(err, responseErr)
 			}
@@ -252,6 +256,9 @@ func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, 
 			failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
 			if err != nil {
 				// pipelining.data is never true here, because abortOnRcptReject forces sync before calling data
+				if !c.client.Connected() {
+					return nil, failures, err
+				}
 				if errResponse := c.client.ClearResponses(0); errResponse != nil {
 					return nil, failures, errors.Join(err, errResponse)
 				}

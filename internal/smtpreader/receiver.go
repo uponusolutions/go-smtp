@@ -42,6 +42,13 @@ func NewReceiver(
 	}
 }
 
+// Reset discards all state and switches to reading from conn, e.g. after a reconnect.
+// It also clears an exceeded line length, which otherwise blocks all further reads.
+func (t *Receiver) Reset(conn io.Reader) {
+	t.Reader.Reset(conn)
+	t.lineLengthExceeded = false
+}
+
 // ReadFullLine reads a single line from r,
 // eliding the final \n or \r\n from the returned string.
 func (t *Receiver) ReadFullLine() (string, error) {

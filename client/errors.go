@@ -3,6 +3,9 @@ package client
 import "errors"
 
 var (
+	// ErrNotConnected means there is no connection, e.g. it was closed after an error
+	// that left it out of sync with the server.
+	ErrNotConnected = errors.New("smtp: not connected")
 	// ErrPipeliningNotEnabled means pipeline is not enabled
 	ErrPipeliningNotEnabled = errors.New("pipelining isn't enabled")
 	// ErrPipeliningGroupConcluded means you first need to consume all responses

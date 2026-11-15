@@ -21,6 +21,9 @@ func (d *ContentCloser) Writer() io.Writer {
 
 // Write writes do underlying writer.
 func (d *ContentCloser) Write(p []byte) (n int, err error) {
+	if d.c.conn == nil {
+		return 0, ErrNotConnected
+	}
 	return d.writer.Write(p)
 }
 
@@ -31,6 +34,11 @@ func (d *ContentCloser) CloseWithResponse() (*smtp.Status, error) {
 	}
 	d.closed = true
 
+	// e.g. closed after a malformed reply to a BDAT chunk
+	if d.c.conn == nil {
+		return nil, ErrNotConnected
+	}
+
 	if err := d.writer.Close(); err != nil {
 		return nil, err
 	}
@@ -38,7 +46,7 @@ func (d *ContentCloser) CloseWithResponse() (*smtp.Status, error) {
 	timeout := smtp.Timeout(d.c.conn, d.c.cfg.submissionTimeout)
 	defer timeout()
 
-	status, err := d.c.receiver.ReadResponse()
+	status, err := d.c.receiveResponse()
 
 	if err == nil && status.Code != 250 {
 		err = status
