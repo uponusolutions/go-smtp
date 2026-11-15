@@ -58,7 +58,8 @@ var (
 )
 
 func Example_plainAuth() {
-	// hostname is used by PlainAuth to validate the TLS certificate.
+	// hostname is used to verify the server's TLS certificate during STARTTLS,
+	// which the mailer requires by default.
 	hostname := "mail.example.com"
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
@@ -77,8 +78,8 @@ func Example() {
 	// Set up authentication information.
 	auth := sasl.NewPlainClient("", "user@example.com", "password")
 
-	// Connect to the server, authenticate, set the sender and recipient,
-	// and send the email all in one step.
+	// Connect to the server, upgrade to TLS via STARTTLS, authenticate,
+	// set the sender and recipient, and send the email all in one step.
 	to := []string{"recipient@example.net"}
 	msg := strings.NewReader("To: recipient@example.net\r\n" +
 		"Subject: discount Gophers!\r\n" +

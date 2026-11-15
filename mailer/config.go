@@ -11,7 +11,9 @@ import (
 func DefaultConfig() Config {
 	return Config{
 		extra: additionalConfig{
-			security: SecurityPreferStartTLS,
+			// Mandatory STARTTLS (RFC 3207) with certificate verification, so
+			// mail and credentials are never sent unencrypted by default.
+			security: SecurityStartTLS,
 		},
 		client: client.DefaultConfig(),
 	}
@@ -33,7 +35,10 @@ type Security int32
 
 const (
 	// SecurityPreferStartTLS tries to use StartTLS but fallbacks to plain if
-	// StartTLS is not available or TLS Handshake failed.
+	// StartTLS is not available, rejected by the server or the TLS handshake
+	// failed. A handshake failure includes the client rejecting the server
+	// certificate (e.g. expired or not matching the host name): the mail is
+	// then sent over a plain connection instead of returning an error.
 	//
 	// Security note: this is opportunistic TLS and provides no protection
 	// against an active attacker. An attacker on the network path can strip
@@ -51,7 +56,8 @@ const (
 	SecurityPlain Security = 1
 	// SecurityTLS does a implicit tls connection.
 	SecurityTLS Security = 2
-	// SecurityStartTLS always does starttls.
+	// SecurityStartTLS always does starttls and fails if the server doesn't
+	// support it or the TLS handshake fails. This is the default.
 	SecurityStartTLS Security = 3
 )
 
@@ -116,14 +122,20 @@ func WithServerAddressIndex(index int) Option {
 	}
 }
 
-// WithSASLClient sets the SASL client.
+// WithSASLClient sets the SASL client used to authenticate if the server
+// supports AUTH. Defaults to nil, no authentication.
+//
+// With SecurityPreferStartTLS or SecurityPlain the credentials may be sent
+// unencrypted, the default SecurityStartTLS and SecurityTLS never do that.
 func WithSASLClient(cl sasl.Client) Option {
 	return func(c *Config) {
 		c.extra.saslClient = cl
 	}
 }
 
-// WithSecurity sets the TLS config.
+// WithSecurity sets how the connection is secured.
+// Defaults to SecurityStartTLS: STARTTLS is required and the server
+// certificate is verified, otherwise connecting fails.
 func WithSecurity(security Security) Option {
 	return func(c *Config) {
 		c.extra.security = security

@@ -21,8 +21,11 @@ type Mailer struct {
 }
 
 // New returns a new smtp client.
-// When not set via options a default tls.Config and used an StartTLS is preferred but not enforced.
 // You need to set at least the server address to get a working mailer.
+//
+// By default STARTTLS is enforced (SecurityStartTLS) and the server
+// certificate is verified, so nothing is sent unencrypted. Use WithSecurity
+// to choose a different mode.
 func New(opts ...Option) *Mailer {
 	cfg := DefaultConfig()
 
@@ -71,9 +74,7 @@ func (c *Mailer) Connect(ctx context.Context) error {
 // When server supports auth and clients SaslClient is set, auth is called.
 // Security is enforced like configured (Plain, TLS, StartTLS or PreferStartTLS)
 // If an error occures, the connection is closed if open.
-func (c *Mailer) connectAddress(ctx context.Context, addr string) error {
-	var err error
-
+func (c *Mailer) connectAddress(ctx context.Context, addr string) (err error) {
 	switch c.cfg.security {
 	case SecurityTLS:
 		err = c.client.DialTLS(ctx, c.cfg.tlsConfig, addr)
@@ -83,9 +84,18 @@ func (c *Mailer) connectAddress(ctx context.Context, addr string) error {
 		err = c.client.Dial(ctx, addr)
 	}
 
+	// Dial and DialTLS close the connection on error.
 	if err != nil {
 		return err
 	}
+
+	// Never leave a connection open that didn't complete the configured
+	// security and auth sequence, otherwise a later Send would reuse it.
+	defer func() {
+		if err != nil {
+			_ = c.client.Close()
+		}
+	}()
 
 	if c.cfg.security == SecurityStartTLS || c.cfg.security == SecurityPreferStartTLS {
 		if ok, _ := c.client.Extension("STARTTLS"); !ok {
@@ -458,6 +468,11 @@ type Response struct {
 // Send just sends a mail.
 // in is called multiple times if there are recipients from different servers.
 // The option abort on recipient rejection is permanently not supported.
+//
+// The default SecurityStartTLS also applies to delivery via MX records:
+// servers without STARTTLS or a valid certificate fail. Pass
+// WithSecurity(SecurityPreferStartTLS) for opportunistic TLS as usual between
+// mail servers.
 func Send(ctx context.Context, from string, rcpts []string, in func() io.Reader, opts ...Option) (res Report, err error) {
 	r := resolve.New(nil)
 

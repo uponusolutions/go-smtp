@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/asn1"
 	"math/big"
 	"time"
 )
@@ -30,18 +29,6 @@ func GenX509KeyPair(domain string) (tls.Certificate, error) {
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		DNSNames:              []string{domain},
 	}
-
-	extSubjectAltName := pkix.Extension{}
-	extSubjectAltName.Id = asn1.ObjectIdentifier{2, 5, 29, 17}
-	extSubjectAltName.Critical = false
-
-	var err error
-	extSubjectAltName.Value, err = asn1.Marshal([]string{`dns:` + domain})
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	template.ExtraExtensions = []pkix.Extension{extSubjectAltName}
 
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

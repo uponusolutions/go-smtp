@@ -14,4 +14,5 @@ func TestCert(t *testing.T) {
 	pcert, err := x509.ParseCertificate(cert.Certificate[0])
 	require.NoError(t, err)
 	require.Equal(t, "test.local", pcert.Subject.CommonName)
+	require.NoError(t, pcert.VerifyHostname("test.local"))
 }

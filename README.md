@@ -64,7 +64,6 @@ calls, which is what you want for a queue runner:
 ```go
 m := mailer.New(
     mailer.WithServerAddresses("mail.example.com:587"),
-    mailer.WithSecurity(mailer.SecurityStartTLS),
     mailer.WithSASLClient(sasl.NewPlainClient("", "username", "password")),
     mailer.WithBasic(client.WithPipelining(true)),
 )
@@ -72,6 +71,14 @@ defer func() { _ = m.Disconnect() }()
 
 status, failures, err := m.Send(ctx, from, rcpts, msg)
 ```
+
+By default the mailer requires STARTTLS and verifies the server certificate
+(`SecurityStartTLS`), so mail and credentials are never sent unencrypted.
+`SecurityTLS` uses implicit TLS (e.g. port 465). `SecurityPreferStartTLS` is
+opportunistic: if STARTTLS is missing, rejected or the TLS handshake fails
+(including an invalid certificate), it continues over a plain connection and
+still authenticates. Only use it without a SASL client, e.g. for delivery to
+MX servers that lack a valid certificate.
 
 `WithServerAddressesPrio` takes groups of addresses that are tried in order, and
 `SendAdvanced` accepts explicit `MailOptions` and per-recipient `RcptOptions`.

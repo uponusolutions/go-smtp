@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/uponusolutions/go-smtp"
 	"github.com/uponusolutions/go-smtp/server"
+	"github.com/uponusolutions/go-smtp/tester"
 	"github.com/uponusolutions/go-smtp/tester/testserver"
 
 	"github.com/stretchr/testify/assert"
@@ -35,18 +37,46 @@ var backend = testserver.Backend{
 	},
 }
 
+// testCert secures the test servers via STARTTLS, testRoots trusts it.
+var testCert, testRoots = func() (tls.Certificate, *x509.CertPool) {
+	cert, err := tester.GenX509KeyPair("localhost")
+	if err != nil {
+		panic(err)
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		panic(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
+	return cert, roots
+}()
+
+// withTestServer sets the server addresses and trusts the test certificate.
+func withTestServer(addrs ...string) Option {
+	return func(c *Config) {
+		WithServerAddresses(addrs...)(c)
+		WithTLSConfig(&tls.Config{ServerName: "localhost", RootCAs: testRoots})(c)
+	}
+}
+
+var serverTLS = server.WithTLSConfig(&tls.Config{Certificates: []tls.Certificate{testCert}})
+
 var s = []*server.Server{
 	testserver.Standard(
+		serverTLS,
 		server.WithBackend(&backend),
 		server.WithMaxRecipients(1000),
 	),
 	testserver.Standard(
+		serverTLS,
 		server.WithBackend(&backend),
 		server.WithWriterSize(1),
 		server.WithReaderSize(1),
 		server.WithMaxRecipients(1000),
 	),
 	testserver.Standard(
+		serverTLS,
 		server.WithBackend(&backend),
 		server.WithEnableCHUNKING(true),
 		server.WithMaxRecipients(0),
@@ -81,7 +111,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestClient_DisconnectTwicePipeline(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]), WithBasic(client.WithPipelining(true)))
+	c := New(withTestServer(addr[0]), WithBasic(client.WithPipelining(true)))
 	require.NoError(t, c.Connect(t.Context()))
 	require.NoError(t, c.Terminate())
 	require.NoError(t, c.Disconnect())
@@ -90,7 +120,7 @@ func TestClient_DisconnectTwicePipeline(t *testing.T) {
 func TestClient_DialControl(t *testing.T) {
 	errRefused := errors.New("refused")
 	var seen []string
-	c := New(WithServerAddresses(addr[0]), WithBasic(client.WithDialControl(func(_, address string, _ syscall.RawConn) error {
+	c := New(withTestServer(addr[0]), WithBasic(client.WithDialControl(func(_, address string, _ syscall.RawConn) error {
 		seen = append(seen, address)
 		return errRefused
 	})))
@@ -99,7 +129,7 @@ func TestClient_DialControl(t *testing.T) {
 	// The server listens on all interfaces, its address may be tried in more than one family.
 	require.NotEmpty(t, seen)
 
-	c = New(WithServerAddresses(addr[0]), WithBasic(client.WithDialControl(func(string, string, syscall.RawConn) error {
+	c = New(withTestServer(addr[0]), WithBasic(client.WithDialControl(func(string, string, syscall.RawConn) error {
 		return nil
 	})))
 	require.NoError(t, c.Connect(t.Context()))
@@ -107,7 +137,7 @@ func TestClient_DialControl(t *testing.T) {
 }
 
 func TestClient_ChunkingErrors(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]))
+	c := New(withTestServer(addr[0]))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -124,7 +154,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 
 	assert.NoError(t, c.Disconnect())
 
-	c = New(WithServerAddresses(addr[0]), WithBasic(client.WithChunking(false)))
+	c = New(withTestServer(addr[0]), WithBasic(client.WithChunking(false)))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -137,7 +167,7 @@ func TestClient_ChunkingErrors(t *testing.T) {
 }
 
 func TestClient_SendMailAutoconnect(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]))
+	c := New(withTestServer(addr[0]))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -171,7 +201,7 @@ func TestClient_SendMail(t *testing.T) {
 				basic = WithBasic(client.WithReaderSize(1), client.WithWriterSize(1), client.WithPipelining(true))
 			}
 
-			c := New(WithServerAddresses(sa), basic)
+			c := New(withTestServer(sa), basic)
 			require.NotNil(t, c)
 
 			require.NoError(t, c.Connect(context.Background()))
@@ -201,7 +231,7 @@ func TestClient_SendMail(t *testing.T) {
 }
 
 func TestClient_SendMailTooManyRcptsAbortPipelining(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]),
+	c := New(withTestServer(addr[0]),
 		WithAbortOnRcptReject(true),
 		WithBasic(client.WithPipelining(true)))
 	require.NotNil(t, c)
@@ -243,7 +273,7 @@ func TestClient_SendMailDirect(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr[0]),
+		withTestServer(addr[0]),
 	)
 	require.NoError(t, err)
 
@@ -264,7 +294,7 @@ func TestClient_SendMailDirectPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr[0]),
+		withTestServer(addr[0]),
 		WithBasic(client.WithPipelining(true)),
 	)
 	require.NoError(t, err)
@@ -297,7 +327,7 @@ func TestClient_SendMailDirectManyRcptsPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr[2]),
+		withTestServer(addr[2]),
 		WithBasic(client.WithPipelining(true)),
 	)
 	require.NoError(t, err)
@@ -325,7 +355,7 @@ func TestClient_SendMailDirectTooManyRcptsPipelining(t *testing.T) {
 				from,
 				recipients,
 				func() io.Reader { return bytes.NewReader(data) },
-				WithServerAddresses(sa),
+				withTestServer(sa),
 				basic,
 			)
 			require.NoError(t, err)
@@ -354,7 +384,7 @@ func TestClient_SendMailDirectFailPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr[0]),
+		withTestServer(addr[0]),
 		WithBasic(client.WithPipelining(true)),
 	)
 	require.NoError(t, err)
@@ -376,7 +406,7 @@ func TestClient_SendMailDirectAbortOnRcptRejectPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr[0]),
+		withTestServer(addr[0]),
 		WithAbortOnRcptReject(true),
 		WithBasic(client.WithPipelining(true)),
 	)
@@ -393,7 +423,7 @@ func TestClient_SendMailDirectAllRejectedPipelining(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr[0]),
+		withTestServer(addr[0]),
 		WithBasic(client.WithPipelining(true)),
 	)
 	require.NoError(t, err)
@@ -416,7 +446,7 @@ var pipeliningCases = []struct {
 func sendReport(t *testing.T, rcpts []string, pipelining bool) Report {
 	t.Helper()
 
-	opts := []Option{WithServerAddresses(addr[0])}
+	opts := []Option{withTestServer(addr[0])}
 	if pipelining {
 		opts = append(opts, WithBasic(client.WithPipelining(true)))
 	}
@@ -495,7 +525,7 @@ func TestClient_SendMailPartiallyRejectedKeepsPerRcptFailures(t *testing.T) {
 }
 
 func TestClient_SendMailAutoconnectAbortOnRcptReject(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]), WithAbortOnRcptReject(true))
+	c := New(withTestServer(addr[0]), WithAbortOnRcptReject(true))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -524,7 +554,7 @@ func TestClient_SendMailAutoconnectAbortOnRcptReject(t *testing.T) {
 }
 
 func TestClient_SendMailAutoconnectAbortOnRcptRejectPipelining(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]), WithAbortOnRcptReject(true), WithBasic(client.WithPipelining(true)))
+	c := New(withTestServer(addr[0]), WithAbortOnRcptReject(true), WithBasic(client.WithPipelining(true)))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -553,7 +583,7 @@ func TestClient_SendMailAutoconnectAbortOnRcptRejectPipelining(t *testing.T) {
 }
 
 func TestClient_SendMailAutoconnectAbortOnRcptRejectAll(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]), WithAbortOnRcptReject(true))
+	c := New(withTestServer(addr[0]), WithAbortOnRcptReject(true))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -582,7 +612,7 @@ func TestClient_SendMailAutoconnectAbortOnRcptRejectAll(t *testing.T) {
 }
 
 func TestClient_SendMailAutoconnectAbortOnRcptRejectAllPipelining(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]), WithAbortOnRcptReject(true), WithBasic(client.WithPipelining(true)))
+	c := New(withTestServer(addr[0]), WithAbortOnRcptReject(true), WithBasic(client.WithPipelining(true)))
 	require.NotNil(t, c)
 
 	defer func() {
@@ -620,7 +650,7 @@ func TestClient_SendMailDirectFail(t *testing.T) {
 		from,
 		recipients,
 		func() io.Reader { return bytes.NewReader(data) },
-		WithServerAddresses(addr[0]),
+		withTestServer(addr[0]),
 	)
 	require.Equal(t, 1, len(rec.Failures))
 	require.Equal(t, []string{"notfound@external.com"}, rec.Failures[0].Rcpts)
@@ -636,7 +666,7 @@ func TestClient_SendMailDirectFail(t *testing.T) {
 }
 
 func TestClient_SendMail_MultipleAddresses(t *testing.T) {
-	c := New(WithServerAddresses(addr[0], "0.0.0.0")) // second is invalid
+	c := New(withTestServer(addr[0], "0.0.0.0")) // second is invalid
 	require.NotNil(t, c)
 
 	require.Equal(t, "", c.ServerAddress())
@@ -647,7 +677,7 @@ func TestClient_SendMail_MultipleAddresses(t *testing.T) {
 	require.Equal(t, addr[0], c.ServerAddress())
 	require.Equal(t, "localhost", c.ServerName())
 
-	c = New(WithServerAddresses("0.0.0.0", addr[0])) // second is invalid
+	c = New(withTestServer("0.0.0.0", addr[0])) // second is invalid
 	require.NotNil(t, c)
 
 	require.Equal(t, "", c.ServerAddress())
@@ -660,7 +690,7 @@ func TestClient_SendMail_MultipleAddresses(t *testing.T) {
 }
 
 func TestClient_SendMailUTF8Force(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]))
+	c := New(withTestServer(addr[0]))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -689,7 +719,7 @@ func TestClient_SendMailUTF8Force(t *testing.T) {
 }
 
 func TestClient_AllRejectedKeepsConnection(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]), WithBasic(client.WithPipelining(true)))
+	c := New(withTestServer(addr[0]), WithBasic(client.WithPipelining(true)))
 
 	require.NoError(t, c.Connect(t.Context()))
 	t.Cleanup(func() { _ = c.Terminate() })
@@ -708,7 +738,7 @@ func TestClient_AllRejectedKeepsConnection(t *testing.T) {
 }
 
 func TestClient_AllRejectedChunkingKeepsConnection(t *testing.T) {
-	c := New(WithServerAddresses(addr[2]), WithBasic(client.WithPipelining(true)))
+	c := New(withTestServer(addr[2]), WithBasic(client.WithPipelining(true)))
 
 	require.NoError(t, c.Connect(t.Context()))
 	t.Cleanup(func() { _ = c.Terminate() })
@@ -727,7 +757,7 @@ func TestClient_AllRejectedChunkingKeepsConnection(t *testing.T) {
 }
 
 func TestClient_VerifyUTF8Force(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]))
+	c := New(withTestServer(addr[0]))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))
@@ -743,7 +773,7 @@ func TestClient_VerifyUTF8Force(t *testing.T) {
 }
 
 func TestClient_InvalidLocalName(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]), WithBasic(
+	c := New(withTestServer(addr[0]), WithBasic(
 		client.WithLocalName("hostinjection>\n\rDATA\r\nInjected message body\r\n.\r\nQUIT\r\n")),
 	)
 	require.NotNil(t, c)
@@ -751,13 +781,13 @@ func TestClient_InvalidLocalName(t *testing.T) {
 }
 
 func TestClient_Client(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]))
+	c := New(withTestServer(addr[0]))
 	require.NotNil(t, c)
 	require.NotNil(t, c.Client())
 }
 
 func TestClient_Send(t *testing.T) {
-	c := New(WithServerAddresses(addr[0]))
+	c := New(withTestServer(addr[0]))
 	require.NotNil(t, c)
 
 	require.NoError(t, c.Connect(context.Background()))

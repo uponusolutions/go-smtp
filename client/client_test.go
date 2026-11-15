@@ -1,13 +1,13 @@
 package client
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -666,164 +666,41 @@ QUIT
 `
 
 func TestTLSConnState(t *testing.T) {
-	ln := newLocalListener(t)
-	defer func() { require.NoError(t, ln.Close()) }()
-	clientDone := make(chan bool)
-	serverDone := make(chan bool)
-	go func() {
-		defer close(serverDone)
-		c, err := ln.Accept()
-		if err != nil {
-			t.Errorf("Server accept: %v", err)
-			return
-		}
-		defer func() { _ = c.Close() }()
-		if err := serverHandle(c, t); err != nil {
-			t.Errorf("server error: %v", err)
-		}
-	}()
-	go func() {
-		defer close(clientDone)
-		cfg := &tls.Config{ServerName: "example.com", RootCAs: testRootCAs}
-
-		c := New()
-		err := c.Dial(context.Background(), ln.Addr().String())
-		if err != nil {
-			t.Errorf("Client dial: %v", err)
-			return
-		}
-
-		err = c.StartTLS(cfg, "")
-		require.NoError(t, err)
-
-		defer func() { require.NoError(t, c.Quit()) }()
-		cs, ok := c.TLSConnectionState()
-		if !ok {
-			t.Error("TLSConnectionState returned ok == false; want true")
-			return
-		}
-		if cs.Version == 0 || !cs.HandshakeComplete {
-			t.Errorf("ConnectionState = %#v; expect non-zero Version and HandshakeComplete", cs)
-		}
-	}()
-	<-clientDone
-	<-serverDone
-}
-
-func newLocalListener(t *testing.T) net.Listener {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		ln, err = net.Listen("tcp6", "[::1]:0")
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ln
-}
-
-type smtpSender struct {
-	w io.Writer
-}
-
-func (s smtpSender) send(t *testing.T, f string) {
-	_, err := s.w.Write([]byte(f + "\r\n"))
+	keypair, err := tester.GenX509KeyPair("example.com")
 	require.NoError(t, err)
-}
+	leaf, err := x509.ParseCertificate(keypair.Certificate[0])
+	require.NoError(t, err)
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
 
-// smtp server, finely tailored to deal with our own client only!
-func serverHandle(c net.Conn, t *testing.T) error {
-	send := func(d string) { smtpSender{c}.send(t, d) }
-	send("220 127.0.0.1 ESMTP service ready")
-	s := bufio.NewScanner(c)
-	for s.Scan() {
-		switch s.Text() {
-		case "EHLO localhost":
-			send("250-127.0.0.1 ESMTP offers a warm hug of welcome")
-			send("250-STARTTLS")
-			send("250 Ok")
-		case "STARTTLS":
-			send("220 Go ahead")
-			keypair, err := tls.X509KeyPair(localhostCert, localhostKey)
-			if err != nil {
-				return err
+	for _, pipelining := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pipelining=%v", pipelining), func(t *testing.T) {
+			f := &tester.FakeServer{
+				Extensions: []string{"STARTTLS", "PIPELINING"},
+				Handlers: map[string]tester.FakeHandler{"STARTTLS": func(s *tester.FakeSession, _ string) bool {
+					s.Reply("220 Go ahead")
+					s.StartTLS(&tls.Config{Certificates: []tls.Certificate{keypair}})
+					return true
+				}},
 			}
-			config := &tls.Config{Certificates: []tls.Certificate{keypair}}
-			c = tls.Server(c, config)
-			err = serverHandleTLS(c, t)
-			_ = c.Close()
-			return err
-		default:
-			t.Fatalf("unrecognized command: %q", s.Text())
-		}
+
+			c := New(WithPipelining(pipelining))
+			require.NoError(t, c.Dial(context.Background(), f.Listen(t)))
+			require.NoError(t, c.StartTLS(&tls.Config{ServerName: "example.com", RootCAs: roots}, ""))
+
+			cs, ok := c.TLSConnectionState()
+			require.True(t, ok)
+			require.NotZero(t, cs.Version)
+			require.True(t, cs.HandshakeComplete)
+
+			require.NoError(t, c.Quit())
+			if pipelining {
+				require.NoError(t, c.QuitResponse())
+			}
+			require.Equal(t, []string{"EHLO localhost", "STARTTLS", "EHLO localhost", "QUIT"}, f.Commands())
+		})
 	}
-	return s.Err()
 }
-
-func serverHandleTLS(c net.Conn, t *testing.T) error {
-	send := func(d string) { smtpSender{c}.send(t, d) }
-	s := bufio.NewScanner(c)
-	for s.Scan() {
-		switch s.Text() {
-		case "EHLO localhost", "MAIL FROM:<joe1@example.com>", "RCPT TO:<joe2@example.com>":
-			send("250 Ok")
-		case "DATA":
-			send("354 send the mail data, end with .")
-			send("250 Ok")
-		case "Subject: test", "", "howdy!", ".":
-		case "QUIT":
-			send("221 127.0.0.1 Service closing transmission channel")
-			return nil
-		default:
-			t.Fatalf("unrecognized command during TLS: %q", s.Text())
-		}
-	}
-	return s.Err()
-}
-
-var testRootCAs *x509.CertPool
-
-func init() {
-	testRootCAs = x509.NewCertPool()
-	testRootCAs.AppendCertsFromPEM(localhostCert)
-}
-
-// localhostCert is a PEM-encoded TLS cert generated from src/crypto/tls:
-//
-//	go run generate_cert.go --rsa-bits 1024 --host 127.0.0.1,::1,example.com \
-//			--ca --start-date "Jan 1 00:00:00 1970" --duration=1000000h
-var localhostCert = []byte(`
------BEGIN CERTIFICATE-----
-MIICFDCCAX2gAwIBAgIRAK0xjnaPuNDSreeXb+z+0u4wDQYJKoZIhvcNAQELBQAw
-EjEQMA4GA1UEChMHQWNtZSBDbzAgFw03MDAxMDEwMDAwMDBaGA8yMDg0MDEyOTE2
-MDAwMFowEjEQMA4GA1UEChMHQWNtZSBDbzCBnzANBgkqhkiG9w0BAQEFAAOBjQAw
-gYkCgYEA0nFbQQuOWsjbGtejcpWz153OlziZM4bVjJ9jYruNw5n2Ry6uYQAffhqa
-JOInCmmcVe2siJglsyH9aRh6vKiobBbIUXXUU1ABd56ebAzlt0LobLlx7pZEMy30
-LqIi9E6zmL3YvdGzpYlkFRnRrqwEtWYbGBf3znO250S56CCWH2UCAwEAAaNoMGYw
-DgYDVR0PAQH/BAQDAgKkMBMGA1UdJQQMMAoGCCsGAQUFBwMBMA8GA1UdEwEB/wQF
-MAMBAf8wLgYDVR0RBCcwJYILZXhhbXBsZS5jb22HBH8AAAGHEAAAAAAAAAAAAAAA
-AAAAAAEwDQYJKoZIhvcNAQELBQADgYEAbZtDS2dVuBYvb+MnolWnCNqvw1w5Gtgi
-NmvQQPOMgM3m+oQSCPRTNGSg25e1Qbo7bgQDv8ZTnq8FgOJ/rbkyERw2JckkHpD4
-n4qcK27WkEDBtQFlPihIM8hLIuzWoi/9wygiElTy/tVL3y7fGCvY2/k1KBthtZGF
-tN8URjVmyEo=
------END CERTIFICATE-----`)
-
-// localhostKey is the private key for localhostCert.
-var localhostKey = []byte(`
------BEGIN RSA PRIVATE KEY-----
-MIICXgIBAAKBgQDScVtBC45ayNsa16NylbPXnc6XOJkzhtWMn2Niu43DmfZHLq5h
-AB9+Gpok4icKaZxV7ayImCWzIf1pGHq8qKhsFshRddRTUAF3np5sDOW3QuhsuXHu
-lkQzLfQuoiL0TrOYvdi90bOliWQVGdGurAS1ZhsYF/fOc7bnRLnoIJYfZQIDAQAB
-AoGBAMst7OgpKyFV6c3JwyI/jWqxDySL3caU+RuTTBaodKAUx2ZEmNJIlx9eudLA
-kucHvoxsM/eRxlxkhdFxdBcwU6J+zqooTnhu/FE3jhrT1lPrbhfGhyKnUrB0KKMM
-VY3IQZyiehpxaeXAwoAou6TbWoTpl9t8ImAqAMY8hlULCUqlAkEA+9+Ry5FSYK/m
-542LujIcCaIGoG1/Te6Sxr3hsPagKC2rH20rDLqXwEedSFOpSS0vpzlPAzy/6Rbb
-PHTJUhNdwwJBANXkA+TkMdbJI5do9/mn//U0LfrCR9NkcoYohxfKz8JuhgRQxzF2
-6jpo3q7CdTuuRixLWVfeJzcrAyNrVcBq87cCQFkTCtOMNC7fZnCTPUv+9q1tcJyB
-vNjJu3yvoEZeIeuzouX9TJE21/33FaeDdsXbRhQEj23cqR38qFHsF1qAYNMCQQDP
-QXLEiJoClkR2orAmqjPLVhR3t2oB3INcnEjLNSq8LHyQEfXyaFfu4U9l5+fRPL2i
-jiC0k/9L5dHUsF0XZothAkEA23ddgRs+Id/HxtojqqUT27B8MT/IGNrYsp4DvS/c
-qgkeluku4GjxRlDMBuXk94xOBEinUs+p/hwP1Alll80Tpg==
------END RSA PRIVATE KEY-----`)
 
 var xtextClient = `MAIL FROM:<e=mc2@example.com> AUTH=e+3Dmc2@example.com
 RCPT TO:<e=mc2@example.com> ORCPT=UTF-8;e\x{3D}mc2@example.com
@@ -1102,10 +979,7 @@ func TestClientMTPRIORITY(t *testing.T) {
 }
 
 func TestClientDialControl(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer func() { _ = ln.Close() }()
-
+	addr := (&tester.FakeServer{}).Listen(t)
 	errRefused := errors.New("refused")
 	var seen []string
 	c := New(WithDialControl(func(_, address string, _ syscall.RawConn) error {
@@ -1113,13 +987,52 @@ func TestClientDialControl(t *testing.T) {
 		return errRefused
 	}))
 
-	err = c.Dial(context.Background(), ln.Addr().String())
+	err := c.Dial(context.Background(), addr)
 	require.ErrorIs(t, err, errRefused)
 
-	err = c.DialTLS(context.Background(), &tls.Config{ServerName: "example.com", RootCAs: testRootCAs}, ln.Addr().String())
+	err = c.DialTLS(context.Background(), &tls.Config{ServerName: "example.com"}, addr)
 	require.ErrorIs(t, err, errRefused)
 
-	require.Equal(t, []string{ln.Addr().String(), ln.Addr().String()}, seen)
+	require.Equal(t, []string{addr, addr}, seen)
+}
+
+func TestClientDialErrorCloses(t *testing.T) {
+	reject := func(s *tester.FakeSession, _ string) bool { s.Reply("554 go away"); return true }
+
+	for name, tc := range map[string]struct {
+		server *tester.FakeServer
+		opts   []Option
+		err    string
+	}{
+		"invalid local name": {
+			server: &tester.FakeServer{},
+			opts:   []Option{WithLocalName("evil\r\nRCPT TO:<x@example.com>")},
+			err:    "must not contain CR or LF",
+		},
+		"hello rejected": {
+			server: &tester.FakeServer{Handlers: map[string]tester.FakeHandler{"EHLO": reject, "HELO": reject}},
+			err:    "go away",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := New(tc.opts...)
+			require.ErrorContains(t, c.Dial(context.Background(), tc.server.Listen(t)), tc.err)
+			require.False(t, c.Connected())
+		})
+	}
+}
+
+func TestClientDialClosesExisting(t *testing.T) {
+	addr := (&tester.FakeServer{}).Listen(t)
+	c := New()
+	require.NoError(t, c.Dial(context.Background(), addr))
+	first := c.conn
+
+	// a failing dial must close the existing connection as well
+	require.Error(t, c.Dial(context.Background(), "127.0.0.1:0"))
+	require.False(t, c.Connected())
+	_, err := first.Write([]byte("NOOP\r\n"))
+	require.ErrorIs(t, err, net.ErrClosed)
 }
 
 func TestClientMaxResponseLines(t *testing.T) {

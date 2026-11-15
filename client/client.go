@@ -148,7 +148,11 @@ type VrfyOptions struct {
 
 // Dial returns a connection to an SMTP server at addr. The addr must
 // include a port, as in "mail.example.com:smtp".
+// An existing connection is closed first.
+// If an error occurs, the connection is closed.
 func (c *Client) Dial(ctx context.Context, addr string) error {
+	_ = c.Close()
+
 	conn, err := c.netDialer().DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return err
@@ -167,7 +171,11 @@ func (c *Client) netDialer() *net.Dialer {
 // The addr must include a port, as in "mail.example.com:smtps".
 //
 // A nil tlsConfig is equivalent to a zero tls.Config.
+// An existing connection is closed first.
+// If an error occurs, the connection is closed.
 func (c *Client) DialTLS(ctx context.Context, config *tls.Config, addr string) error {
+	_ = c.Close()
+
 	tlsDialer := tls.Dialer{
 		NetDialer: c.netDialer(),
 		Config:    config,
@@ -259,6 +267,7 @@ func (c *Client) greet() error {
 func (c *Client) Hello() error {
 	// verify if local name is valid
 	if strings.ContainsAny(c.cfg.localName, "\n\r") {
+		_ = c.Close()
 		return errors.New("smtp: the local name must not contain CR or LF")
 	}
 
@@ -381,7 +390,9 @@ func (c *Client) cmdValid(pType pipeliningType, expectCode int, message string) 
 		return err
 	}
 
-	if !c.PipeliningActive() || pType == pipeliningTypeLast {
+	// Only commands allowed anywhere in a pipelining group stay buffered,
+	// all others need their response now or conclude the group.
+	if !c.PipeliningActive() || pType != pipeliningTypeAnywhere {
 		err = c.sender.Flush()
 		if err != nil {
 			return err
