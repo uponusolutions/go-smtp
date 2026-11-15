@@ -39,6 +39,19 @@ func (s *FakeSession) Reply(lines ...string) {
 	}
 }
 
+// ReadMessage consumes the message after a 354 reply up to the terminating dot line.
+func (s *FakeSession) ReadMessage() error {
+	for {
+		l, err := s.r.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		if l == ".\r\n" {
+			return nil
+		}
+	}
+}
+
 // StartTLS upgrades the connection to TLS, the handshake runs on the next read.
 func (s *FakeSession) StartTLS(cfg *tls.Config) {
 	s.conn = tls.Server(s.conn, cfg)
@@ -119,11 +132,8 @@ func (f *FakeServer) serve(s *FakeSession) {
 			}
 		case "DATA":
 			s.Reply("354 go ahead")
-			for {
-				l, err := s.r.ReadString('\n')
-				if err != nil || l == ".\r\n" {
-					break
-				}
+			if s.ReadMessage() != nil {
+				return
 			}
 			s.Reply("250 queued")
 		case "QUIT":

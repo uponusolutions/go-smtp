@@ -146,25 +146,16 @@ type pipeliningPending struct {
 	data        bool
 }
 
+// On an error the transaction may still be open, the caller has to end it (see abort).
+// A nil writer without an error means every recipient was rejected, the transaction
+// is still open as well.
 func (c *Mailer) prepare(
-	ctx context.Context,
 	from string,
 	mailOptions *client.MailOptions,
 	rcpts []string,
 	rcptsOptions []*smtp.RcptOptions,
 	size int,
 ) (*client.ContentCloser, []resolve.Failure, error) {
-	if !c.client.Connected() {
-		err := c.Connect(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	if len(rcpts) < 1 {
-		return nil, nil, errors.New("no recipients")
-	}
-
 	if mailOptions == nil && size > 0 {
 		mailOptions = &client.MailOptions{
 			Size: int64(size),
@@ -199,15 +190,16 @@ func (c *Mailer) prepare(
 			if err != nil {
 				failures, err = rcptError(addr, c.cfg.abortOnRcptReject, failures, err)
 				if err != nil {
-					// reset open mail transfer
-					if errRset := c.reset(); errRset != nil {
-						return nil, failures, errors.Join(err, errRset)
-					}
-					return nil, nil, err
+					return nil, failures, err
 				}
 			}
 		}
 		pipelining.rcpts++
+	}
+
+	// Without pipelining every RCPT response is known, don't send DATA without a recipient.
+	if !c.client.PipeliningActive() && len(failures) == len(rcpts) {
+		return nil, failures, nil
 	}
 
 	// sync before calling data if abortOnRcptReject is true
@@ -263,9 +255,6 @@ func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, 
 				if errResponse := c.client.ClearResponses(0); errResponse != nil {
 					return nil, failures, errors.Join(err, errResponse)
 				}
-				if errReset := c.reset(); errReset != nil {
-					return nil, failures, errors.Join(err, errReset)
-				}
 				return nil, failures, err
 			}
 		}
@@ -275,9 +264,6 @@ func (c *Mailer) handleResponses(pipelining *pipeliningPending, rcpts []string, 
 		pipelining.data = false
 		w, err := c.client.ContentResponse(size)
 		if err != nil {
-			if errReset := c.reset(); errReset != nil {
-				return nil, failures, errors.Join(err, errReset)
-			}
 			return nil, failures, err
 		}
 
@@ -305,6 +291,20 @@ func (c *Mailer) reset() (err error) {
 		return err
 	}
 	return c.client.ResetResponse()
+}
+
+// abort ends a failed transaction and returns err.
+// An *smtp.Status error leaves the connection in sync, so it is kept after a successful RSET.
+// Any other error, or a failing RSET, leaves it in an unknown state and it is closed.
+func (c *Mailer) abort(err error) error {
+	if _, ok := err.(*smtp.Status); ok {
+		errReset := c.reset()
+		if errReset == nil {
+			return err
+		}
+		err = errors.Join(err, errReset)
+	}
+	return errors.Join(err, c.client.Close())
 }
 
 func rcptError(addr string, abortOnRcptReject bool, failures []resolve.Failure, err error) ([]resolve.Failure, error) {
@@ -369,41 +369,45 @@ func (c *Mailer) SendAdvanced(
 		size = wt.Len()
 	}
 
-	w, failures, err := c.prepare(ctx, from, mailOptions, rcpts, rcptsOptions, size)
-	if err != nil {
-		// if err isn't smtp.StatusBase we are in an unknown state, close connection
-		if _, ok := err.(*smtp.Status); !ok {
-			if errClose := c.client.Close(); errClose != nil {
-				err = errors.Join(err, errClose)
-			}
-			return nil, failures, err
-		}
-		return nil, failures, err
+	if len(rcpts) < 1 {
+		return nil, nil, errors.New("no recipients")
 	}
 
+	// Connect closes the connection on failure.
+	if !c.client.Connected() {
+		if err = c.Connect(ctx); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// From here on every failure has to end the transaction, otherwise the next
+	// Send on this connection runs into an open transaction.
+	w, failures, err := c.prepare(from, mailOptions, rcpts, rcptsOptions, size)
+	if err != nil {
+		return nil, failures, c.abort(err)
+	}
+
+	// every recipient was rejected
 	if w == nil {
+		if err = c.reset(); err != nil {
+			return nil, failures, errors.Join(err, c.client.Close())
+		}
 		return nil, failures, nil
 	}
 
-	_, err = io.Copy(w.Writer(), in)
-	if err != nil {
-		// if err isn't smtp.StatusBase we are in an unknown state, close connection
-		if _, ok := err.(*smtp.Status); !ok {
-			err = errors.Join(err, c.client.Close())
-		}
-		return nil, failures, err
+	if _, err = io.Copy(w.Writer(), in); err != nil {
+		// The message is only partly sent, the connection can't be reused. This includes a
+		// rejected BDAT chunk, which would leave it in sync, but can't be told apart from an
+		// *smtp.Status returned by in (e.g. the data reader of a server).
+		return nil, failures, errors.Join(err, c.client.Close())
 	}
 
 	status, err = w.CloseWithResponse()
-	// if err isn't smtp.StatusBase we are in an unknown state, close connection
-	if _, ok := err.(*smtp.Status); err != nil && !ok {
-		err = errors.Join(err, c.client.Close())
-	}
 	if err != nil {
-		return nil, failures, err
+		return nil, failures, c.abort(err)
 	}
 
-	return status, failures, err
+	return status, failures, nil
 }
 
 // Verify checks the validity of an email address on the server.
