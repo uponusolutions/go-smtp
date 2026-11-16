@@ -267,4 +267,25 @@ var (
 		EnhancedCode: EnhancedCode{5, 5, 1},
 		Lines:        []string{"Bad sequence of commands"},
 	}
+	// ErrNonASCIISender is returned if the MAIL address contains non-ASCII
+	// characters but SMTPUTF8 was not requested (RFC 6531 section 3.5).
+	ErrNonASCIISender = &Status{
+		Code:         550,
+		EnhancedCode: EnhancedCode{5, 6, 7},
+		Lines:        []string{"Non-ASCII addresses not permitted for that sender"},
+	}
+	// ErrNonASCIIRecipient is returned if a RCPT address contains non-ASCII
+	// characters but SMTPUTF8 was not requested (RFC 6531 section 3.5).
+	ErrNonASCIIRecipient = &Status{
+		Code:         553,
+		EnhancedCode: EnhancedCode{5, 6, 7},
+		Lines:        []string{"Non-ASCII addresses not permitted for that recipient"},
+	}
+	// ErrUTF8ReplyRequired is returned if the reply to VRFY requires UTF-8 but
+	// SMTPUTF8 was not requested (RFC 6531 section 3.7.4.2).
+	ErrUTF8ReplyRequired = &Status{
+		Code:         550,
+		EnhancedCode: EnhancedCode{5, 6, 8},
+		Lines:        []string{"UTF-8 string reply is required, but not permitted by the SMTP client"},
+	}
 )
