@@ -26,6 +26,10 @@ import (
 // consumed, so the connection is out of sync and must be closed.
 var errMessageTooLarge = errors.New("smtp: maximum message size exceeded")
 
+// errTooManyTransactions is returned by the MAIL handler if the client exceeded
+// the transactions per session, it can only continue in a new session.
+var errTooManyTransactions = errors.New("smtp: maximum transactions exceeded")
+
 type state int32
 
 const (
@@ -52,11 +56,12 @@ type Conn struct {
 	session    Session
 	binarymime bool
 
-	esmtp      bool     // set in helo / ehlo
-	helo       string   // set in helo / ehlo
-	mechanisms []string // seh in helo / ehlo
-	recipients int      // count recipients
-	didAuth    bool
+	esmtp        bool     // set in helo / ehlo
+	helo         string   // set in helo / ehlo
+	mechanisms   []string // seh in helo / ehlo
+	recipients   int      // count recipients
+	transactions int      // MAIL commands in this session (RFC 9422 MAILMAX)
+	didAuth      bool
 }
 
 // run loops until an error occurs (quit for example)
@@ -414,8 +419,8 @@ func (c *Conn) handleGreetResponse() *smtp.Status {
 	} else {
 		lines = append(lines, "SIZE")
 	}
-	if c.server.maxRecipients > 0 {
-		lines = append(lines, "LIMITS RCPTMAX="+strconv.Itoa(c.server.maxRecipients))
+	if limits := c.limits(); limits != "" {
+		lines = append(lines, "LIMITS"+limits)
 	}
 	if c.server.enableRRVS {
 		lines = append(lines, "RRVS")
@@ -437,6 +442,25 @@ func (c *Conn) handleGreetResponse() *smtp.Status {
 	}
 
 	return smtp.NewStatusM(250, smtp.NoEnhancedCode, lines)
+}
+
+// limits returns the RFC 9422 LIMITS parameters with a leading space, or ""
+// if there are none. Values are only valid from 1 to 999999, a larger limit
+// isn't advertised (but still enforced).
+func (c *Conn) limits() string {
+	var sb strings.Builder
+	for _, l := range []struct {
+		name  string
+		value int
+	}{
+		{"MAILMAX", c.server.maxTransactions},
+		{"RCPTMAX", c.server.maxRecipients},
+	} {
+		if l.value > 0 && l.value <= 999999 {
+			sb.WriteString(" " + l.name + "=" + strconv.Itoa(l.value))
+		}
+	}
+	return sb.String()
 }
 
 // handleError handles error and closes the connection afterwards.
@@ -461,6 +485,12 @@ func (c *Conn) handleError(err error) {
 			c.Close(nil)
 		}
 
+		return
+	}
+
+	if errors.Is(err, errTooManyTransactions) {
+		c.writeStatus(smtp.ErrTooManyTransactions)
+		c.Close(err)
 		return
 	}
 
@@ -495,6 +525,12 @@ func (c *Conn) logger() *slog.Logger {
 // READY state -> waiting for MAIL
 // nolint: revive
 func (c *Conn) handleMail(arg string) error {
+	// RFC 9422: every MAIL command counts, regardless of whether it succeeds.
+	c.transactions++
+	if c.server.maxTransactions > 0 && c.transactions > c.server.maxTransactions {
+		return errTooManyTransactions
+	}
+
 	arg, ok := parse.CutPrefixFold(arg, "FROM:")
 	if !ok {
 		return smtp.ErrMailSyntax

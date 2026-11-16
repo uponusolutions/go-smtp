@@ -2204,14 +2204,15 @@ func TestServer_DefaultMaxMessageBytes(t *testing.T) {
 	}
 }
 
-func TestServer_DefaultMaxRecipients(t *testing.T) {
+// RFC 9422: MAILMAX and RCPTMAX are advertised with their defaults.
+func TestServer_DefaultLimits(t *testing.T) {
 	_, s, c, _, caps := testServerEhlo(t, nil)
 	defer func() {
 		_ = s.Close()
 		_ = c.Close()
 	}()
 
-	want := "LIMITS RCPTMAX=1000"
+	want := "LIMITS MAILMAX=1000 RCPTMAX=1000"
 	if !caps[want] {
 		t.Fatalf("Missing capability %q, got %v", want, caps)
 	}

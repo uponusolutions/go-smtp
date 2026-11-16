@@ -273,6 +273,13 @@ var (
 		EnhancedCode: EnhancedCode{4, 3, 2},
 		Lines:        []string{"Too many concurrent connections, try again later"},
 	}
+	// ErrTooManyTransactions is returned if the client exceeded the
+	// transactions per session (RFC 9422 MAILMAX). The connection is closed.
+	ErrTooManyTransactions = &Status{
+		Code:         421,
+		EnhancedCode: EnhancedCode{4, 7, 0},
+		Lines:        []string{"Too many transactions in this session"},
+	}
 	// ErrIdleTimeout is returned if the client exceeded the read timeout.
 	ErrIdleTimeout = &Status{
 		Code:         421,

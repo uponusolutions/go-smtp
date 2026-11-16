@@ -26,6 +26,8 @@ type Server struct {
 	hostname string
 
 	maxRecipients int
+	// Max transactions (MAIL commands) per session.
+	maxTransactions int
 	// Max concurrent connections.
 	maxConnections int
 	// Max concurrent connections per remote IP.
@@ -142,6 +144,9 @@ func New(opts ...Option) *Server {
 		// RFC 5321 requires at least 100 recipients to be accepted.
 		maxRecipients: 1000,
 
+		// Exim's default for smtp_accept_max_per_connection.
+		maxTransactions: 1000,
+
 		// Protects against file descriptor and memory exhaustion while being
 		// high enough for a busy MTA.
 		maxConnections: 1000,
@@ -235,7 +240,8 @@ func WithMaxLineLength(maxLineLength int) Option {
 	}
 }
 
-// WithMaxRecipients sets the max recipients per mail.
+// WithMaxRecipients sets the max recipients per mail, advertised as
+// RFC 9422 RCPTMAX. Only accepted recipients count.
 // Defaults to 1000, zero (or a negative value) disables the limit.
 func WithMaxRecipients(maxRecipients int) Option {
 	return func(s *Server) {
@@ -259,6 +265,16 @@ func WithMaxConnections(maxConnections int) Option {
 func WithMaxConnectionsPerIP(maxConnectionsPerIP int) Option {
 	return func(s *Server) {
 		s.maxConnectionsPerIP = maxConnectionsPerIP
+	}
+}
+
+// WithMaxTransactions sets the max transactions per session, every MAIL
+// command counts, including rejected ones (RFC 9422 MAILMAX). Further MAIL
+// commands are answered with 421 4.7.0 and the connection is closed.
+// Defaults to 1000, zero (or a negative value) disables the limit.
+func WithMaxTransactions(maxTransactions int) Option {
+	return func(s *Server) {
+		s.maxTransactions = maxTransactions
 	}
 }
 
