@@ -1003,13 +1003,24 @@ func (c *Conn) handleData(arg string) error {
 	return c.accepted(uuid)
 }
 
+// discardBdat discards a BDAT chunk that isn't processed. Like a processed
+// chunk, it is limited to the maximum message size. A larger chunk isn't read,
+// it stays on the wire and the connection must be closed.
+func (c *Conn) discardBdat(size int64) error {
+	if c.server.maxMessageBytes > 0 && size > c.server.maxMessageBytes {
+		return errMessageTooLarge
+	}
+	_, err := c.receiver.Discard(int(size))
+	return err
+}
+
 func (c *Conn) handleBdatDiscard(arg string) error {
 	size, _, err := smtpreader.BdatArg(arg)
 	if err != nil {
 		return err
 	}
 	c.setDataDeadline()
-	if _, err = c.receiver.Discard(int(size)); err != nil {
+	if err = c.discardBdat(size); err != nil {
 		return err
 	}
 	if !c.server.enableCHUNKING {
@@ -1030,7 +1041,7 @@ func (c *Conn) handleBdat(arg string) error {
 
 	// at least a single recipient needs to be set
 	if c.recipients == 0 {
-		if _, err = c.receiver.Discard(int(size)); err != nil {
+		if err = c.discardBdat(size); err != nil {
 			return err
 		}
 		return smtp.ErrNoRecipients

@@ -224,7 +224,8 @@ func WithWriteTimeout(writeTimeout time.Duration) Option {
 	}
 }
 
-// WithMaxMessageBytes sets the max message size.
+// WithMaxMessageBytes sets the max message size. It also limits a BDAT chunk
+// that is discarded (e.g. sent without recipients).
 // Defaults to 32 MiB, zero (or a negative value) disables the limit.
 func WithMaxMessageBytes(maxMessageBytes int64) Option {
 	return func(s *Server) {

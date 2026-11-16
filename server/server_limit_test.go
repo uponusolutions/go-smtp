@@ -506,3 +506,53 @@ func limitTestServerRcpt(t *testing.T, opts ...server.Option) (*backend, net.Con
 
 	return be, c, scanner
 }
+
+// A BDAT chunk that isn't processed (wrong state, no recipients or CHUNKING
+// disabled) is discarded, limited to the maximum message size like a processed one.
+func TestServerLimit_BdatDiscard(t *testing.T) {
+	paths := []struct {
+		name     string
+		chunking bool
+		mail     bool
+		reply    string
+	}{
+		{name: "before MAIL", chunking: true, reply: "503 5.5.1 "},
+		{name: "no recipients", chunking: true, mail: true, reply: "502 5.5.1 "},
+		{name: "CHUNKING disabled", reply: "504 5.5.4 "},
+	}
+
+	for _, p := range paths {
+		for _, size := range []int{50, 51} {
+			t.Run(p.name+"/"+strconv.Itoa(size), func(t *testing.T) {
+				be := &backend{closeErrors: make(chan error, 1)}
+				be, s, c, scanner := testServerAuthenticated(t, be,
+					server.WithMaxMessageBytes(50),
+					server.WithEnableCHUNKING(p.chunking),
+				)
+				t.Cleanup(func() {
+					_ = c.Close()
+					_ = s.Close()
+				})
+
+				if p.mail {
+					_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+					require.True(t, strings.HasPrefix(readReply(t, c, scanner), "250 "))
+				}
+
+				// The chunk content must never be executed as commands.
+				payload := "RSET\r\nMAIL FROM:<smuggled@example.com>\r\n"
+				payload += strings.Repeat("x", size-len(payload))
+				_, _ = io.WriteString(c, "BDAT "+strconv.Itoa(size)+" LAST\r\n"+payload)
+
+				if size > 50 {
+					requireTooLargeAndClosed(t, be, c, scanner)
+					return
+				}
+
+				reply := readReply(t, c, scanner)
+				require.True(t, strings.HasPrefix(reply, p.reply), "got %q", reply)
+				requireSessionUsable(t, c, scanner)
+			})
+		}
+	}
+}
