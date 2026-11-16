@@ -26,6 +26,8 @@ type Server struct {
 	hostname string
 
 	maxRecipients int
+	// Max concurrent connections per remote IP.
+	maxConnectionsPerIP int
 	// Max line length for every command except data and bdat.
 	maxLineLength int
 	// Maximum size when receiving data and bdat.
@@ -104,6 +106,7 @@ type Server struct {
 	locker    sync.Mutex
 	listeners []net.Listener
 	conns     map[*Conn]struct{}
+	connsByIP map[string]int
 }
 
 // Backend returns the servers Backend.
@@ -116,14 +119,15 @@ type Option func(*Server)
 
 // New creates a new SMTP server.
 //
-// The server is bounded by default (line length, message size, recipients
-// and read/write timeouts). Each limit can be disabled explicitly by setting
-// it to zero with the corresponding option.
+// The server is bounded by default (line length, message size, recipients,
+// concurrent connections per IP and read/write timeouts). Each limit can be
+// disabled explicitly by setting it to zero with the corresponding option.
 func New(opts ...Option) *Server {
 	s := &Server{
-		done:     make(chan struct{}, 1),
-		conns:    make(map[*Conn]struct{}),
-		hostname: "localhost",
+		done:      make(chan struct{}, 1),
+		conns:     make(map[*Conn]struct{}),
+		connsByIP: make(map[string]int),
+		hostname:  "localhost",
 
 		// RFC 4954 extends the maximum line length of the AUTH command (and
 		// the SASL responses) to 12288 octets, which also covers commands with
@@ -135,6 +139,9 @@ func New(opts ...Option) *Server {
 
 		// RFC 5321 requires at least 100 recipients to be accepted.
 		maxRecipients: 1000,
+
+		// Common MTA default (e.g. Postfix smtpd_client_connection_count_limit).
+		maxConnectionsPerIP: 10,
 
 		// RFC 5321 (Section 4.5.3.2.7) recommends at least 5 minutes.
 		readTimeout: 5 * time.Minute,
@@ -227,6 +234,15 @@ func WithMaxLineLength(maxLineLength int) Option {
 func WithMaxRecipients(maxRecipients int) Option {
 	return func(s *Server) {
 		s.maxRecipients = maxRecipients
+	}
+}
+
+// WithMaxConnectionsPerIP sets the max concurrent connections per remote IP.
+// Further connections are answered with 421 4.3.2 and closed.
+// Defaults to 10, zero (or a negative value) disables the limit.
+func WithMaxConnectionsPerIP(maxConnectionsPerIP int) Option {
+	return func(s *Server) {
+		s.maxConnectionsPerIP = maxConnectionsPerIP
 	}
 }
 

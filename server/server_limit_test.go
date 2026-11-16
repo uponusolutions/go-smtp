@@ -300,3 +300,75 @@ func TestServerLimit_Bdat_BackendOwnTooLarge(t *testing.T) {
 
 	requireSessionUsable(t, c, scanner)
 }
+
+// dialGreeted opens a connection and returns the first reply line.
+func dialGreeted(t *testing.T, addr string) (net.Conn, string) {
+	t.Helper()
+
+	c, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+
+	scanner := bufio.NewScanner(c)
+	return c, readReply(t, c, scanner)
+}
+
+func TestServerLimit_ConnectionsPerIP(t *testing.T) {
+	tests := []struct {
+		name  string
+		opts  []server.Option
+		limit int
+	}{
+		{name: "default", limit: 10},
+		{name: "custom", opts: []server.Option{server.WithMaxConnectionsPerIP(2)}, limit: 2},
+		{name: "disabled", opts: []server.Option{server.WithMaxConnectionsPerIP(0)}, limit: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, s, c, scanner := testServerGreeted(t, nil, tt.opts...)
+			t.Cleanup(func() {
+				_ = c.Close()
+				_ = s.Close()
+			})
+			addr := c.RemoteAddr().String()
+
+			// The first connection is already open.
+			allowed := tt.limit
+			if allowed == 0 {
+				allowed = 20
+			}
+			conns := []net.Conn{c}
+			for range allowed - 1 {
+				cc, reply := dialGreeted(t, addr)
+				require.True(t, strings.HasPrefix(reply, "220 "), "got %q", reply)
+				conns = append(conns, cc)
+			}
+
+			if tt.limit == 0 {
+				return
+			}
+
+			cc, reply := dialGreeted(t, addr)
+			require.Equal(t, "421 4.3.2 Concurrent connections limit exceeded", reply)
+			if scan(t, cc, bufio.NewScanner(cc)) {
+				t.Fatal("expected connection to be closed")
+			}
+
+			// Closing a connection frees a slot.
+			_, _ = io.WriteString(conns[0], "QUIT\r\n")
+			require.True(t, strings.HasPrefix(readReply(t, c, scanner), "221 "))
+			_ = conns[0].Close()
+
+			require.Eventually(t, func() bool {
+				cc, err := net.Dial("tcp", addr)
+				if err != nil {
+					return false
+				}
+				defer func() { _ = cc.Close() }()
+				sc := bufio.NewScanner(cc)
+				return scan(t, cc, sc) && strings.HasPrefix(sc.Text(), "220 ")
+			}, 5*time.Second, 10*time.Millisecond)
+		})
+	}
+}

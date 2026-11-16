@@ -85,8 +85,18 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		receiver: smtpreader.NewReceiver(conn, s.readerSize, s.maxLineLength, 0),
 	}
 
+	var ip string
+	if s.maxConnectionsPerIP > 0 {
+		ip = remoteIP(conn)
+	}
+	limited := ip != ""
+
 	s.locker.Lock()
 	s.conns[c] = struct{}{}
+	if limited {
+		s.connsByIP[ip]++
+	}
+	exceeded := limited && s.connsByIP[ip] > s.maxConnectionsPerIP
 	s.locker.Unlock()
 
 	var err error
@@ -106,12 +116,23 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 		s.locker.Lock()
 		delete(s.conns, c)
+		if limited {
+			if s.connsByIP[ip]--; s.connsByIP[ip] <= 0 {
+				delete(s.connsByIP, ip)
+			}
+		}
 		s.locker.Unlock()
 
 		s.wg.Done()
 
 		cancel()
 	}()
+
+	if exceeded {
+		c.writeStatus(smtp.NewStatusS(421, smtp.EnhancedCode{4, 3, 2}, "Concurrent connections limit exceeded"))
+		c.Close(nil)
+		return
+	}
 
 	sctx, session, err := s.backend.NewSession(ctx, c)
 	if err != nil {
@@ -137,6 +158,14 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	// run always returns an error when finished
 	c.handleError(c.run())
+}
+
+// remoteIP returns the remote IP of a TCP connection, or "" for other networks.
+func remoteIP(conn net.Conn) string {
+	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+		return addr.IP.String()
+	}
+	return ""
 }
 
 // Listen listens on the network address s.Addr
