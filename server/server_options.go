@@ -26,6 +26,8 @@ type Server struct {
 	hostname string
 
 	maxRecipients int
+	// Max concurrent connections.
+	maxConnections int
 	// Max concurrent connections per remote IP.
 	maxConnectionsPerIP int
 	// Max line length for every command except data and bdat.
@@ -120,7 +122,7 @@ type Option func(*Server)
 // New creates a new SMTP server.
 //
 // The server is bounded by default (line length, message size, recipients,
-// concurrent connections per IP and read/write timeouts). Each limit can be
+// concurrent connections (total and per IP) and read/write timeouts). Each limit can be
 // disabled explicitly by setting it to zero with the corresponding option.
 func New(opts ...Option) *Server {
 	s := &Server{
@@ -139,6 +141,10 @@ func New(opts ...Option) *Server {
 
 		// RFC 5321 requires at least 100 recipients to be accepted.
 		maxRecipients: 1000,
+
+		// Protects against file descriptor and memory exhaustion while being
+		// high enough for a busy MTA.
+		maxConnections: 1000,
 
 		// Common MTA default (e.g. Postfix smtpd_client_connection_count_limit).
 		maxConnectionsPerIP: 10,
@@ -237,8 +243,18 @@ func WithMaxRecipients(maxRecipients int) Option {
 	}
 }
 
-// WithMaxConnectionsPerIP sets the max concurrent connections per remote IP.
+// WithMaxConnections sets the max concurrent connections.
 // Further connections are answered with 421 4.3.2 and closed.
+// Defaults to 1000, zero (or a negative value) disables the limit.
+func WithMaxConnections(maxConnections int) Option {
+	return func(s *Server) {
+		s.maxConnections = maxConnections
+	}
+}
+
+// WithMaxConnectionsPerIP sets the max concurrent connections per remote IP.
+// Further connections are answered with 421 4.7.0 and closed, like Postfix
+// does for smtpd_client_connection_count_limit.
 // Defaults to 10, zero (or a negative value) disables the limit.
 func WithMaxConnectionsPerIP(maxConnectionsPerIP int) Option {
 	return func(s *Server) {

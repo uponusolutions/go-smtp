@@ -313,15 +313,31 @@ func dialGreeted(t *testing.T, addr string) (net.Conn, string) {
 	return c, readReply(t, c, scanner)
 }
 
-func TestServerLimit_ConnectionsPerIP(t *testing.T) {
+func TestServerLimit_Connections(t *testing.T) {
+	noPerIP := server.WithMaxConnectionsPerIP(0)
+	perIP := "421 4.7.0 localhost Error: too many connections from 127.0.0.1"
+	total := "421 4.3.2 Too many concurrent connections, try again later"
+
 	tests := []struct {
-		name  string
-		opts  []server.Option
-		limit int
+		name string
+		opts []server.Option
+		// Connections that must be accepted.
+		accepted int
+		// Reply to the next connection, empty if it must be accepted.
+		rejected string
 	}{
-		{name: "default", limit: 10},
-		{name: "custom", opts: []server.Option{server.WithMaxConnectionsPerIP(2)}, limit: 2},
-		{name: "disabled", opts: []server.Option{server.WithMaxConnectionsPerIP(0)}, limit: 0},
+		{name: "per ip default", accepted: 10, rejected: perIP},
+		{name: "per ip custom", opts: []server.Option{server.WithMaxConnectionsPerIP(2)}, accepted: 2, rejected: perIP},
+		{name: "per ip disabled", opts: []server.Option{noPerIP}, accepted: 20},
+		{name: "total default", opts: []server.Option{noPerIP}, accepted: 1000, rejected: total},
+		{name: "total custom", opts: []server.Option{noPerIP, server.WithMaxConnections(2)}, accepted: 2, rejected: total},
+		{
+			name:     "total before per ip",
+			opts:     []server.Option{server.WithMaxConnections(2), server.WithMaxConnectionsPerIP(2)},
+			accepted: 2,
+			rejected: total,
+		},
+		{name: "total disabled", opts: []server.Option{noPerIP, server.WithMaxConnections(0)}, accepted: 1001},
 	}
 
 	for _, tt := range tests {
@@ -334,31 +350,25 @@ func TestServerLimit_ConnectionsPerIP(t *testing.T) {
 			addr := c.RemoteAddr().String()
 
 			// The first connection is already open.
-			allowed := tt.limit
-			if allowed == 0 {
-				allowed = 20
-			}
-			conns := []net.Conn{c}
-			for range allowed - 1 {
-				cc, reply := dialGreeted(t, addr)
+			for range tt.accepted - 1 {
+				_, reply := dialGreeted(t, addr)
 				require.True(t, strings.HasPrefix(reply, "220 "), "got %q", reply)
-				conns = append(conns, cc)
 			}
 
-			if tt.limit == 0 {
+			if tt.rejected == "" {
 				return
 			}
 
 			cc, reply := dialGreeted(t, addr)
-			require.Equal(t, "421 4.3.2 Concurrent connections limit exceeded", reply)
+			require.Equal(t, tt.rejected, reply)
 			if scan(t, cc, bufio.NewScanner(cc)) {
 				t.Fatal("expected connection to be closed")
 			}
 
 			// Closing a connection frees a slot.
-			_, _ = io.WriteString(conns[0], "QUIT\r\n")
+			_, _ = io.WriteString(c, "QUIT\r\n")
 			require.True(t, strings.HasPrefix(readReply(t, c, scanner), "221 "))
-			_ = conns[0].Close()
+			_ = c.Close()
 
 			require.Eventually(t, func() bool {
 				cc, err := net.Dial("tcp", addr)

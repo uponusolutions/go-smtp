@@ -956,7 +956,7 @@ func TestServer_authWrongMechanism(t *testing.T) {
 
 	_, _ = io.WriteString(c, "AUTH HI\r\n")
 	scanOk(t, c, scanner)
-	if !strings.HasPrefix(scanner.Text(), "502 ") {
+	if scanner.Text() != "504 5.5.4 Unrecognized authentication type" {
 		t.Fatal("Invalid AUTH response with wrong auth mechanism:", scanner.Text())
 	}
 }
@@ -1121,7 +1121,7 @@ func TestServer_anonymousUserError(t *testing.T) {
 
 	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
 	scanOk(t, c, scanner)
-	if scanner.Text() != "502 5.7.0 Please authenticate first" {
+	if scanner.Text() != "530 5.7.0 Authentication required" {
 		t.Fatal("Backend refused anonymous mail but client was permitted:", scanner.Text())
 	}
 }
