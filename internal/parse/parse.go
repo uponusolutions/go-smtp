@@ -3,7 +3,9 @@ package parse
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/uponusolutions/go-smtp"
 )
@@ -131,25 +133,37 @@ func (p *Parser) expectByte(ch byte) error {
 	return nil
 }
 
-// ReversePath parses a recipient.
+// ReversePath parses a Reverse-path (RFC 5321 section 4.1.2):
+//
+//	Reverse-path = Path / "<>"
 func (p *Parser) ReversePath() (string, error) {
 	if after, ok := strings.CutPrefix(p.S, "<>"); ok {
-		// remove leading whitespace after the reverse-path
+		if after != "" && after[0] != ' ' {
+			return "", fmt.Errorf("unexpected %q after null reverse-path", after[0])
+		}
+		// remove the separator after the reverse-path
 		p.S, _ = strings.CutPrefix(after, " ")
 		return "", nil
 	}
 	return p.Path()
 }
 
-// Path parses a recipient.
+// Path parses a Path (RFC 5321 section 4.1.2):
+//
+//	Path  = "<" [ A-d-l ":" ] Mailbox ">"
+//	A-d-l = At-domain *( "," At-domain )
+//
+// The source route (A-d-l) is parsed and discarded as required by RFC 5321
+// section 4.1.1.3 and appendix C. For compatibility with broken clients the
+// angle brackets may be omitted.
+//
+// The returned mailbox is in canonical form, see Mailbox.
 func (p *Parser) Path() (string, error) {
 	hasBracket := p.acceptByte('<')
-	if p.acceptByte('@') {
-		i := strings.IndexByte(p.S, ':')
-		if i < 0 {
-			return "", errors.New("malformed a-d-l")
+	if hasBracket && p.acceptByte('@') {
+		if err := p.adl(); err != nil {
+			return "", fmt.Errorf("in a-d-l: %v", err)
 		}
-		p.S = p.S[i+1:]
 	}
 	mbox, err := p.Mailbox()
 	if err != nil {
@@ -161,82 +175,270 @@ func (p *Parser) Path() (string, error) {
 		}
 	}
 
-	// remove leading whitespace after the reverse-path
+	if p.S != "" && p.S[0] != ' ' {
+		return "", fmt.Errorf("unexpected %q after path", p.S[0])
+	}
+
+	// remove the separator after the path
 	p.S, _ = strings.CutPrefix(p.S, " ")
 
 	return mbox, nil
 }
 
-// Mailbox parses a mailbox.
+// adl parses the remainder of an A-d-l (the leading '@' has been consumed)
+// including the terminating ':'.
+func (p *Parser) adl() error {
+	for {
+		if _, err := p.domain(); err != nil {
+			return err
+		}
+		if p.acceptByte(':') {
+			return nil
+		}
+		if err := p.expectByte(','); err != nil {
+			return err
+		}
+		if err := p.expectByte('@'); err != nil {
+			return err
+		}
+	}
+}
+
+// Mailbox parses a Mailbox (RFC 5321 section 4.1.2, extended by RFC 6531
+// section 3.3 for SMTPUTF8):
+//
+//	Mailbox    = Local-part "@" ( Domain / address-literal )
+//	Local-part = Dot-string / Quoted-string
+//
+// The returned mailbox is in canonical form: a quoted local-part whose
+// content is a valid Dot-string is returned unquoted (both forms are
+// equivalent), any other quoted local-part is returned as a Quoted-string
+// with only '"' and '\' escaped. A local-part starting with '"' is therefore
+// always quoted, and an unquoted local-part never contains '@', '"', '<', '>'
+// or whitespace.
 func (p *Parser) Mailbox() (string, error) {
 	localPart, err := p.localPart()
 	if err != nil {
 		return "", fmt.Errorf("in local-part: %v", err)
-	} else if localPart == "" {
-		return "", errors.New("local-part is empty")
 	}
 
 	if err := p.expectByte('@'); err != nil {
 		return "", err
 	}
 
-	var sb strings.Builder
-	sb.WriteString(localPart)
-	sb.WriteByte('@')
-
-	for {
-		ch, ok := p.peekByte()
-		if !ok {
-			break
+	var domain string
+	if ch, _ := p.peekByte(); ch == '[' {
+		domain, err = p.addressLiteral()
+		if err != nil {
+			return "", fmt.Errorf("in address-literal: %v", err)
 		}
-		if ch == ' ' || ch == '\t' || ch == '>' {
-			break
+	} else {
+		domain, err = p.domain()
+		if err != nil {
+			return "", fmt.Errorf("in domain: %v", err)
 		}
-		p.readByte()
-		sb.WriteByte(ch)
 	}
 
-	if strings.HasSuffix(sb.String(), "@") {
-		return "", errors.New("domain is empty")
-	}
-
-	return sb.String(), nil
+	return localPart + "@" + domain, nil
 }
 
+// localPart parses a Local-part and returns it in canonical form.
 func (p *Parser) localPart() (string, error) {
-	var sb strings.Builder
-
-	if p.acceptByte('"') { // quoted-string
-		for {
-			ch, ok := p.readByte()
-			switch ch {
-			case '\\':
-				ch, ok = p.readByte()
-			case '"':
-				return sb.String(), nil
-			default:
-			}
-			if !ok {
-				return "", errors.New("malformed quoted-string")
-			}
-			sb.WriteByte(ch)
+	if !p.acceptByte('"') {
+		s := p.dotString()
+		if !isDotString(s) {
+			return "", errors.New("malformed dot-string")
 		}
-	} else { // dot-string
-		for {
-			ch, ok := p.peekByte()
-			if !ok {
-				return sb.String(), nil
+		return s, nil
+	}
+
+	// Quoted-string   = DQUOTE *QcontentSMTP DQUOTE
+	// QcontentSMTP    = qtextSMTP / quoted-pairSMTP
+	// quoted-pairSMTP = %d92 %d32-126
+	// qtextSMTP       = %d32-33 / %d35-91 / %d93-126 / UTF8-non-ascii
+	var sb strings.Builder
+	for {
+		ch, ok := p.readByte()
+		if !ok {
+			return "", errors.New("unterminated quoted-string")
+		}
+		switch {
+		case ch == '"':
+			content := sb.String()
+			if !utf8.ValidString(content) {
+				return "", errors.New("invalid UTF-8 in quoted-string")
 			}
-			switch ch {
-			case '@':
-				return sb.String(), nil
-			case '(', ')', '<', '>', '[', ']', ':', ';', '\\', ',', '"', ' ', '\t':
-				return "", errors.New("malformed dot-string")
+			if isDotString(content) {
+				return content, nil
 			}
-			p.readByte()
-			sb.WriteByte(ch)
+			return quoteLocalPart(content), nil
+		case ch == '\\':
+			ch, ok = p.readByte()
+			if !ok || ch < 32 || ch > 126 {
+				return "", errors.New("malformed quoted-pair")
+			}
+		case ch < 32 || ch == 127:
+			return "", fmt.Errorf("invalid character %q in quoted-string", ch)
+		default:
+		}
+		sb.WriteByte(ch)
+	}
+}
+
+// dotString consumes the longest run of atext and '.' characters.
+func (p *Parser) dotString() string {
+	i := 0
+	for i < len(p.S) && (p.S[i] == '.' || isAtext(p.S[i])) {
+		i++
+	}
+	s := p.S[:i]
+	p.S = p.S[i:]
+	return s
+}
+
+// isDotString reports whether s is a Dot-string:
+//
+//	Dot-string = Atom *("."  Atom)
+//	Atom       = 1*atext
+func isDotString(s string) bool {
+	if s == "" || !utf8.ValidString(s) {
+		return false
+	}
+	for atom := range strings.SplitSeq(s, ".") {
+		if atom == "" {
+			return false
+		}
+		for i := 0; i < len(atom); i++ {
+			if !isAtext(atom[i]) {
+				return false
+			}
 		}
 	}
+	return true
+}
+
+// isAtext reports whether ch is atext (RFC 5322 section 3.2.3), extended by
+// UTF8-non-ascii octets (RFC 6531 section 3.3).
+func isAtext(ch byte) bool {
+	switch {
+	case 'a' <= ch && ch <= 'z', 'A' <= ch && ch <= 'Z', '0' <= ch && ch <= '9', ch >= 0x80:
+		return true
+	}
+	return strings.IndexByte("!#$%&'*+-/=?^_`{|}~", ch) >= 0
+}
+
+// quoteLocalPart returns content as a Quoted-string.
+func quoteLocalPart(content string) string {
+	var sb strings.Builder
+	sb.Grow(len(content) + 2)
+	sb.WriteByte('"')
+	for i := 0; i < len(content); i++ {
+		if content[i] == '"' || content[i] == '\\' {
+			sb.WriteByte('\\')
+		}
+		sb.WriteByte(content[i])
+	}
+	sb.WriteByte('"')
+	return sb.String()
+}
+
+// domain parses a Domain (RFC 5321 section 4.1.2, extended by RFC 6531
+// section 3.3 for U-labels):
+//
+//	Domain     = sub-domain *("." sub-domain)
+//	sub-domain = Let-dig [Ldh-str] / U-label
+func (p *Parser) domain() (string, error) {
+	i := 0
+	for i < len(p.S) && (p.S[i] == '.' || p.S[i] == '-' || isLetDig(p.S[i])) {
+		i++
+	}
+	d := p.S[:i]
+	if d == "" {
+		return "", errors.New("domain is empty")
+	}
+	if !utf8.ValidString(d) {
+		return "", errors.New("invalid UTF-8 in domain")
+	}
+	for label := range strings.SplitSeq(d, ".") {
+		if label == "" || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", fmt.Errorf("malformed domain %q", d)
+		}
+	}
+	p.S = p.S[i:]
+	return d, nil
+}
+
+// isLetDig reports whether ch is Let-dig, extended by UTF8-non-ascii octets.
+func isLetDig(ch byte) bool {
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || '0' <= ch && ch <= '9' || ch >= 0x80
+}
+
+// addressLiteral parses an address-literal (RFC 5321 section 4.1.3):
+//
+//	address-literal         = "[" ( IPv4-address-literal /
+//	                          IPv6-address-literal /
+//	                          General-address-literal ) "]"
+//	IPv6-address-literal    = "IPv6:" IPv6-addr
+//	General-address-literal = Standardized-tag ":" 1*dcontent
+//	Standardized-tag        = Ldh-str
+//	dcontent                = %d33-90 / %d94-126
+func (p *Parser) addressLiteral() (string, error) {
+	end := strings.IndexByte(p.S, ']')
+	if p.S == "" || p.S[0] != '[' || end < 0 {
+		return "", errors.New("malformed address-literal")
+	}
+	lit := p.S[1:end]
+	for i := 0; i < len(lit); i++ {
+		if lit[i] < 33 || lit[i] > 126 || lit[i] == '[' || lit[i] == '\\' {
+			return "", fmt.Errorf("invalid character %q in address-literal", lit[i])
+		}
+	}
+
+	tag, value, hasTag := strings.Cut(lit, ":")
+	switch {
+	case !hasTag:
+		if addr, err := netip.ParseAddr(lit); err != nil || !addr.Is4() {
+			return "", fmt.Errorf("malformed IPv4 address-literal %q", lit)
+		}
+	case strings.EqualFold(tag, "IPv6"):
+		addr, err := netip.ParseAddr(value)
+		if err != nil || !addr.Is6() || addr.Zone() != "" {
+			return "", fmt.Errorf("malformed IPv6 address-literal %q", lit)
+		}
+	default:
+		if !isLdhStr(tag) || value == "" {
+			return "", fmt.Errorf("malformed general address-literal %q", lit)
+		}
+	}
+
+	s := p.S[:end+1]
+	p.S = p.S[end+1:]
+	return s, nil
+}
+
+// isLdhStr reports whether s is Let-dig [Ldh-str] (ASCII only).
+func isLdhStr(s string) bool {
+	if s == "" || s[0] == '-' || s[len(s)-1] == '-' {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch >= 0x80 || ch != '-' && !isLetDig(ch) {
+			return false
+		}
+	}
+	return true
+}
+
+// IsASCII reports whether s only contains ASCII characters. Addresses
+// containing non-ASCII characters require SMTPUTF8 (RFC 6531).
+func IsASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 // IsPrintableASCII checks if string contains only printable ascii.

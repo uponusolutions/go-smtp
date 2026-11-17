@@ -99,6 +99,9 @@ type Server struct {
 	// Default value of NONE to advertise no specific profile.
 	mtPriorityProfile smtp.PriorityProfile
 
+	// Additional check for every parsed mailbox, nil means no check.
+	addressValidator func(addr string) error
+
 	// The server backend.
 	backend Backend
 
@@ -154,6 +157,10 @@ func New(opts ...Option) *Server {
 		// Common MTA default (e.g. Postfix smtpd_client_connection_count_limit).
 		maxConnectionsPerIP: 10,
 
+		// RFC 6531 allows them, but invisible and direction changing characters
+		// make an address look different from what it is.
+		addressValidator: UTF8Clean,
+
 		// RFC 5321 (Section 4.5.3.2.7) recommends at least 5 minutes.
 		readTimeout: 5 * time.Minute,
 
@@ -187,6 +194,24 @@ func WithLogger(logger *slog.Logger) Option {
 func WithBackend(backend Backend) Option {
 	return func(s *Server) {
 		s.backend = backend
+	}
+}
+
+// WithAddressValidator sets a function which is called for every mailbox
+// (MAIL FROM, RCPT TO and VRFY) after it has been parsed and checked for
+// SMTPUTF8, before it is passed to the session. The null reverse-path "<>" of
+// MAIL FROM is not an address and is not validated.
+//
+// A non-nil error rejects the command. A *smtp.Status with a negative reply is
+// sent to the client as it is, any other error results in 553 5.1.7 (MAIL) or
+// 553 5.1.3 (RCPT and VRFY). A rejected recipient is not counted.
+//
+// The addresses are in the canonical form returned by the parser. To keep
+// the default check, call UTF8Clean from a custom validator.
+// Defaults to UTF8Clean, nil disables the check.
+func WithAddressValidator(validator func(addr string) error) Option {
+	return func(s *Server) {
+		s.addressValidator = validator
 	}
 }
 
