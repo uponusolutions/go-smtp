@@ -1,5 +1,9 @@
 # go-smtp
 
+> [!IMPORTANT]
+> This repository is no longer maintained. Development continues at
+> [uponusolutions/deltasmtp](https://github.com/uponusolutions/deltasmtp).
+
 [![coverage](https://raw.githubusercontent.com/uponusolutions/go-smtp/badges/.badges/main/coverage.svg)](https://uponusolutions.github.io/go-smtp/coverage/)
 [![reference](https://pkg.go.dev/badge/github.com/uponusolutions/go-smtp.svg)](https://pkg.go.dev/github.com/uponusolutions/go-smtp)
 
