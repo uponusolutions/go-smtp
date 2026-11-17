@@ -53,15 +53,28 @@ type Conn struct {
 
 	server *Server
 
-	session    Session
-	binarymime bool
+	session Session
+	client  clientState // what the client negotiated
+	tx      transaction // current mail transaction
 
-	esmtp        bool     // set in helo / ehlo
-	helo         string   // set in helo / ehlo
-	mechanisms   []string // seh in helo / ehlo
-	recipients   int      // count recipients
-	transactions int      // MAIL commands in this session (RFC 9422 MAILMAX)
-	didAuth      bool
+	transactions int // MAIL commands in this session (RFC 9422 MAILMAX)
+}
+
+// clientState holds what the server knows about the client. It is discarded
+// after STARTTLS (RFC 3207 section 4.2).
+type clientState struct {
+	esmtp      bool     // EHLO was used instead of HELO
+	helo       string   // domain given in HELO / EHLO
+	mechanisms []string // auth mechanisms offered in EHLO
+	didAuth    bool     // client is authenticated
+}
+
+// transaction holds the state of a mail transaction. It is reset by MAIL,
+// RSET and after the message has been received.
+type transaction struct {
+	binarymime bool // BODY=BINARYMIME was given in MAIL
+	smtputf8   bool // SMTPUTF8 was given in MAIL
+	recipients int  // number of accepted recipients
 }
 
 // run loops until an error occurs (quit for example)
@@ -187,7 +200,7 @@ func (c *Conn) handleStateGreeted(cmd string, arg string) error {
 	case "QUIT":
 		return smtp.Quit
 	case "AUTH":
-		if len(c.mechanisms) > 0 {
+		if len(c.client.mechanisms) > 0 {
 			return c.handleAuth(arg)
 		}
 		return smtp.ErrAuthUnsupported
@@ -302,17 +315,17 @@ func (c *Conn) IsTLS() bool {
 
 // Hostname returns the name of the connected client.
 func (c *Conn) Hostname() string {
-	return c.helo
+	return c.client.helo
 }
 
-// Esmtp returns true if esmtp was used (helo instead of ehlo).
+// Esmtp returns true if ESMTP was used (EHLO instead of HELO).
 func (c *Conn) Esmtp() bool {
-	return c.esmtp
+	return c.client.esmtp
 }
 
 // Mechanisms returns the allowed auth mechanism for this connection.
 func (c *Conn) Mechanisms() []string {
-	return c.mechanisms
+	return c.client.mechanisms
 }
 
 // Conn returns the connection.
@@ -336,13 +349,13 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 		return smtp.ErrHeloArgRequired
 	}
 
-	// c.helo is populated before NewSession so
+	// c.client.esmtp is populated before NewSession so
 	// NewSession can access it via Conn.Esmtp.
-	c.esmtp = esmtp
+	c.client.esmtp = esmtp
 
-	// c.helo is populated before NewSession so
+	// c.client.helo is populated before NewSession so
 	// NewSession can access it via Conn.Hostname.
-	c.helo = domain
+	c.client.helo = domain
 
 	// RFC 5321: "An EHLO command MAY be issued by a client later in the session"
 	// RFC 5321: "... the SMTP server MUST clear all buffers
@@ -356,19 +369,19 @@ func (c *Conn) handleGreet(esmtp bool, arg string) error {
 
 	if c.server.enforceSecureConnection && !c.IsTLS() {
 		c.state = stateEnforceSecureConnection
-	} else if c.server.enforceAuthentication && !c.didAuth {
+	} else if c.server.enforceAuthentication && !c.client.didAuth {
 		c.state = stateEnforceAuthentication
 	} else {
 		c.state = stateGreeted
 	}
 
 	if !esmtp {
-		return smtp.NewStatusS(250, smtp.NoEnhancedCode, c.server.hostname+" greets "+c.helo)
+		return smtp.NewStatusS(250, smtp.NoEnhancedCode, c.server.hostname+" greets "+c.client.helo)
 	}
 
-	c.mechanisms = c.session.AuthMechanisms(c.ctx)
+	c.client.mechanisms = c.session.AuthMechanisms(c.ctx)
 
-	if len(c.mechanisms) == 0 && c.server.enforceAuthentication {
+	if len(c.client.mechanisms) == 0 && c.server.enforceAuthentication {
 		// without any auth mechanism, no authentication can happen => deadlock
 		return c.newStatusError(smtp.ErrNoAuthMechanism, err)
 	}
@@ -382,7 +395,7 @@ func (c *Conn) handleGreetResponse() *smtp.Status {
 	// 17 lines is the current maximum
 	lines := make([]string, 0, 17)
 
-	lines = append(lines, c.server.hostname+" greets "+c.helo)
+	lines = append(lines, c.server.hostname+" greets "+c.client.helo)
 	lines = append(lines, "PIPELINING")
 	lines = append(lines, "8BITMIME")
 	lines = append(lines, "ENHANCEDSTATUSCODES")
@@ -393,8 +406,8 @@ func (c *Conn) handleGreetResponse() *smtp.Status {
 	if !isTLS && c.server.tlsConfig != nil {
 		lines = append(lines, "STARTTLS")
 	}
-	if len(c.mechanisms) > 0 {
-		lines = append(lines, "AUTH "+strings.Join(c.mechanisms, " "))
+	if len(c.client.mechanisms) > 0 {
+		lines = append(lines, "AUTH "+strings.Join(c.client.mechanisms, " "))
 	}
 	if c.server.enableSMTPUTF8 {
 		lines = append(lines, "SMTPUTF8")
@@ -548,7 +561,7 @@ func (c *Conn) handleMail(arg string) error {
 
 	opts := &smtp.MailOptions{}
 
-	c.binarymime = false
+	c.tx = transaction{}
 	// This is where the Conn may put BODY=8BITMIME, but we already
 	// read the DATA as bytes, so it does not effect our processing.
 	for _, arg := range args {
@@ -590,7 +603,7 @@ func (c *Conn) handleMail(arg string) error {
 				if !c.server.enableBINARYMIME {
 					return smtp.ErrBINARYMIMENotImplemented
 				}
-				c.binarymime = true
+				c.tx.binarymime = true
 			case smtp.Body7Bit, smtp.Body8BitMIME:
 				// This space is intentionally left blank
 			default:
@@ -646,6 +659,19 @@ func (c *Conn) handleMail(arg string) error {
 		}
 	}
 
+	if !opts.UTF8 && !parse.IsASCII(from) {
+		return smtp.ErrNonASCIISender
+	}
+
+	// The null reverse-path is not an address.
+	if from != "" {
+		if err := c.validateAddress(from, smtp.ErrSenderNotAccepted); err != nil {
+			return err
+		}
+	}
+
+	c.tx.smtputf8 = opts.UTF8
+
 	if err := c.session.Mail(c.ctx, from, opts); err != nil {
 		if smtpErr, ok := err.(*smtp.Status); ok {
 			// a positive response also counts as a success
@@ -678,6 +704,27 @@ func handleMailBY(server *Server, opts *smtp.MailOptions, value string) error {
 	return nil
 }
 
+// validateAddress calls the address validator of the server, if set.
+// If it returns an error that is not a negative *smtp.Status, the reply is
+// rejected, a 553 (mailbox name not allowed, RFC 5321 section 4.2.2).
+func (c *Conn) validateAddress(addr string, rejected *smtp.Status) error {
+	if c.server.addressValidator == nil {
+		return nil
+	}
+
+	err := c.server.addressValidator(addr)
+	if err == nil {
+		return nil
+	}
+
+	if status, ok := err.(*smtp.Status); ok && status.Positive() {
+		// A positive reply would end the command without a result.
+		err = errors.New("address validator returned a positive reply")
+	}
+
+	return c.newStatusError(rejected, err)
+}
+
 func handleMailMTPRIORITY(server *Server, opts *smtp.MailOptions, value string) error {
 	if !server.enableMTPRIORITY {
 		return smtp.ErrMTPRIORITYNotImplemented
@@ -705,8 +752,15 @@ func (c *Conn) handleRcpt(arg string) error {
 	if err != nil {
 		return smtp.ErrRcptSyntax
 	}
+	if !c.tx.smtputf8 && !parse.IsASCII(recipient) {
+		return smtp.ErrNonASCIIRecipient
+	}
 
-	if c.server.maxRecipients > 0 && c.recipients >= c.server.maxRecipients {
+	if err := c.validateAddress(recipient, smtp.ErrRcptAddressNotAccepted); err != nil {
+		return err
+	}
+
+	if c.server.maxRecipients > 0 && c.tx.recipients >= c.server.maxRecipients {
 		return smtp.NewStatusS(452, smtp.EnhancedCode{4, 5, 3},
 			fmt.Sprintf("Maximum limit of %v recipients reached", c.server.maxRecipients),
 		)
@@ -742,14 +796,14 @@ func (c *Conn) handleRcpt(arg string) error {
 		if smtpErr, ok := err.(*smtp.Status); ok {
 			// a positive response also counts as a success
 			if smtpErr.Positive() {
-				c.recipients++
+				c.tx.recipients++
 			}
 			return smtpErr
 		}
 		return c.newStatusError(smtp.ErrRcptNotAccepted, err)
 	}
 
-	c.recipients++
+	c.tx.recipients++
 	return smtp.NewStatusS(250, smtp.EnhancedCode{2, 0, 0}, fmt.Sprintf("I'll make sure <%v> gets this", recipient))
 }
 
@@ -815,6 +869,13 @@ func (c *Conn) handleVrfy(arg string) error {
 			opts.UTF8 = true
 		}
 	}
+	if !opts.UTF8 && !parse.IsASCII(vrfy) {
+		return smtp.ErrUTF8ReplyRequired
+	}
+
+	if err := c.validateAddress(vrfy, smtp.ErrVrfyAddressNotAccepted); err != nil {
+		return err
+	}
 
 	res := c.session.Verify(c.ctx, vrfy, opts)
 
@@ -826,7 +887,7 @@ func (c *Conn) handleVrfy(arg string) error {
 }
 
 func (c *Conn) handleAuth(arg string) error {
-	if c.didAuth {
+	if c.client.didAuth {
 		return smtp.ErrAlreadyAuthenticated
 	}
 	parts := strings.Fields(arg)
@@ -837,7 +898,7 @@ func (c *Conn) handleAuth(arg string) error {
 	mechanism := strings.ToUpper(parts[0])
 
 	// Is mechanism allowed?
-	if !slices.Contains(c.mechanisms, mechanism) {
+	if !slices.Contains(c.client.mechanisms, mechanism) {
 		return smtp.ErrAuthUnknownMechanism
 	}
 
@@ -894,7 +955,7 @@ func (c *Conn) handleAuth(arg string) error {
 		}
 	}
 
-	c.didAuth = true
+	c.client.didAuth = true
 	if c.state == stateEnforceAuthentication {
 		c.state = stateGreeted
 	}
@@ -935,6 +996,11 @@ func (c *Conn) handleStartTLS() error {
 	c.conn = tlsConn
 	c.receiver.Reset(tlsConn)
 	c.sender.Reset(tlsConn)
+	// RFC 3207 section 4.2: the server MUST discard any knowledge obtained
+	// from the client, such as the argument to the EHLO command, which was
+	// not obtained from the TLS negotiation itself. This also revokes the
+	// authentication.
+	c.client = clientState{}
 	c.state = stateUpgrade // same as StateInit but calls logout/reset on ehlo/helo
 
 	return nil
@@ -943,14 +1009,14 @@ func (c *Conn) handleStartTLS() error {
 // DATA
 func (c *Conn) handleData(arg string) error {
 	// at least a single recipient needs to be set
-	if c.recipients == 0 {
+	if c.tx.recipients == 0 {
 		return smtp.ErrNoRecipients
 	}
 
 	if arg != "" {
 		return smtp.ErrDataArgs
 	}
-	if c.binarymime {
+	if c.tx.binarymime {
 		return smtp.ErrDataBINARYMIME
 	}
 
@@ -1040,7 +1106,7 @@ func (c *Conn) handleBdat(arg string) error {
 	c.setDataDeadline()
 
 	// at least a single recipient needs to be set
-	if c.recipients == 0 {
+	if c.tx.recipients == 0 {
 		if err = c.discardBdat(size); err != nil {
 			return err
 		}
@@ -1179,15 +1245,9 @@ func (c *Conn) reset() error {
 		c.state = stateGreeted
 	}
 
-	c.recipients = 0
+	c.tx = transaction{}
 
-	upgrade := c.state == stateUpgrade
-
-	// Authentication is only revoked if starttls is used.
-	if upgrade {
-		c.didAuth = false
-	}
-	ctx, err := c.session.Reset(c.ctx, upgrade)
+	ctx, err := c.session.Reset(c.ctx, c.state == stateUpgrade)
 	c.ctx = ctx
 	return err
 }

@@ -346,6 +346,20 @@ var (
 		EnhancedCode: EnhancedCode{5, 5, 4},
 		Lines:        []string{"Unknown MAIL FROM argument"},
 	}
+	// ErrNonASCIISender is returned if the MAIL address contains non-ASCII
+	// characters but SMTPUTF8 was not requested (RFC 6531 section 3.5).
+	ErrNonASCIISender = &Status{
+		Code:         550,
+		EnhancedCode: EnhancedCode{5, 6, 7},
+		Lines:        []string{"Non-ASCII addresses not permitted for that sender"},
+	}
+	// ErrSenderNotAccepted is returned if the address validator rejected the
+	// MAIL address (RFC 5321 section 4.2.2).
+	ErrSenderNotAccepted = &Status{
+		Code:         553,
+		EnhancedCode: EnhancedCode{5, 1, 7},
+		Lines:        []string{"Sender address not accepted"},
+	}
 	// ErrMailNotAccepted is returned if the backend rejected MAIL with a non-SMTP error.
 	ErrMailNotAccepted = &Status{
 		Code:         451,
@@ -487,6 +501,20 @@ var (
 		EnhancedCode: EnhancedCode{5, 5, 4},
 		Lines:        []string{"Unknown RCPT TO argument"},
 	}
+	// ErrNonASCIIRecipient is returned if a RCPT address contains non-ASCII
+	// characters but SMTPUTF8 was not requested (RFC 6531 section 3.5).
+	ErrNonASCIIRecipient = &Status{
+		Code:         553,
+		EnhancedCode: EnhancedCode{5, 6, 7},
+		Lines:        []string{"Non-ASCII addresses not permitted for that recipient"},
+	}
+	// ErrRcptAddressNotAccepted is returned if the address validator rejected a
+	// RCPT address (RFC 5321 section 4.2.2).
+	ErrRcptAddressNotAccepted = &Status{
+		Code:         553,
+		EnhancedCode: EnhancedCode{5, 1, 3},
+		Lines:        []string{"Recipient address not accepted"},
+	}
 	// ErrRcptNotAccepted is returned if the backend rejected RCPT with a non-SMTP error.
 	ErrRcptNotAccepted = &Status{
 		Code:         451,
@@ -543,6 +571,20 @@ var (
 		Code:         501,
 		EnhancedCode: EnhancedCode{5, 5, 4},
 		Lines:        []string{"Unable to parse VRFY ESMTP parameters"},
+	}
+	// ErrUTF8ReplyRequired is returned if the reply to VRFY requires UTF-8 but
+	// SMTPUTF8 was not requested (RFC 6531 section 3.7.4.2).
+	ErrUTF8ReplyRequired = &Status{
+		Code:         550,
+		EnhancedCode: EnhancedCode{5, 6, 8},
+		Lines:        []string{"UTF-8 string reply is required, but not permitted by the SMTP client"},
+	}
+	// ErrVrfyAddressNotAccepted is returned if the address validator rejected
+	// the VRFY address (RFC 5321 section 4.2.2).
+	ErrVrfyAddressNotAccepted = &Status{
+		Code:         553,
+		EnhancedCode: EnhancedCode{5, 1, 3},
+		Lines:        []string{"Address not accepted"},
 	}
 
 	// AUTH errors.

@@ -135,6 +135,16 @@ logger.
 STARTTLS and QUIT until the connection is encrypted, and
 `server.WithEnforceAuthentication` does the same until authentication succeeded.
 
+Every address in MAIL FROM, RCPT TO and VRFY is checked by an address
+validator before it reaches the session; a rejected address gets 553 5.1.7
+(MAIL) or 553 5.1.3 (RCPT and VRFY). The default, `server.UTF8Clean`, rejects
+addresses with characters that make them look different from what they are,
+which RFC 6531 otherwise allows: bidirectional formatting characters, line and
+paragraph separators, and zero width space, word joiner and byte order mark.
+ASCII addresses are always accepted. `server.WithAddressValidator` replaces the
+check (call `server.UTF8Clean` from it to keep the default) and `nil` disables
+it.
+
 ## Extensions
 
 | Extension | RFC | Client | Server |

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -631,6 +632,43 @@ func TestServerSMTPUTF8(t *testing.T) {
 	}
 }
 
+func TestServerSMTPUTF8_NonASCIIAddress(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableSMTPUTF8(true))
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	cmd := func(line, want string) {
+		t.Helper()
+		_, _ = io.WriteString(c, line+"\r\n")
+		scanOk(t, c, scanner)
+		require.True(t, strings.HasPrefix(scanner.Text(), want), "%q: got %q, want prefix %q", line, scanner.Text(), want)
+	}
+
+	// Without SMTPUTF8 non-ASCII addresses are rejected.
+	cmd("MAIL FROM:<jösé@example.org>", "550 5.6.7 ")
+	cmd("VRFY <jösé@example.org>", "550 5.6.8 ")
+	cmd("MAIL FROM:<alice@example.org>", "250 ")
+	cmd("RCPT TO:<jösé@example.org>", "553 5.6.7 ")
+	cmd("RCPT TO:<bob@bücher.example>", "553 5.6.7 ")
+	cmd("RSET", "250 ")
+
+	// With SMTPUTF8 they are accepted.
+	cmd("VRFY <jösé@example.org> SMTPUTF8", "252 ")
+	cmd("MAIL FROM:<jösé@example.org> SMTPUTF8", "250 ")
+	cmd("RCPT TO:<bob@bücher.example>", "250 ")
+	cmd("DATA", "354 ")
+	cmd("Hey\r\n.", "250 ")
+	require.Len(t, be.messages, 1)
+	require.Equal(t, "jösé@example.org", be.messages[0].From)
+	require.Equal(t, []string{"bob@bücher.example"}, be.messages[0].To)
+
+	// The SMTPUTF8 parameter only applies to its own transaction.
+	cmd("MAIL FROM:<alice@example.org>", "250 ")
+	cmd("RCPT TO:<bob@bücher.example>", "553 5.6.7 ")
+}
+
 func TestServerSMTPUTF8_Disabled(t *testing.T) {
 	_, s, c, scanner := testServerAuthenticated(t, nil)
 	defer func() {
@@ -732,6 +770,65 @@ func TestServerEmptyTo(t *testing.T) {
 	scanOk(t, c, scanner)
 	if strings.HasPrefix(scanner.Text(), "250 ") {
 		t.Fatal("Invalid RCPT response:", scanner.Text())
+	}
+}
+
+func TestServerQuotedAddress(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t, nil)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	_, _ = io.WriteString(c, "MAIL FROM:<\"root\"@nsa.gov>\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid MAIL response:", scanner.Text())
+	}
+
+	for _, rcpt := range []string{
+		`<"x> NOTIFY=NEVER ORCPT=rfc822;y"@example.org>`,
+		`<"user@internal"@example.org>`,
+	} {
+		_, _ = io.WriteString(c, "RCPT TO:"+rcpt+"\r\n")
+		scanOk(t, c, scanner)
+		if !strings.HasPrefix(scanner.Text(), "250 ") {
+			t.Fatal("Invalid RCPT response:", scanner.Text())
+		}
+	}
+
+	for _, rcpt := range []string{"<a@b@c>", "a@b@c", "<a..b@example.org>", "<a@example.org>x"} {
+		_, _ = io.WriteString(c, "RCPT TO:"+rcpt+"\r\n")
+		scanOk(t, c, scanner)
+		if !strings.HasPrefix(scanner.Text(), "501 5.5.2 ") {
+			t.Fatalf("Invalid RCPT response for %q: %v", rcpt, scanner.Text())
+		}
+	}
+
+	_, _ = io.WriteString(c, "DATA\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "354 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+	_, _ = io.WriteString(c, "Hey\r\n.\r\n")
+	scanOk(t, c, scanner)
+	if !strings.HasPrefix(scanner.Text(), "250 ") {
+		t.Fatal("Invalid DATA response:", scanner.Text())
+	}
+
+	if len(be.messages) != 1 {
+		t.Fatal("Invalid number of sent messages:", be.messages)
+	}
+	msg := be.messages[0]
+	if msg.From != "root@nsa.gov" {
+		t.Fatal("Invalid mail sender:", msg.From)
+	}
+	want := []string{`"x> NOTIFY=NEVER ORCPT=rfc822;y"@example.org`, `"user@internal"@example.org`}
+	if !slices.Equal(msg.To, want) {
+		t.Fatalf("Invalid mail recipients: %q, want %q", msg.To, want)
+	}
+	if msg.RcptOpts[0].Notify != nil || msg.RcptOpts[0].OriginalRecipient != "" {
+		t.Fatal("Quoted local-part was parsed as RCPT parameters:", msg.RcptOpts[0])
 	}
 }
 
@@ -2035,7 +2132,7 @@ func TestServerDSNwithSMTPUTF8(t *testing.T) {
 		}
 	}
 
-	_, _ = io.WriteString(c, "MAIL FROM:<e=mc2@example.com> ENVID=e+3Dmc2 RET=HDRS\r\n")
+	_, _ = io.WriteString(c, "MAIL FROM:<e=mc2@example.com> ENVID=e+3Dmc2 RET=HDRS SMTPUTF8\r\n")
 	scanOk(t, c, scanner)
 	if !strings.HasPrefix(scanner.Text(), "250 ") {
 		t.Fatal("Invalid MAIL response:", scanner.Text())
