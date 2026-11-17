@@ -58,31 +58,6 @@ func TestUTF8Clean(t *testing.T) {
 	require.ErrorContains(t, server.UTF8Clean("a"+r(0x202E)+"b@example.org"), "U+202E")
 }
 
-// Without an address validator everything the parser accepts is passed on.
-func TestServer_DefaultAddressValidator(t *testing.T) {
-	be, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableSMTPUTF8(true))
-	defer func() {
-		_ = s.Close()
-		_ = c.Close()
-	}()
-
-	cmd := func(line, want string) {
-		t.Helper()
-		_, _ = io.WriteString(c, line+"\r\n")
-		scanOk(t, c, scanner)
-		require.True(t, strings.HasPrefix(scanner.Text(), want), "%q: got %q, want prefix %q", line, scanner.Text(), want)
-	}
-
-	rlo := string(rune(0x202E))
-	cmd("MAIL FROM:<a"+rlo+"b@example.org> SMTPUTF8", "250 ")
-	cmd("RCPT TO:<c"+rlo+"d@example.org>", "250 ")
-	cmd("VRFY <e"+rlo+"f@example.org> SMTPUTF8", "252 ")
-	cmd("DATA", "354 ")
-	cmd("Hey\r\n.", "250 ")
-	require.Len(t, be.messages, 1)
-	require.Equal(t, "a"+rlo+"b@example.org", be.messages[0].From)
-}
-
 func TestServer_AddressValidator(t *testing.T) {
 	var seen []string
 	validator := func(addr string) error {
@@ -147,11 +122,9 @@ func TestServer_AddressValidator(t *testing.T) {
 	require.Equal(t, []string{`"a b"@example.org`}, be.messages[0].To)
 }
 
-func TestServer_AddressValidatorUTF8Clean(t *testing.T) {
-	_, s, c, scanner := testServerAuthenticated(t, nil,
-		server.WithEnableSMTPUTF8(true),
-		server.WithAddressValidator(server.UTF8Clean),
-	)
+// UTF8Clean is the default address validator.
+func TestServer_DefaultAddressValidator(t *testing.T) {
+	_, s, c, scanner := testServerAuthenticated(t, nil, server.WithEnableSMTPUTF8(true))
 	defer func() {
 		_ = s.Close()
 		_ = c.Close()
@@ -169,4 +142,33 @@ func TestServer_AddressValidatorUTF8Clean(t *testing.T) {
 	cmd("MAIL FROM:<jösé@example.org> SMTPUTF8", "250 ")
 	cmd("RCPT TO:<c"+rlo+"d@example.org>", "553 5.1.3 ")
 	cmd("RCPT TO:<bob@bücher.example>", "250 ")
+	cmd("VRFY <e"+rlo+"f@example.org> SMTPUTF8", "553 5.1.3 ")
+}
+
+// With the address validator disabled everything the parser accepts is passed on.
+func TestServer_AddressValidatorDisabled(t *testing.T) {
+	be, s, c, scanner := testServerAuthenticated(t, nil,
+		server.WithEnableSMTPUTF8(true),
+		server.WithAddressValidator(nil),
+	)
+	defer func() {
+		_ = s.Close()
+		_ = c.Close()
+	}()
+
+	cmd := func(line, want string) {
+		t.Helper()
+		_, _ = io.WriteString(c, line+"\r\n")
+		scanOk(t, c, scanner)
+		require.True(t, strings.HasPrefix(scanner.Text(), want), "%q: got %q, want prefix %q", line, scanner.Text(), want)
+	}
+
+	rlo := string(rune(0x202E))
+	cmd("MAIL FROM:<a"+rlo+"b@example.org> SMTPUTF8", "250 ")
+	cmd("RCPT TO:<c"+rlo+"d@example.org>", "250 ")
+	cmd("VRFY <e"+rlo+"f@example.org> SMTPUTF8", "252 ")
+	cmd("DATA", "354 ")
+	cmd("Hey\r\n.", "250 ")
+	require.Len(t, be.messages, 1)
+	require.Equal(t, "a"+rlo+"b@example.org", be.messages[0].From)
 }

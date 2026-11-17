@@ -157,6 +157,10 @@ func New(opts ...Option) *Server {
 		// Common MTA default (e.g. Postfix smtpd_client_connection_count_limit).
 		maxConnectionsPerIP: 10,
 
+		// RFC 6531 allows them, but invisible and direction changing characters
+		// make an address look different from what it is.
+		addressValidator: UTF8Clean,
+
 		// RFC 5321 (Section 4.5.3.2.7) recommends at least 5 minutes.
 		readTimeout: 5 * time.Minute,
 
@@ -202,9 +206,9 @@ func WithBackend(backend Backend) Option {
 // sent to the client as it is, any other error results in 553 5.1.7 (MAIL) or
 // 553 5.1.3 (RCPT and VRFY). A rejected recipient is not counted.
 //
-// The addresses are in the canonical form returned by the parser, see
-// UTF8Clean for a ready-made function.
-// Defaults to nil, which means no additional check.
+// The addresses are in the canonical form returned by the parser. To keep
+// the default check, call UTF8Clean from a custom validator.
+// Defaults to UTF8Clean, nil disables the check.
 func WithAddressValidator(validator func(addr string) error) Option {
 	return func(s *Server) {
 		s.addressValidator = validator
