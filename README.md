@@ -149,7 +149,7 @@ STARTTLS and QUIT until the connection is encrypted, and
 | RRVS | [7293](https://tools.ietf.org/html/rfc7293) | yes | opt-in |
 | DELIVERBY | [2852](https://tools.ietf.org/html/rfc2852) | yes | opt-in |
 | MT-PRIORITY | [6710](https://tools.ietf.org/html/rfc6710) | yes | opt-in |
-| LIMITS (RCPTMAX) | [9422](https://tools.ietf.org/html/rfc9422) | — | with max recipients |
+| LIMITS (MAILMAX, RCPTMAX) | [9422](https://tools.ietf.org/html/rfc9422) | parsed | with max transactions / recipients |
 | XOORG | non-standard | yes | opt-in |
 
 Server-side extensions are advertised only when enabled, because advertising one

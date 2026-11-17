@@ -26,6 +26,12 @@ type Server struct {
 	hostname string
 
 	maxRecipients int
+	// Max transactions (MAIL commands) per session.
+	maxTransactions int
+	// Max concurrent connections.
+	maxConnections int
+	// Max concurrent connections per remote IP.
+	maxConnectionsPerIP int
 	// Max line length for every command except data and bdat.
 	maxLineLength int
 	// Maximum size when receiving data and bdat.
@@ -104,6 +110,7 @@ type Server struct {
 	locker    sync.Mutex
 	listeners []net.Listener
 	conns     map[*Conn]struct{}
+	connsByIP map[string]int
 }
 
 // Backend returns the servers Backend.
@@ -116,14 +123,15 @@ type Option func(*Server)
 
 // New creates a new SMTP server.
 //
-// The server is bounded by default (line length, message size, recipients
-// and read/write timeouts). Each limit can be disabled explicitly by setting
-// it to zero with the corresponding option.
+// The server is bounded by default (line length, message size, recipients,
+// concurrent connections (total and per IP) and read/write timeouts). Each limit can be
+// disabled explicitly by setting it to zero with the corresponding option.
 func New(opts ...Option) *Server {
 	s := &Server{
-		done:     make(chan struct{}, 1),
-		conns:    make(map[*Conn]struct{}),
-		hostname: "localhost",
+		done:      make(chan struct{}, 1),
+		conns:     make(map[*Conn]struct{}),
+		connsByIP: make(map[string]int),
+		hostname:  "localhost",
 
 		// RFC 4954 extends the maximum line length of the AUTH command (and
 		// the SASL responses) to 12288 octets, which also covers commands with
@@ -135,6 +143,16 @@ func New(opts ...Option) *Server {
 
 		// RFC 5321 requires at least 100 recipients to be accepted.
 		maxRecipients: 1000,
+
+		// Exim's default for smtp_accept_max_per_connection.
+		maxTransactions: 1000,
+
+		// Protects against file descriptor and memory exhaustion while being
+		// high enough for a busy MTA.
+		maxConnections: 1000,
+
+		// Common MTA default (e.g. Postfix smtpd_client_connection_count_limit).
+		maxConnectionsPerIP: 10,
 
 		// RFC 5321 (Section 4.5.3.2.7) recommends at least 5 minutes.
 		readTimeout: 5 * time.Minute,
@@ -206,7 +224,8 @@ func WithWriteTimeout(writeTimeout time.Duration) Option {
 	}
 }
 
-// WithMaxMessageBytes sets the max message size.
+// WithMaxMessageBytes sets the max message size. It also limits a BDAT chunk
+// that is discarded (e.g. sent without recipients).
 // Defaults to 32 MiB, zero (or a negative value) disables the limit.
 func WithMaxMessageBytes(maxMessageBytes int64) Option {
 	return func(s *Server) {
@@ -222,11 +241,41 @@ func WithMaxLineLength(maxLineLength int) Option {
 	}
 }
 
-// WithMaxRecipients sets the max recipients per mail.
+// WithMaxRecipients sets the max recipients per mail, advertised as
+// RFC 9422 RCPTMAX. Only accepted recipients count.
 // Defaults to 1000, zero (or a negative value) disables the limit.
 func WithMaxRecipients(maxRecipients int) Option {
 	return func(s *Server) {
 		s.maxRecipients = maxRecipients
+	}
+}
+
+// WithMaxConnections sets the max concurrent connections.
+// Further connections are answered with 421 4.3.2 and closed.
+// Defaults to 1000, zero (or a negative value) disables the limit.
+func WithMaxConnections(maxConnections int) Option {
+	return func(s *Server) {
+		s.maxConnections = maxConnections
+	}
+}
+
+// WithMaxConnectionsPerIP sets the max concurrent connections per remote IP.
+// Further connections are answered with 421 4.7.0 and closed, like Postfix
+// does for smtpd_client_connection_count_limit.
+// Defaults to 10, zero (or a negative value) disables the limit.
+func WithMaxConnectionsPerIP(maxConnectionsPerIP int) Option {
+	return func(s *Server) {
+		s.maxConnectionsPerIP = maxConnectionsPerIP
+	}
+}
+
+// WithMaxTransactions sets the max transactions per session, every MAIL
+// command counts, including rejected ones (RFC 9422 MAILMAX). Further MAIL
+// commands are answered with 421 4.7.0 and the connection is closed.
+// Defaults to 1000, zero (or a negative value) disables the limit.
+func WithMaxTransactions(maxTransactions int) Option {
+	return func(s *Server) {
+		s.maxTransactions = maxTransactions
 	}
 }
 

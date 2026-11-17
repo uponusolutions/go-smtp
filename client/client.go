@@ -995,6 +995,22 @@ func (c *Client) MaxMessageSize() (size int, ok bool) {
 	return size, true
 }
 
+// MaxTransactions returns the maximum number of transactions (MAIL commands)
+// the server accepts in a session, as advertised by LIMITS MAILMAX (RFC 9422).
+//
+// If the server doesn't convey this information, ok = false is returned.
+func (c *Client) MaxTransactions() (n int, ok bool) {
+	return limit(c.connExt, "MAILMAX")
+}
+
+// MaxRecipients returns the maximum number of RCPT commands the server accepts
+// in a transaction, as advertised by LIMITS RCPTMAX (RFC 9422).
+//
+// If the server doesn't convey this information, ok = false is returned.
+func (c *Client) MaxRecipients() (n int, ok bool) {
+	return limit(c.connExt, "RCPTMAX")
+}
+
 // Reset sends the RSET command to the server, aborting the current mail
 // transaction.
 func (c *Client) Reset() error {

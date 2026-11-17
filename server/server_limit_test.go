@@ -300,3 +300,259 @@ func TestServerLimit_Bdat_BackendOwnTooLarge(t *testing.T) {
 
 	requireSessionUsable(t, c, scanner)
 }
+
+// dialGreeted opens a connection and returns the first reply line.
+func dialGreeted(t *testing.T, addr string) (net.Conn, string) {
+	t.Helper()
+
+	c, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+
+	scanner := bufio.NewScanner(c)
+	return c, readReply(t, c, scanner)
+}
+
+func TestServerLimit_Connections(t *testing.T) {
+	noPerIP := server.WithMaxConnectionsPerIP(0)
+	perIP := "421 4.7.0 localhost Error: too many connections from 127.0.0.1"
+	total := "421 4.3.2 Too many concurrent connections, try again later"
+
+	tests := []struct {
+		name string
+		opts []server.Option
+		// Connections that must be accepted.
+		accepted int
+		// Reply to the next connection, empty if it must be accepted.
+		rejected string
+	}{
+		{name: "per ip default", accepted: 10, rejected: perIP},
+		{name: "per ip custom", opts: []server.Option{server.WithMaxConnectionsPerIP(2)}, accepted: 2, rejected: perIP},
+		{name: "per ip disabled", opts: []server.Option{noPerIP}, accepted: 20},
+		{name: "total default", opts: []server.Option{noPerIP}, accepted: 1000, rejected: total},
+		{name: "total custom", opts: []server.Option{noPerIP, server.WithMaxConnections(2)}, accepted: 2, rejected: total},
+		{
+			name:     "total before per ip",
+			opts:     []server.Option{server.WithMaxConnections(2), server.WithMaxConnectionsPerIP(2)},
+			accepted: 2,
+			rejected: total,
+		},
+		{name: "total disabled", opts: []server.Option{noPerIP, server.WithMaxConnections(0)}, accepted: 1001},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, s, c, scanner := testServerGreeted(t, nil, tt.opts...)
+			t.Cleanup(func() {
+				_ = c.Close()
+				_ = s.Close()
+			})
+			addr := c.RemoteAddr().String()
+
+			// The first connection is already open.
+			for range tt.accepted - 1 {
+				_, reply := dialGreeted(t, addr)
+				require.True(t, strings.HasPrefix(reply, "220 "), "got %q", reply)
+			}
+
+			if tt.rejected == "" {
+				return
+			}
+
+			cc, reply := dialGreeted(t, addr)
+			require.Equal(t, tt.rejected, reply)
+			if scan(t, cc, bufio.NewScanner(cc)) {
+				t.Fatal("expected connection to be closed")
+			}
+
+			// Closing a connection frees a slot.
+			_, _ = io.WriteString(c, "QUIT\r\n")
+			require.True(t, strings.HasPrefix(readReply(t, c, scanner), "221 "))
+			_ = c.Close()
+
+			require.Eventually(t, func() bool {
+				cc, err := net.Dial("tcp", addr)
+				if err != nil {
+					return false
+				}
+				defer func() { _ = cc.Close() }()
+				sc := bufio.NewScanner(cc)
+				return scan(t, cc, sc) && strings.HasPrefix(sc.Text(), "220 ")
+			}, 5*time.Second, 10*time.Millisecond)
+		})
+	}
+}
+
+// limitsCap returns the LIMITS capability of the EHLO response, or "" if missing.
+func limitsCap(caps map[string]bool) string {
+	for c := range caps {
+		if strings.HasPrefix(c, "LIMITS") {
+			return c
+		}
+	}
+	return ""
+}
+
+func TestServerLimit_LimitsAdvertised(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []server.Option
+		want string
+	}{
+		{
+			name: "custom", opts: []server.Option{server.WithMaxTransactions(5), server.WithMaxRecipients(20)},
+			want: "LIMITS MAILMAX=5 RCPTMAX=20",
+		},
+		{name: "mailmax disabled", opts: []server.Option{server.WithMaxTransactions(0)}, want: "LIMITS RCPTMAX=1000"},
+		{name: "rcptmax disabled", opts: []server.Option{server.WithMaxRecipients(0)}, want: "LIMITS MAILMAX=1000"},
+		{name: "both disabled", opts: []server.Option{server.WithMaxTransactions(0), server.WithMaxRecipients(0)}},
+		// RFC 9422 allows at most six digits.
+		{
+			name: "maximum", opts: []server.Option{server.WithMaxTransactions(999999), server.WithMaxRecipients(1000000)},
+			want: "LIMITS MAILMAX=999999",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, s, c, _, caps := testServerEhlo(t, nil, tt.opts...)
+			t.Cleanup(func() {
+				_ = c.Close()
+				_ = s.Close()
+			})
+			require.Equal(t, tt.want, limitsCap(caps))
+		})
+	}
+}
+
+// RFC 9422 MAILMAX: every MAIL command counts, also rejected ones and across RSET.
+func TestServerLimit_MaxTransactions(t *testing.T) {
+	be := &backend{closeErrors: make(chan error, 1)}
+	_, s, c, scanner := testServerAuthenticated(t, be, server.WithMaxTransactions(3))
+	t.Cleanup(func() {
+		_ = c.Close()
+		_ = s.Close()
+	})
+
+	_, _ = io.WriteString(c, "MAIL FROM:invalid\r\n")
+	reply := readReply(t, c, scanner)
+	require.True(t, strings.HasPrefix(reply, "501 "), "got %q", reply)
+
+	for range 2 {
+		_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+		reply = readReply(t, c, scanner)
+		require.True(t, strings.HasPrefix(reply, "250 "), "got %q", reply)
+		_, _ = io.WriteString(c, "RSET\r\n")
+		reply = readReply(t, c, scanner)
+		require.True(t, strings.HasPrefix(reply, "250 "), "got %q", reply)
+	}
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	require.Equal(t, "421 4.7.0 Too many transactions in this session", readReply(t, c, scanner))
+	if scan(t, c, scanner) {
+		t.Fatalf("expected connection to be closed, got %q", scanner.Text())
+	}
+
+	select {
+	case err := <-be.closeErrors:
+		require.ErrorContains(t, err, "maximum transactions exceeded")
+	case <-time.After(5 * time.Second):
+		t.Fatal("session was not closed")
+	}
+}
+
+// RFC 9422 RCPTMAX doesn't require counting rejected RCPT commands, a client
+// keeping to the advertised limit works either way. Only accepted recipients count.
+func TestServerLimit_MaxRecipients(t *testing.T) {
+	_, c, scanner := limitTestServerRcpt(t, server.WithMaxRecipients(3))
+
+	// limitTestServerRcpt already sent one RCPT, a rejected one doesn't count.
+	_, _ = io.WriteString(c, "RCPT TO:invalid\r\n")
+	reply := readReply(t, c, scanner)
+	require.True(t, strings.HasPrefix(reply, "501 "), "got %q", reply)
+
+	for _, rcpt := range []string{"a", "b"} {
+		_, _ = io.WriteString(c, "RCPT TO:<"+rcpt+"@gchq.gov.uk>\r\n")
+		reply = readReply(t, c, scanner)
+		require.True(t, strings.HasPrefix(reply, "250 "), "got %q", reply)
+	}
+
+	_, _ = io.WriteString(c, "RCPT TO:<c@gchq.gov.uk>\r\n")
+	require.Equal(t, "452 4.5.3 Maximum limit of 3 recipients reached", readReply(t, c, scanner))
+
+	// A new transaction starts counting again.
+	_, _ = io.WriteString(c, "RSET\r\nMAIL FROM:<root@nsa.gov>\r\nRCPT TO:<b@gchq.gov.uk>\r\n")
+	for range 3 {
+		reply = readReply(t, c, scanner)
+		require.True(t, strings.HasPrefix(reply, "250 "), "got %q", reply)
+	}
+}
+
+// limitTestServerRcpt starts a server with the given options and opens a mail
+// transaction with one recipient.
+func limitTestServerRcpt(t *testing.T, opts ...server.Option) (*backend, net.Conn, *bufio.Scanner) {
+	t.Helper()
+
+	be, s, c, scanner := testServerAuthenticated(t, nil, opts...)
+	t.Cleanup(func() {
+		_ = c.Close()
+		_ = s.Close()
+	})
+
+	_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+	require.True(t, strings.HasPrefix(readReply(t, c, scanner), "250 "))
+	_, _ = io.WriteString(c, "RCPT TO:<root@gchq.gov.uk>\r\n")
+	require.True(t, strings.HasPrefix(readReply(t, c, scanner), "250 "))
+
+	return be, c, scanner
+}
+
+// A BDAT chunk that isn't processed (wrong state, no recipients or CHUNKING
+// disabled) is discarded, limited to the maximum message size like a processed one.
+func TestServerLimit_BdatDiscard(t *testing.T) {
+	paths := []struct {
+		name     string
+		chunking bool
+		mail     bool
+		reply    string
+	}{
+		{name: "before MAIL", chunking: true, reply: "503 5.5.1 "},
+		{name: "no recipients", chunking: true, mail: true, reply: "502 5.5.1 "},
+		{name: "CHUNKING disabled", reply: "504 5.5.4 "},
+	}
+
+	for _, p := range paths {
+		for _, size := range []int{50, 51} {
+			t.Run(p.name+"/"+strconv.Itoa(size), func(t *testing.T) {
+				be := &backend{closeErrors: make(chan error, 1)}
+				be, s, c, scanner := testServerAuthenticated(t, be,
+					server.WithMaxMessageBytes(50),
+					server.WithEnableCHUNKING(p.chunking),
+				)
+				t.Cleanup(func() {
+					_ = c.Close()
+					_ = s.Close()
+				})
+
+				if p.mail {
+					_, _ = io.WriteString(c, "MAIL FROM:<root@nsa.gov>\r\n")
+					require.True(t, strings.HasPrefix(readReply(t, c, scanner), "250 "))
+				}
+
+				// The chunk content must never be executed as commands.
+				payload := "RSET\r\nMAIL FROM:<smuggled@example.com>\r\n"
+				payload += strings.Repeat("x", size-len(payload))
+				_, _ = io.WriteString(c, "BDAT "+strconv.Itoa(size)+" LAST\r\n"+payload)
+
+				if size > 50 {
+					requireTooLargeAndClosed(t, be, c, scanner)
+					return
+				}
+
+				reply := readReply(t, c, scanner)
+				require.True(t, strings.HasPrefix(reply, p.reply), "got %q", reply)
+				requireSessionUsable(t, c, scanner)
+			})
+		}
+	}
+}

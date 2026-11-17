@@ -85,15 +85,26 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		receiver: smtpreader.NewReceiver(conn, s.readerSize, s.maxLineLength, 0),
 	}
 
+	var ip string
+	if s.maxConnectionsPerIP > 0 {
+		ip = remoteIP(conn)
+	}
+	limited := ip != ""
+
 	s.locker.Lock()
 	s.conns[c] = struct{}{}
+	if limited {
+		s.connsByIP[ip]++
+	}
+	exceeded := s.maxConnections > 0 && len(s.conns) > s.maxConnections
+	exceededPerIP := limited && s.connsByIP[ip] > s.maxConnectionsPerIP
 	s.locker.Unlock()
 
 	var err error
 
 	defer func() {
 		if err := recover(); err != nil {
-			c.writeStatus(smtp.NewStatusS(421, smtp.EnhancedCode{4, 0, 0}, "Internal server error"))
+			c.writeStatus(smtp.ErrInternal)
 			stack := debug.Stack()
 			c.logger().ErrorContext(
 				c.ctx,
@@ -106,12 +117,30 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 		s.locker.Lock()
 		delete(s.conns, c)
+		if limited {
+			if s.connsByIP[ip]--; s.connsByIP[ip] <= 0 {
+				delete(s.connsByIP, ip)
+			}
+		}
 		s.locker.Unlock()
 
 		s.wg.Done()
 
 		cancel()
 	}()
+
+	if exceeded || exceededPerIP {
+		// Overall limit first, the client isn't at fault for a busy server.
+		status := smtp.ErrTooManyConnections
+		if !exceeded {
+			// Same reply as Postfix for smtpd_client_connection_count_limit.
+			status = smtp.NewStatusS(421, smtp.EnhancedCode{4, 7, 0},
+				fmt.Sprintf("%s Error: too many connections from %s", s.hostname, ip))
+		}
+		c.writeStatus(status)
+		c.Close(nil)
+		return
+	}
 
 	sctx, session, err := s.backend.NewSession(ctx, c)
 	if err != nil {
@@ -137,6 +166,14 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	// run always returns an error when finished
 	c.handleError(c.run())
+}
+
+// remoteIP returns the remote IP of a TCP connection, or "" for other networks.
+func remoteIP(conn net.Conn) string {
+	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+		return addr.IP.String()
+	}
+	return ""
 }
 
 // Listen listens on the network address s.Addr
