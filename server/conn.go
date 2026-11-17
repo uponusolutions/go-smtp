@@ -626,6 +626,14 @@ func (c *Conn) handleMail(arg string) error {
 	if !opts.UTF8 && !parse.IsASCII(from) {
 		return smtp.ErrNonASCIISender
 	}
+
+	// The null reverse-path is not an address.
+	if from != "" {
+		if err := c.validateAddress(from, smtp.EnhancedCode{5, 1, 7}, "Sender address not accepted"); err != nil {
+			return err
+		}
+	}
+
 	c.tx.smtputf8 = opts.UTF8
 
 	if err := c.session.Mail(c.ctx, from, opts); err != nil {
@@ -660,6 +668,28 @@ func handleMailBY(server *Server, opts *smtp.MailOptions, value string) error {
 	return nil
 }
 
+// validateAddress calls the address validator of the server, if set.
+// If it returns an error that is not a negative *smtp.Status, the reply is
+// 553 (mailbox name not allowed, RFC 5321 section 4.2.2) with the given
+// enhanced code and message.
+func (c *Conn) validateAddress(addr string, enhCode smtp.EnhancedCode, msg string) error {
+	if c.server.addressValidator == nil {
+		return nil
+	}
+
+	err := c.server.addressValidator(addr)
+	if err == nil {
+		return nil
+	}
+
+	if status, ok := err.(*smtp.Status); ok && status.Positive() {
+		// A positive reply would end the command without a result.
+		err = errors.New("address validator returned a positive reply")
+	}
+
+	return c.newStatusError(553, enhCode, msg, err)
+}
+
 func handleMailMTPRIORITY(server *Server, opts *smtp.MailOptions, value string) error {
 	if !server.enableMTPRIORITY {
 		return smtp.NewStatusS(501, smtp.EnhancedCode{5, 5, 4}, "MT-PRIORITY is not implemented")
@@ -689,6 +719,10 @@ func (c *Conn) handleRcpt(arg string) error {
 	}
 	if !c.tx.smtputf8 && !parse.IsASCII(recipient) {
 		return smtp.ErrNonASCIIRecipient
+	}
+
+	if err := c.validateAddress(recipient, smtp.EnhancedCode{5, 1, 3}, "Recipient address not accepted"); err != nil {
+		return err
 	}
 
 	if c.server.maxRecipients > 0 && c.tx.recipients >= c.server.maxRecipients {
@@ -802,6 +836,10 @@ func (c *Conn) handleVrfy(arg string) error {
 	}
 	if !opts.UTF8 && !parse.IsASCII(vrfy) {
 		return smtp.ErrUTF8ReplyRequired
+	}
+
+	if err := c.validateAddress(vrfy, smtp.EnhancedCode{5, 1, 3}, "Address not accepted"); err != nil {
+		return err
 	}
 
 	res := c.session.Verify(c.ctx, vrfy, opts)
