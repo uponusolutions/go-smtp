@@ -99,6 +99,9 @@ type Server struct {
 	// Default value of NONE to advertise no specific profile.
 	mtPriorityProfile smtp.PriorityProfile
 
+	// Additional check for every parsed mailbox, nil means no check.
+	addressValidator func(addr string) error
+
 	// The server backend.
 	backend Backend
 
@@ -187,6 +190,24 @@ func WithLogger(logger *slog.Logger) Option {
 func WithBackend(backend Backend) Option {
 	return func(s *Server) {
 		s.backend = backend
+	}
+}
+
+// WithAddressValidator sets a function which is called for every mailbox
+// (MAIL FROM, RCPT TO and VRFY) after it has been parsed and checked for
+// SMTPUTF8, before it is passed to the session. The null reverse-path "<>" of
+// MAIL FROM is not an address and is not validated.
+//
+// A non-nil error rejects the command. A *smtp.Status with a negative reply is
+// sent to the client as it is, any other error results in 553 5.1.7 (MAIL) or
+// 553 5.1.3 (RCPT and VRFY). A rejected recipient is not counted.
+//
+// The addresses are in the canonical form returned by the parser, see
+// UTF8Clean for a ready-made function.
+// Defaults to nil, which means no additional check.
+func WithAddressValidator(validator func(addr string) error) Option {
+	return func(s *Server) {
+		s.addressValidator = validator
 	}
 }
 
